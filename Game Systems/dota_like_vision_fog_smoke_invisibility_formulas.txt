@@ -1,0 +1,245 @@
+// dota_like_vision_fog_smoke_invisibility_formulas.txt
+// Fórmulas de visão, fog, true sight, wards, smoke e invisibilidade para manager de MOBA Dota-like.
+
+================================================================================
+1. MODELO DE VISÃO
+================================================================================
+
+Cada unidade possui:
+
+dayVision
+nightVision
+flyingVision
+trueSightRadius
+sharedVision
+temporaryVisionSources
+
+Visão ativa:
+
+currentVision =
+  isDay ? dayVision : nightVision
+
+Se unidade tem flyingVision:
+
+visionBlockedByTerrain = false
+
+Se visão comum:
+
+visionBlockedByTerrain = true
+
+================================================================================
+2. CICLO DIA/NOITE
+================================================================================
+
+Modelo simples:
+
+dayDurationSeconds = 300
+nightDurationSeconds = 300
+cycleLength = dayDurationSeconds + nightDurationSeconds
+
+cycleTime = gameTimeSeconds % cycleLength
+
+isDay =
+  cycleTime < dayDurationSeconds
+
+isNight = !isDay
+
+================================================================================
+3. FOG OF WAR
+================================================================================
+
+Mapa em células:
+
+cellVisibleToTeam =
+  any(alliedVisionSource reveals cell)
+
+cellKnownButNotVisible =
+  cellWasSeenBefore && !cellVisibleNow
+
+cellUnknown =
+  !cellWasSeenBefore
+
+Vision score:
+
+mapVisionScore =
+  sum(cellImportance * isVisible(cell))
+
+================================================================================
+4. HIGH GROUND E BLOQUEIO DE VISÃO
+================================================================================
+
+Se alvo está em high ground e observador em low ground:
+
+canSeeTarget =
+  hasFlyingVision
+  || hasWardVisionOnHighGround
+  || distance <= uphillRevealRadius
+
+uphillMissChance pode ser separado do sistema de visão.
+
+treeBlock:
+
+if lineSegment(observer, target) intersects treeBlocker:
+  visionBlocked = true
+
+================================================================================
+5. OBSERVER WARD
+================================================================================
+
+observerVisionRadius = 1600
+observerDurationSeconds = 360
+
+wardValue =
+  expectedRotationsSpotted
+  + objectiveControlValue
+  + farmSafetyValue
+  - dewardRisk
+  - opportunityCost
+
+================================================================================
+6. SENTRY WARD E TRUE SIGHT
+================================================================================
+
+sentryTrueSightRadius = 1000
+sentryDurationSeconds = 420
+
+Revelação:
+
+if invisibleEnemyWithinTrueSightRadius:
+  enemyVisible = true
+
+Deward chance:
+
+dewardChance =
+  sentryCoverage
+  + playerMapRead
+  + enemyWardPredictability
+  - enemyWardProtection
+
+================================================================================
+7. INVISIBILIDADE
+================================================================================
+
+if unit.hasInvisibility:
+  visibleToEnemy = false
+
+if enemyHasTrueSightInRange:
+  visibleToEnemy = true
+
+if unitAttacks and invisBreaksOnAttack:
+  removeInvisibility
+
+fade time:
+
+if invisibilityApplied:
+  invisibleAfter = currentTime + fadeTime
+
+================================================================================
+8. SMOKE
+================================================================================
+
+Smoke effect:
+
+smokedUnitVisibleToWards = false
+smokedUnitVisibleToCreeps = false
+smokedUnitVisibleToHeroes = true only within break radius
+
+smokeBreakRadius = 1025
+
+if distance(smokedUnit, enemyHero) <= smokeBreakRadius:
+  removeSmoke
+
+Smoke gank value:
+
+smokeExpectedValue =
+  gankSuccessChance * killValue
+  + objectiveFollowupValue
+  - timeCost
+  - smokeCooldownOpportunityCost
+
+================================================================================
+9. TEMPORARY VISION
+================================================================================
+
+Habilidades podem conceder visão temporária.
+
+temporaryVisionDuration = baseDuration
+
+Linger vision:
+
+visionLingerDuration = 1.0 to 3.0
+
+if projectileHits or spellRevealsArea:
+  createTemporaryVision(area, duration)
+
+================================================================================
+10. TRUE SIGHT
+================================================================================
+
+True sight só revela se também houver visão normal ou regra permitir revelar diretamente.
+
+Modelo simples:
+
+revealedByTrueSight =
+  enemyInTrueSightRadius
+
+visible =
+  hasNormalVision || revealedByTrueSight
+
+Modelo mais rígido:
+
+visible =
+  hasNormalVision && (!invisible || revealedByTrueSight)
+
+================================================================================
+11. VALOR GERENCIAL DE VISÃO
+================================================================================
+
+visionControlScore =
+  objectiveVision
+  + jungleEntranceVision
+  + laneApproachVision
+  + defensiveVision
+  + aggressiveVision
+  + dewardControl
+  - darkAreaRisk
+
+Dark area risk:
+
+darkAreaRisk =
+  enemyMissingHeroes
+  * enemyGankThreat
+  * areaImportance
+  * lackOfVisionMultiplier
+
+================================================================================
+12. FUNÇÕES TYPESCRIPT
+================================================================================
+
+export function isDay(gameTimeSeconds: number): boolean {
+  const cycle = 600;
+  return gameTimeSeconds % cycle < 300;
+}
+
+export function currentVision(dayVision: number, nightVision: number, gameTimeSeconds: number): number {
+  return isDay(gameTimeSeconds) ? dayVision : nightVision;
+}
+
+export function smokeBreaks(distanceToEnemyHero: number, smokeBreakRadius = 1025): boolean {
+  return distanceToEnemyHero <= smokeBreakRadius;
+}
+
+export function visionScore(cells: Array<{ importance: number; visible: boolean }>): number {
+  return cells.reduce((sum, cell) => sum + (cell.visible ? cell.importance : 0), 0);
+}
+
+================================================================================
+13. TESTES RECOMENDADOS
+================================================================================
+
+1. Dia usa dayVision.
+2. Noite usa nightVision.
+3. Smoke quebra dentro do raio.
+4. True sight revela invisível.
+5. Ward expira.
+6. Vision score aumenta em células importantes.

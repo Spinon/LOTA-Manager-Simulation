@@ -1,0 +1,487 @@
+// dota_like_structures_towers_backdoor_formulas.txt
+// Fórmulas para torres, estruturas, high ground, glyph e backdoor em um manager de MOBA Dota-like.
+// Objetivo: simular push, split push, defesa de base, conversão de pickoff em objetivo e decisão de high ground.
+
+================================================================================
+1. MODELO DE ESTRUTURA
+================================================================================
+
+export type StructureType =
+  | "tier1_tower"
+  | "tier2_tower"
+  | "tier3_tower"
+  | "tier4_tower"
+  | "barracks_melee"
+  | "barracks_ranged"
+  | "ancient"
+  | "outpost"
+  | "watcher";
+
+export interface StructureState {
+  id: string;
+  type: StructureType;
+  lane?: "top" | "mid" | "bottom";
+  teamId: string;
+
+  maxHealth: number;
+  currentHealth: number;
+
+  armor: number;
+  magicResistance: number;
+
+  attackDamageMin: number;
+  attackDamageMax: number;
+  attackSpeed: number;
+  baseAttackTime: number;
+  attackRange: number;
+
+  isAlive: boolean;
+  isFortified: boolean;
+  hasBackdoorProtection: boolean;
+  regenPerSecond: number;
+}
+
+================================================================================
+2. VIDA, ARMADURA E EHP DE ESTRUTURAS
+================================================================================
+
+Multiplicador físico:
+
+armorDamageMultiplier =
+  1 - (0.06 * armor) / (1 + 0.06 * abs(armor))
+
+Dano físico recebido:
+
+physicalDamageTaken =
+  incomingPhysicalDamage * armorDamageMultiplier
+
+EHP físico:
+
+effectiveHpPhysical =
+  currentHealth / armorDamageMultiplier
+
+Dano mágico recebido:
+
+magicalDamageTaken =
+  incomingMagicalDamage * (1 - magicResistance)
+
+Dano puro recebido:
+
+pureDamageTaken =
+  incomingPureDamage
+
+Para manager, estruturas podem ter modificador específico:
+
+buildingIncomingDamage =
+  rawDamage
+  * damageTypeMultiplier
+  * sourceVsBuildingMultiplier
+  * fortificationMultiplier
+  * backdoorMultiplier
+
+================================================================================
+3. TABELA SUGERIDA DE ESTRUTURAS
+================================================================================
+
+Valores configuráveis iniciais:
+
+T1 Tower:
+  maxHealth = 1800
+  armor = 12
+  attackDamage = 90-100
+  baseAttackTime = 1.0
+  attackRange = 700
+  bountyTeamGold = 120
+  bountyLastHitGold = 150
+
+T2 Tower:
+  maxHealth = 2000
+  armor = 16
+  attackDamage = 120-130
+  baseAttackTime = 1.0
+  attackRange = 700
+  bountyTeamGold = 140
+  bountyLastHitGold = 200
+
+T3 Tower:
+  maxHealth = 2000
+  armor = 18
+  attackDamage = 130-140
+  baseAttackTime = 1.0
+  attackRange = 700
+  bountyTeamGold = 160
+  bountyLastHitGold = 250
+
+T4 Tower:
+  maxHealth = 2100
+  armor = 21
+  attackDamage = 140-150
+  baseAttackTime = 1.0
+  attackRange = 700
+  bountyTeamGold = 0
+  bountyLastHitGold = 0
+
+Barracks:
+  maxHealth = 2200
+  armor = 15
+  healthRegen = 5
+
+Ancient:
+  maxHealth = 4500
+  armor = 15
+  healthRegen = 0
+
+================================================================================
+4. DANO A ESTRUTURAS
+================================================================================
+
+Nem todo dano deve afetar estruturas com o mesmo peso.
+
+sourceVsBuildingMultiplier:
+  heroAttack = 1.00
+  creepAttack = 0.50
+  siegeCreepAttack = 1.50
+  summonAttack = 0.70
+  illusionAttack = 0.35
+  spellDamage = 0.25
+  pureSpellDamage = 0.25
+  itemDamage = 0.50
+
+Fórmula:
+
+buildingDamage =
+  rawDamage
+  * sourceVsBuildingMultiplier
+  * armorOrResistanceMultiplier
+  * fortificationMultiplier
+  * backdoorMultiplier
+
+================================================================================
+5. BACKDOOR PROTECTION
+================================================================================
+
+Backdoor ativa quando não há creep aliado válido próximo da estrutura inimiga.
+
+hasValidCreepNearby =
+  count(alliedLaneCreepsWithinBackdoorRadius) > 0
+
+backdoorProtectionActive =
+  structure.hasBackdoorProtection
+  && !hasValidCreepNearby
+
+Raio sugerido:
+
+backdoorRadius = 900
+
+Redução de dano:
+
+if backdoorProtectionActive:
+  backdoorDamageMultiplier = 0.25
+else:
+  backdoorDamageMultiplier = 1.0
+
+Regeneração durante backdoor:
+
+if backdoorProtectionActive:
+  structureRegen =
+    baseRegen
+    + backdoorBonusRegen
+else:
+  structureRegen = baseRegen
+
+Sugestão:
+
+backdoorBonusRegen = 90 health/s
+
+Aplicação por tick:
+
+structure.currentHealth =
+  min(structure.maxHealth, structure.currentHealth + structureRegen * deltaTime)
+
+================================================================================
+6. GLYPH / FORTIFICAÇÃO
+================================================================================
+
+Glyph ativo:
+
+structure.isFortified = true
+
+Duração:
+
+glyphDurationSeconds = 7
+
+Redução de dano durante glyph:
+
+fortificationMultiplier = 0.0 ou 0.1
+
+Modelo recomendado para manager:
+
+if structure.isFortified:
+  fortificationMultiplier = 0.05
+else:
+  fortificationMultiplier = 1.0
+
+Cooldown:
+
+glyphCooldownSeconds = 300
+
+Refresh por queda de primeira torre de tier:
+
+if firstTowerOfTierFalls:
+  glyphCooldown = 0
+
+Score de uso:
+
+glyphUseScore =
+  towerValueAtRisk
+  + creepWaveThreat
+  + enemySiegeCommitment
+  + highGroundDefenseImportance
+  - chanceToDefendWithoutGlyph
+  - expectedFutureGlyphNeed
+
+useGlyph =
+  glyphAvailable && glyphUseScore > glyphThreshold
+
+================================================================================
+7. PRIORIDADE DE ALVO DA TORRE
+================================================================================
+
+A torre escolhe alvo por prioridade.
+
+Prioridade sugerida:
+
+1. Unidade atacando herói aliado sob torre.
+2. Unidade inimiga atacando a própria torre.
+3. Unidade inimiga mais próxima.
+4. Creep de cerco.
+5. Creep comum.
+6. Summon.
+7. Ilusão.
+
+Score:
+
+towerTargetScore =
+  attackAllyHeroPriority
+  + attackingTowerPriority
+  + proximityScore
+  + unitTypePriority
+  + lowHealthLastHitWeight
+
+target =
+  maxBy(enemyUnitsInRange, towerTargetScore)
+
+Troca de aggro por comando de ataque:
+
+if enemyHeroIssuesAttackCommandAgainstAlliedHeroWithinTowerRange:
+  towerAggroTarget = enemyHero
+  aggroDuration = 2.5
+
+================================================================================
+8. PRESSÃO DE TORRE
+================================================================================
+
+towerPressure =
+  alliedHeroSiegeDps
+  + alliedCreepDps
+  + alliedSummonDps
+  + alliedSiegeCreepDps
+  + auraSiegeBonus
+  - enemyWaveClearDps
+  - enemyDefensiveHeroPresence
+  - fortificationThreat
+  - backdoorProtectionValue
+
+Chance de derrubar a torre em uma janela:
+
+towerFallChance =
+  sigmoid((towerPressure - towerDefenseScore) / variance)
+
+Tempo esperado para derrubar:
+
+expectedTimeToKillStructure =
+  structureCurrentEhp / max(1, netSiegeDps)
+
+netSiegeDps =
+  totalIncomingBuildingDps - structureRegenPerSecond
+
+================================================================================
+9. VALOR ESTRATÉGICO DE TORRE
+================================================================================
+
+towerStrategicValue =
+  mapControlValue
+  + lanePressureValue
+  + jungleAccessValue
+  + objectiveAccessValue
+  + visionTerritoryValue
+  + goldRewardValue
+  + psychologicalMomentumValue
+
+Tier 1:
+  mapControlValue alto
+  objectiveAccessValue médio
+
+Tier 2:
+  jungleAccessValue alto
+  outpostAccessValue alto
+
+Tier 3:
+  highGroundGateValue alto
+  barracksThreatValue alto
+
+Tier 4:
+  ancientDefenseValue máximo
+
+================================================================================
+10. HIGH GROUND
+================================================================================
+
+Dificuldade de high ground:
+
+highGroundDifficulty =
+  enemyWaveClear
+  + enemyInitiationThreat
+  + enemyBuybackAvailability
+  + towerDefensePower
+  + visionDisadvantage
+  + chokePointPenalty
+  + glyphAvailability
+  - alliedAegisValue
+  - alliedSiegeRange
+  - enemyDeadTimeRemaining
+
+Decisão de subir high ground:
+
+highGroundAttemptScore =
+  alliedNetWorthLead
+  + aegisOrBossBuff
+  + enemyDeadTimeValue
+  + lanePressure
+  + visionControl
+  + itemTimingAdvantage
+  - highGroundDifficulty
+  - throwRisk
+
+attemptHighGround =
+  highGroundAttemptScore > threshold
+
+================================================================================
+11. BARRACKS
+================================================================================
+
+Barracks value:
+
+barracksValue =
+  laneMegaCreepProgressValue
+  + lanePressurePermanentValue
+  + enemyMapRestrictionValue
+  + objectiveConversionValue
+
+Melee barracks geralmente vale mais:
+
+meleeBarracksValue = 1.25 * rangedBarracksValue
+
+Creep upgrade após barracks:
+
+if enemyMeleeBarracksDestroyed:
+  alliedMeleeCreepPower *= meleeRaxMultiplier
+
+if enemyRangedBarracksDestroyed:
+  alliedRangedCreepPower *= rangedRaxMultiplier
+
+Sugestão:
+
+meleeRaxMultiplier = 1.35
+rangedRaxMultiplier = 1.25
+
+Megas:
+
+if allEnemyBarracksDestroyed:
+  alliedCreepPower *= megaCreepMultiplier
+
+megaCreepMultiplier = 1.75
+
+================================================================================
+12. ANCIENT / BASE FINAL
+================================================================================
+
+Ancient threat score:
+
+ancientThreat =
+  alliedCreepPressure
+  + alliedHeroSiegeDps
+  + enemyDeadTimeRemaining
+  + buybackUnavailableValue
+  - enemyDefensePower
+  - glyphAvailability
+  - backdoorProtection
+
+Chance de finalizar:
+
+endGameChance =
+  sigmoid((ancientThreat - ancientDefenseThreshold) / variance)
+
+================================================================================
+13. FUNÇÕES TYPESCRIPT
+================================================================================
+
+export function armorDamageMultiplier(armor: number): number {
+  return 1 - (0.06 * armor) / (1 + 0.06 * Math.abs(armor));
+}
+
+export function structureDamageTaken(input: {
+  rawDamage: number;
+  damageType: "physical" | "magical" | "pure";
+  armor: number;
+  magicResistance: number;
+  sourceVsBuildingMultiplier: number;
+  fortificationMultiplier: number;
+  backdoorMultiplier: number;
+}): number {
+  let multiplier = 1;
+
+  if (input.damageType === "physical") {
+    multiplier *= armorDamageMultiplier(input.armor);
+  }
+
+  if (input.damageType === "magical") {
+    multiplier *= 1 - input.magicResistance;
+  }
+
+  return Math.max(
+    0,
+    input.rawDamage
+      * multiplier
+      * input.sourceVsBuildingMultiplier
+      * input.fortificationMultiplier
+      * input.backdoorMultiplier
+  );
+}
+
+export function expectedTimeToKillStructure(
+  currentHealth: number,
+  netSiegeDps: number
+): number {
+  return currentHealth / Math.max(1, netSiegeDps);
+}
+
+export function isBackdoorProtected(input: {
+  hasBackdoorProtection: boolean;
+  alliedCreepsNearby: number;
+}): boolean {
+  return input.hasBackdoorProtection && input.alliedCreepsNearby <= 0;
+}
+
+================================================================================
+14. TESTES RECOMENDADOS
+================================================================================
+
+1. Torre com armor positiva reduz dano físico.
+2. Backdoor reduz dano quando não há creep próximo.
+3. Backdoor desativa quando creep aliado entra no raio.
+4. Glyph reduz dano durante duração.
+5. Torre escolhe herói que atacou herói aliado.
+6. expectedTimeToKillStructure cai quando siegeDps sobe.
+7. Barracks destruído aumenta força de wave.
+8. Mega creeps ativam apenas quando todos barracks caem.

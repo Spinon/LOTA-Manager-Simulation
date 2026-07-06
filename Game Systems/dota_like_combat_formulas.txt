@@ -1,0 +1,912 @@
+// dota_like_combat_formulas.txt
+// Fórmulas e regras matemáticas para um simulador de manager de MOBA inspirado em Dota-like.
+// Observação: Dota tem muitas exceções por habilidade, item e flag. Este arquivo organiza o núcleo matemático
+// para engine, simulação, balanceamento e cards de UI.
+
+================================================================================
+1. ATRIBUTOS
+================================================================================
+
+Atributos por nível:
+
+strengthAtLevel = baseStrength + strengthGain * (level - 1)
+agilityAtLevel = baseAgility + agilityGain * (level - 1)
+intelligenceAtLevel = baseIntelligence + intelligenceGain * (level - 1)
+
+Força:
+
+maxHealth = baseHealth + strength * 22
+healthRegen = baseHealthRegen + strength * 0.09
+
+Se o herói for de Força:
+
+attributeDamage = strength
+
+Agilidade:
+
+armor = baseArmor + agility / 6
+attackSpeed = baseAttackSpeed + agility
+
+Se o herói for de Agilidade:
+
+attributeDamage = agility
+
+Inteligência:
+
+maxMana = baseMana + intelligence * 12
+manaRegen = baseManaRegen + intelligence * 0.05
+baseMagicResistance = 0.25 + intelligence * 0.001
+
+Se o herói for de Inteligência:
+
+attributeDamage = intelligence
+
+Universal:
+
+universalAttributeDamage = (strength + agility + intelligence) * 0.7
+
+================================================================================
+2. DANO DE ATAQUE
+================================================================================
+
+Dano de ataque base:
+
+baseRollDamage = random(baseDamageMin, baseDamageMax)
+
+Dano por atributo primário:
+
+if primaryAttribute === "strength":
+  attributeDamage = strength
+
+if primaryAttribute === "agility":
+  attributeDamage = agility
+
+if primaryAttribute === "intelligence":
+  attributeDamage = intelligence
+
+if primaryAttribute === "universal":
+  attributeDamage = (strength + agility + intelligence) * 0.7
+
+Dano principal:
+
+mainAttackDamage = baseRollDamage + attributeDamage
+
+Dano bônus:
+
+bonusAttackDamage = flatBonusDamage + mainAttackDamage * percentBonusDamage
+
+Dano antes de crítico:
+
+attackDamageBeforeCrit = mainAttackDamage + bonusAttackDamage
+
+Pipeline prático:
+
+attackDamage =
+  (
+    (
+      (baseRollDamage + attributeDamage)
+      * (1 + percentBonusDamage)
+    )
+    + flatBonusDamage
+  )
+
+if critProcs:
+  attackDamage *= critMultiplier
+
+attackDamage += instantAttackBonus
+attackDamage *= conditionalOutgoingAttackMultiplier
+attackDamage -= physicalDamageBlock
+attackDamage *= armorDamageMultiplier
+attackDamage *= incomingPhysicalDamageMultiplier
+attackDamage *= genericDamageMultiplier
+
+finalAttackDamage = max(0, attackDamage)
+
+================================================================================
+3. CRÍTICO
+================================================================================
+
+Crítico simples:
+
+if randomProc(critChance):
+  damage = damageBeforeArmor * critMultiplier
+else:
+  damage = damageBeforeArmor
+
+Exemplo:
+
+critChance = 0.30
+critMultiplier = 2.25
+
+expectedDamageMultiplier = 1 + critChance * (critMultiplier - 1)
+expectedDamageMultiplier = 1 + 0.30 * 1.25
+expectedDamageMultiplier = 1.375
+
+Ou seja, nesse exemplo, o crítico gera em média +37.5% de dano.
+
+Múltiplas fontes de crítico:
+
+Dota-like normalmente ordena os críticos do maior multiplicador para o menor.
+Se um crítico ativa, os críticos menores não são aplicados no mesmo ataque.
+
+expectedCritMultiplier =
+  1
+  + p1 * (m1 - 1)
+  + (1 - p1) * p2 * (m2 - 1)
+  + (1 - p1) * (1 - p2) * p3 * (m3 - 1)
+
+Forma genérica:
+
+expectedCritMultiplier =
+  1 + SUM(procChance_i * previousFailures_i * (multiplier_i - 1))
+
+previousFailures_i = PRODUCT(1 - procChance_j) for all j before i
+
+Pseudo-random distribution, aproximação:
+
+procChanceThisAttempt = prdConstant * attemptsSinceLastProc
+
+if random() < procChanceThisAttempt:
+  attemptsSinceLastProc = 1
+  proc = true
+else:
+  attemptsSinceLastProc += 1
+  proc = false
+
+Para simulação rápida de manager, pode usar o dano esperado.
+Para simulação detalhada, pode usar PRD.
+
+================================================================================
+4. ATTACK SPEED E ATAQUES POR SEGUNDO
+================================================================================
+
+totalAttackSpeed =
+  clamp(
+    (baseAttackSpeed + agility + flatAttackSpeedBonuses)
+    * (1 + attackSpeedMultiplier),
+    20,
+    700
+  )
+
+attacksPerSecond = totalAttackSpeed / (100 * baseAttackTime)
+
+secondsPerAttack = 1 / attacksPerSecond
+
+Exemplo:
+
+baseAttackSpeed = 100
+agility = 40
+flatAttackSpeedBonuses = 30
+baseAttackTime = 1.7
+
+totalAttackSpeed = 170
+attacksPerSecond = 170 / (100 * 1.7)
+attacksPerSecond = 1.0
+
+================================================================================
+5. ARMADURA E DANO FÍSICO
+================================================================================
+
+Multiplicador de dano por armadura:
+
+armorDamageMultiplier =
+  1 - (0.06 * armor) / (1 + 0.06 * abs(armor))
+
+Redução física:
+
+physicalDamageReduction = 1 - armorDamageMultiplier
+
+Dano físico recebido:
+
+physicalDamageTaken =
+  physicalDamageBeforeArmor * armorDamageMultiplier
+
+Com armadura positiva:
+  armorDamageMultiplier < 1
+
+Com armadura negativa:
+  armorDamageMultiplier > 1
+
+EHP físico:
+
+effectiveHpPhysical = currentHealth / armorDamageMultiplier
+
+================================================================================
+6. RESISTÊNCIA MÁGICA E DANO MÁGICO
+================================================================================
+
+Resistência mágica-base:
+
+baseMagicResistance = 0.25 + intelligence * 0.001
+
+Multiplicador mágico:
+
+magicDamageMultiplier =
+  (1 - baseMagicResistance)
+  * PRODUCT(1 - magicResistanceModifier_i)
+
+Resistência mágica exibida:
+
+displayedMagicResistance = 1 - magicDamageMultiplier
+
+Dano mágico real:
+
+actualMagicalDamage =
+  (
+    (totalMagicalDamage - magicDamageBlock)
+    * magicDamageMultiplier
+    - magicDamageBarrier
+  )
+  * genericIncomingDamageMultiplier
+
+================================================================================
+7. DANO PURO
+================================================================================
+
+Dano puro ignora armadura e resistência mágica, salvo exceções específicas.
+
+actualPureDamage =
+  (
+    pureDamage
+    - universalDamageBlock
+    - pureDamageBarrier
+  )
+  * genericIncomingDamageMultiplier
+
+================================================================================
+8. SPELL AMPLIFICATION E MANIPULAÇÃO DE DANO
+================================================================================
+
+Spell amp de saída:
+
+outgoingSpellMultiplier = 1 + sum(outgoingSpellAmpSources)
+
+Dano mágico antes de resistência:
+
+totalMagicalDamage =
+  baseSpellDamage * outgoingSpellMultiplier
+
+Manipulação genérica:
+
+incomingGenericMultiplier = 1 + sum(incomingGenericDamageAmpOrReduction)
+outgoingGenericMultiplier = 1 + sum(outgoingGenericDamageAmpOrReduction)
+
+finalDamage =
+  damageAfterArmorOrResistanceAndBarrier
+  * outgoingGenericMultiplier
+  * incomingGenericMultiplier
+  * uniqueDamageMultiplier
+
+Regra geral:
+- Modificadores do mesmo bucket empilham aditivamente.
+- Buckets diferentes empilham multiplicativamente.
+
+================================================================================
+9. DAMAGE BLOCK E BARREIRAS
+================================================================================
+
+Physical damage block:
+
+blockedPhysicalDamage = min(incomingPhysicalDamage, physicalDamageBlock)
+damageAfterBlock = incomingPhysicalDamage - blockedPhysicalDamage
+
+Dano físico depois de block e armadura:
+
+physicalDamageTaken =
+  max(0, incomingPhysicalDamage - physicalDamageBlock)
+  * armorDamageMultiplier
+
+Magic damage block:
+
+damageAfterMagicBlock = magicalDamage - magicDamageBlock
+
+Dano mágico depois de block e resistência:
+
+magicalDamageTaken =
+  max(0, magicalDamage - magicDamageBlock)
+  * magicDamageMultiplier
+
+Barreiras:
+
+damageAfterArmorOrMagicRes = damage * typeMultiplier
+
+damageAfterBarrier =
+  max(0, damageAfterArmorOrMagicRes - barrierValue)
+
+finalDamage =
+  damageAfterBarrier * genericIncomingDamageMultiplier
+
+Ordem recomendada:
+1. Dano bruto.
+2. Damage block específico.
+3. Armadura ou resistência mágica.
+4. Barreira física/mágica.
+5. Barreira universal.
+6. Manipulação genérica de dano recebido.
+
+================================================================================
+10. EVASÃO, BLIND, ACCURACY E HIT CHANCE
+================================================================================
+
+Evasão total:
+
+totalEvasion = 1 - PRODUCT(1 - evasion_i)
+
+Blind total:
+
+totalBlind = sum(blind_i)
+
+Accuracy total:
+
+totalAccuracy = 1 - PRODUCT(1 - accuracy_i)
+
+Chance efetiva de esquiva:
+
+effectiveEvadeChance =
+  (1 - (1 - totalEvasion) * (1 - totalBlind))
+  * (1 - meleeBufferRangeMiss)
+
+Chance final de acerto:
+
+finalHitChance =
+  1 - effectiveEvadeChance * (1 - totalAccuracy)
+
+True Strike:
+
+if hasTrueStrike:
+  finalHitChance = 1
+
+================================================================================
+11. STATUS RESISTANCE
+================================================================================
+
+Resistência total a status:
+
+totalStatusResistance =
+  1 - PRODUCT(1 - statusResistance_i)
+
+Duração final de debuff:
+
+finalDebuffDuration =
+  baseDebuffDuration * (1 - totalStatusResistance)
+
+Exemplo:
+
+baseStun = 2.0
+statusResistance = 0.25
+
+finalStun = 2.0 * (1 - 0.25)
+finalStun = 1.5
+
+================================================================================
+12. SLOW RESISTANCE
+================================================================================
+
+Resistência total a slow:
+
+totalSlowResistance =
+  1 - PRODUCT(1 - slowResistance_i)
+
+Slow efetivo:
+
+effectiveSlow =
+  rawSlow * (1 - totalSlowResistance)
+
+Velocidade depois do slow:
+
+movementSpeedAfterSlow =
+  movementSpeedBeforeSlow * (1 - effectiveSlow)
+
+================================================================================
+13. VELOCIDADE DE MOVIMENTO
+================================================================================
+
+Multiplicador de movimento:
+
+moveSpeedMultiplier =
+  1 + sum(percentMoveSpeedChanges) + max(yashaBasedPercentBonus)
+
+Velocidade total:
+
+totalMoveSpeed =
+  (baseMoveSpeed + max(bootsBasedFlatBonus) + flatMoveSpeedChanges)
+  * moveSpeedMultiplier
+
+Limites:
+
+totalMoveSpeed = clamp(totalMoveSpeed, 100, 550)
+
+Exceções:
+- Haste pode ignorar parte da lógica comum.
+- Algumas habilidades podem permitir ultrapassar limite.
+- Alguns debuffs podem forçar valores específicos.
+
+================================================================================
+14. LIFESTEAL
+================================================================================
+
+Lifesteal de ataque:
+
+totalLifesteal =
+  (
+    sum(lifestealSourcesAfterCreepMultiplier)
+    + sum(sharedLifestealSourcesAfterCreepMultiplierAndSourceAmp)
+  )
+  * wielderLifestealAmplification
+
+Cura:
+
+lifestealHeal =
+  physicalOrPureAttackDamageDealt * totalLifesteal
+
+Observações:
+- Crítico aumenta lifesteal porque aumenta dano causado.
+- Dano mágico de ataque normalmente não gera lifesteal comum.
+- Contra creeps, pode haver multiplicador reduzido.
+
+================================================================================
+15. SPELL LIFESTEAL
+================================================================================
+
+Spell lifesteal total:
+
+totalSpellLifesteal = sum(spellLifestealSourcesFromDifferentSources)
+
+Cura por spell lifesteal:
+
+spellLifestealHeal =
+  min(actualSpellDamageDealt, targetCurrentHealthBeforeDamage)
+  * totalSpellLifesteal
+
+Observações:
+- Não cura por overkill.
+- Usa o dano real causado depois de reduções.
+- Pode ter multiplicador menor contra creeps.
+
+================================================================================
+16. CLEAVE E SPLASH
+================================================================================
+
+Cleave:
+
+cleaveDamageInstance =
+  totalAttackDamageBeforeReductions * cleavePercent
+
+Dano recebido por cleave:
+
+cleaveDamageTaken =
+  max(0, cleaveDamageInstance - physicalDamageBlock)
+  * armorDamageMultiplier
+  * incomingDamageMultiplier
+
+Observações:
+- Cleave não afeta o alvo principal.
+- Cleave geralmente não erra alvos secundários se o ataque principal acertou.
+- Crítico pode aumentar cleave se aumenta o total attack damage antes das reduções.
+
+Splash:
+
+splashDamage =
+  totalAttackDamage * splashPercent
+
+Splash geralmente aplica dano em área circular ao redor do alvo atacado.
+
+================================================================================
+17. BASH, PROC E CHANCES
+================================================================================
+
+Proc simples:
+
+if random() < procChance:
+  applyEffect()
+
+Proc esperado por segundo:
+
+expectedProcsPerSecond =
+  attacksPerSecond * procChance
+
+Dano esperado de proc:
+
+expectedProcDamagePerSecond =
+  attacksPerSecond * procChance * procDamage
+
+Com PRD:
+
+procChanceThisAttempt = prdConstant * attemptsSinceLastProc
+
+================================================================================
+18. DPS ESPERADO
+================================================================================
+
+DPS de ataque sem crítico:
+
+averageAttackDamage =
+  (damageMin + damageMax) / 2
+
+attackDps =
+  averageAttackDamage
+  * attacksPerSecond
+  * finalHitChance
+  * armorDamageMultiplier
+
+DPS de ataque com crítico esperado:
+
+attackDpsWithCrit =
+  averageAttackDamage
+  * expectedCritMultiplier
+  * attacksPerSecond
+  * finalHitChance
+  * armorDamageMultiplier
+
+DPS de spell damage over time:
+
+dotDpsAfterResistance =
+  rawDotDps
+  * outgoingSpellMultiplier
+  * magicDamageMultiplier
+  * incomingGenericMultiplier
+
+Dano total de DoT:
+
+totalDotDamage =
+  dotDpsAfterResistance * duration
+
+================================================================================
+19. HEAL, HEAL AMP E REDUÇÃO DE CURA
+================================================================================
+
+Cura final:
+
+finalHeal =
+  baseHeal
+  * (1 + outgoingHealAmp)
+  * (1 + incomingHealAmp)
+  * (1 - healReduction)
+
+Regeneração final:
+
+finalRegen =
+  baseRegen
+  * (1 + regenAmp)
+  * (1 - regenReduction)
+
+================================================================================
+20. MANA, MANA COST E MANA BURN
+================================================================================
+
+Mana máxima:
+
+maxMana = baseMana + intelligence * 12
+
+Regeneração de mana:
+
+manaRegen = baseManaRegen + intelligence * 0.05
+
+Custo final de mana:
+
+finalManaCost =
+  baseManaCost * (1 - manaCostReduction)
+
+Mana burn:
+
+manaBurned =
+  min(targetCurrentMana, rawManaBurn)
+
+Dano por mana burn:
+
+manaBurnDamage =
+  manaBurned * manaBurnDamageCoefficient
+
+================================================================================
+21. COOLDOWN, REDUÇÃO DE COOLDOWN E CARGAS
+================================================================================
+
+Cooldown final:
+
+finalCooldown =
+  baseCooldown * (1 - cooldownReduction)
+
+Com múltiplas fontes, use bucket configurável:
+
+finalCooldown =
+  baseCooldown
+  * PRODUCT(1 - cooldownReduction_i)
+
+ou
+
+finalCooldown =
+  baseCooldown * (1 - sum(cooldownReduction_i))
+
+Escolha um padrão para o manager e mantenha consistente.
+
+Sistema de cargas:
+
+chargeReplenishTime =
+  baseChargeTime * (1 - cooldownReduction)
+
+availableCharges =
+  min(maxCharges, currentCharges + floor(timeSinceLastCharge / chargeReplenishTime))
+
+================================================================================
+22. BARREIRAS, ESCUDOS E ABSORÇÃO
+================================================================================
+
+Barreira física:
+
+physicalDamageAfterBarrier =
+  max(0, physicalDamageAfterArmor - physicalBarrier)
+
+Barreira mágica:
+
+magicalDamageAfterBarrier =
+  max(0, magicalDamageAfterResistance - magicalBarrier)
+
+Barreira universal:
+
+damageAfterUniversalBarrier =
+  max(0, damageAfterTypedBarrier - universalBarrier)
+
+Consumo recomendado:
+
+if damageType === "physical":
+  consume physicalBarrier first
+  then consume universalBarrier
+
+if damageType === "magical":
+  consume magicalBarrier first
+  then consume universalBarrier
+
+if damageType === "pure":
+  consume pureBarrier first if present
+  then consume universalBarrier
+
+================================================================================
+23. ORDEM GERAL DE CÁLCULO DE DANO
+================================================================================
+
+function calculateDamageInstance(input) {
+  let damage = input.baseDamage;
+
+  // 1. Amplificação de saída
+  damage *= 1 + sum(input.outgoingAmpSameBucket);
+  damage *= product(input.outgoingUniqueMultipliers);
+
+  // 2. Ataque
+  if (input.isAttack) {
+    damage = applyAttackDamageBonuses(damage);
+    damage = applyCritIfAny(damage);
+    damage = applyConditionalAttackBonuses(damage);
+  }
+
+  // 3. Damage block antes de armor/magic resistance
+  if (input.damageType === "physical") {
+    damage -= input.physicalDamageBlock;
+  }
+
+  if (input.damageType === "magical") {
+    damage -= input.magicDamageBlock;
+  }
+
+  damage = Math.max(0, damage);
+
+  // 4. Armadura ou resistência mágica
+  if (input.damageType === "physical") {
+    damage *= armorDamageMultiplier(input.targetArmor);
+  }
+
+  if (input.damageType === "magical") {
+    damage *= magicDamageMultiplier(input.targetIntelligence, input.magicResistModifiers);
+  }
+
+  // Pure normalmente ignora essa etapa.
+
+  // 5. Barreiras
+  damage = applyTypedBarrier(damage, input.damageType);
+  damage = applyUniversalBarrier(damage);
+
+  // 6. Manipulação de entrada
+  damage *= 1 + sum(input.incomingAmpSameBucket);
+  damage *= product(input.incomingUniqueMultipliers);
+
+  return Math.max(0, damage);
+}
+
+================================================================================
+24. ECONOMIA BÁSICA PARA MANAGER
+================================================================================
+
+Gold passivo:
+
+passiveGoldPerMinute = valueByGameTime
+
+Bounty rune:
+
+bountyRuneGoldPerHero = 40 + 6 * floor(gameTimeMinutes / 4)
+
+Kill gold:
+
+killGold =
+  125
+  + deadHeroLevel * 8
+  + streakGold
+  + firstBloodGold
+
+First blood:
+
+firstBloodGold = 135
+
+Assist gold:
+
+assistGold =
+  (30 + victimNetWorth * 0.038)
+  * netWorthDifferenceFactor
+  / numberOfHeroes
+
+Se o time está na frente:
+
+k = 1 - netWorthDifference / leadingTeamNetWorth
+
+Se o time está atrás:
+
+k = 1 + netWorthDifference / leadingTeamNetWorth
+
+Gold perdido na morte:
+
+goldLossOnDeath = netWorth / 40
+
+Buyback:
+
+buybackCost = floor(200 + netWorth / 13)
+
+================================================================================
+25. EXPERIÊNCIA E NÍVEL
+================================================================================
+
+Modelo genérico para manager:
+
+xpToNextLevel[level] = configuredTable[level]
+
+levelFromXp(totalXp):
+  level = 1
+  while totalXp >= xpRequiredForNextLevel[level]:
+    level += 1
+  return level
+
+Ganho por kill:
+
+killXp =
+  baseKillXpByVictimLevel
+  * comebackFactor
+  / numberOfNearbyHeroes
+
+Ganho por creep:
+
+xpGain =
+  creepXpValue / numberOfEligibleHeroes
+
+================================================================================
+26. FLAGS ÚTEIS POR HABILIDADE
+================================================================================
+
+Use flags para não transformar a engine em exceções hardcoded:
+
+ignoresArmor
+ignoresMagicResistance
+ignoresDamageBlock
+ignoresBarrier
+cannotCrit
+canCrit
+canCleave
+canSplash
+canLifesteal
+canSpellLifesteal
+piercesDebuffImmunity
+isHpRemoval
+usesPseudoRandom
+usesTrueStrike
+usesAccuracy
+usesOverkillForLifesteal
+isAttackModifier
+isInstantAttack
+isIllusionDamage
+isSummonDamage
+isBuildingDamage
+isCreepReduced
+isHeroOnly
+isNonLethal
+dispellable
+reflectable
+blockable
+amplifiable
+
+================================================================================
+27. FUNÇÕES TYPESCRIPT SUGERIDAS
+================================================================================
+
+export function armorDamageMultiplier(armor: number): number {
+  return 1 - (0.06 * armor) / (1 + 0.06 * Math.abs(armor));
+}
+
+export function physicalDamageReduction(armor: number): number {
+  return 1 - armorDamageMultiplier(armor);
+}
+
+export function magicDamageMultiplier(
+  baseMagicResistance: number,
+  modifiers: number[] = []
+): number {
+  return [baseMagicResistance, ...modifiers].reduce(
+    (multiplier, resistance) => multiplier * (1 - resistance),
+    1
+  );
+}
+
+export function combinedMultiplicativeResistance(values: number[]): number {
+  return 1 - values.reduce((multiplier, value) => multiplier * (1 - value), 1);
+}
+
+export function attacksPerSecond(
+  totalAttackSpeed: number,
+  baseAttackTime: number
+): number {
+  const clampedAttackSpeed = Math.max(20, Math.min(700, totalAttackSpeed));
+  return clampedAttackSpeed / (100 * baseAttackTime);
+}
+
+export function expectedCritMultiplier(
+  crits: Array<{ chance: number; multiplier: number }>
+): number {
+  const sorted = [...crits].sort((a, b) => b.multiplier - a.multiplier);
+
+  let expected = 1;
+  let previousFailures = 1;
+
+  for (const crit of sorted) {
+    expected += previousFailures * crit.chance * (crit.multiplier - 1);
+    previousFailures *= 1 - crit.chance;
+  }
+
+  return expected;
+}
+
+export function finalDebuffDuration(
+  baseDuration: number,
+  statusResistances: number[]
+): number {
+  const totalStatusResistance = combinedMultiplicativeResistance(statusResistances);
+  return baseDuration * (1 - totalStatusResistance);
+}
+
+export function finalSlowValue(
+  rawSlow: number,
+  slowResistances: number[]
+): number {
+  const totalSlowResistance = combinedMultiplicativeResistance(slowResistances);
+  return rawSlow * (1 - totalSlowResistance);
+}
+
+export function clampMovementSpeed(movementSpeed: number): number {
+  return Math.max(100, Math.min(550, movementSpeed));
+}
+
+================================================================================
+28. RESUMO DO PIPELINE PARA O CODEX
+================================================================================
+
+Implementar nesta ordem:
+
+1. calculateAttributesAtLevel
+2. calculateDerivedStats
+3. calculateAttackSpeed
+4. calculateArmorMultiplier
+5. calculateMagicResistanceMultiplier
+6. calculateExpectedCritMultiplier
+7. calculateHitChance
+8. calculateDamageInstance
+9. calculateDps
+10. calculateHealing
+11. calculateGoldEvents
+12. criar testes unitários para cada fórmula
+
+Não implementar todas as exceções de habilidades na primeira versão.
+Criar flags e buckets para permitir expansão.

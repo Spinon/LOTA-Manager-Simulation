@@ -1,0 +1,1587 @@
+// moba_manager_ai_design_codex.txt
+// Documento de arquitetura de IA para um simulador de manager de MOBA.
+// Objetivo: criar uma IA interessante, legível e expansível, não apenas uma coleção de fórmulas.
+// Linguagem-alvo sugerida: TypeScript.
+//
+// Ideia central:
+// A IA não deve jogar como um bot perfeito. Ela deve simular jogadores e times com estilo, leitura de mapa,
+// disciplina, erro, comunicação, tilt, conforto de herói, plano de draft e adaptação ao estado da partida.
+
+================================================================================
+1. FILOSOFIA DA IA
+================================================================================
+
+O manager precisa de uma IA que responda a quatro perguntas:
+
+1. O que o time quer fazer?
+2. O que cada jogador acha que deve fazer?
+3. O que cada jogador consegue executar?
+4. O que realmente acontece na partida?
+
+A diferença entre essas quatro respostas cria a graça do manager.
+
+Exemplo:
+
+O time quer fazer Roshan.
+O carry quer terminar um item.
+O suporte acha que precisa wardar antes.
+O mid está sem ultimate.
+O offlaner está confiante demais e entra antes.
+
+Resultado:
+A jogada pode atrasar, falhar, virar fight ruim, ou funcionar porque o adversário errou mais.
+
+A IA deve ter:
+- intenção macro;
+- personalidade de jogador;
+- incerteza de informação;
+- execução imperfeita;
+- comunicação;
+- adaptação durante a partida;
+- memória curta;
+- estilo de time.
+
+================================================================================
+2. CAMADAS DA IA
+================================================================================
+
+Criar a IA em camadas:
+
+1. GameStateAnalyzer
+   Lê o estado bruto da partida e produz métricas úteis.
+
+2. TeamBrain
+   Decide o plano macro do time.
+
+3. PlayerAgent
+   Cada jogador/herói decide seu modo atual.
+
+4. RoleBrain
+   Ajusta prioridades conforme posição 1-5.
+
+5. TacticalPlanner
+   Transforma o plano em ações coordenadas.
+
+6. ActionSelector
+   Escolhe ação concreta.
+
+7. ExecutionModel
+   Aplica erro humano, delay, mecânica, comunicação e fadiga.
+
+8. MemorySystem
+   Guarda eventos recentes e tendências.
+
+9. AdaptationSystem
+   Ajusta pesos conforme a partida evolui.
+
+10. PersonalitySystem
+   Faz jogadores diferentes tomarem decisões diferentes.
+
+================================================================================
+3. ORGANIZAÇÃO DE ARQUIVOS SUGERIDA
+================================================================================
+
+src/ai/types/aiTypes.ts
+src/ai/config/aiConstants.ts
+
+src/ai/analysis/gameStateAnalyzer.ts
+src/ai/analysis/laneStateAnalyzer.ts
+src/ai/analysis/objectiveStateAnalyzer.ts
+src/ai/analysis/fightStateAnalyzer.ts
+src/ai/analysis/visionStateAnalyzer.ts
+
+src/ai/team/teamBrain.ts
+src/ai/team/teamPlanGenerator.ts
+src/ai/team/teamCommunicationSystem.ts
+src/ai/team/teamStyleSystem.ts
+
+src/ai/player/playerAgent.ts
+src/ai/player/playerPersonalitySystem.ts
+src/ai/player/playerRoleBrain.ts
+src/ai/player/playerMemorySystem.ts
+
+src/ai/decision/utilityScoring.ts
+src/ai/decision/modeSelector.ts
+src/ai/decision/actionSelector.ts
+src/ai/decision/executionModel.ts
+
+src/ai/modes/laningMode.ts
+src/ai/modes/farmMode.ts
+src/ai/modes/fightMode.ts
+src/ai/modes/retreatMode.ts
+src/ai/modes/gankMode.ts
+src/ai/modes/objectiveMode.ts
+src/ai/modes/wardingMode.ts
+src/ai/modes/splitPushMode.ts
+src/ai/modes/highGroundMode.ts
+
+src/ai/tests/
+
+================================================================================
+4. TIPOS PRINCIPAIS
+================================================================================
+
+export type TeamId = "blue" | "red";
+
+export type PlayerRole =
+  | "position_1_carry"
+  | "position_2_mid"
+  | "position_3_offlane"
+  | "position_4_soft_support"
+  | "position_5_hard_support";
+
+export type TeamPlanType =
+  | "lane_default"
+  | "farm_map"
+  | "group_push"
+  | "defend_tower"
+  | "smoke_gank"
+  | "take_roshan"
+  | "take_tormentor"
+  | "split_push"
+  | "avoid_fight"
+  | "force_fight"
+  | "defend_high_ground"
+  | "end_game"
+  | "reset_map";
+
+export type PlayerModeType =
+  | "laning"
+  | "last_hit"
+  | "deny"
+  | "harass"
+  | "retreat"
+  | "farm_lane"
+  | "farm_jungle"
+  | "push_lane"
+  | "defend_lane"
+  | "gank"
+  | "roam"
+  | "ward"
+  | "deward"
+  | "take_rune"
+  | "buy_item"
+  | "join_fight"
+  | "save_ally"
+  | "finish_enemy"
+  | "take_objective"
+  | "split_push"
+  | "hold_high_ground";
+
+export type BotActionType =
+  | "move_to_position"
+  | "move_to_lane"
+  | "move_to_camp"
+  | "attack_unit"
+  | "last_hit"
+  | "deny"
+  | "cast_spell"
+  | "use_item"
+  | "retreat_to_safety"
+  | "group_with_team"
+  | "push_tower"
+  | "defend_tower"
+  | "take_boss"
+  | "place_ward"
+  | "deward"
+  | "smoke_gank"
+  | "teleport"
+  | "buyback"
+  | "wait";
+
+export interface TeamPlan {
+  type: TeamPlanType;
+  targetLane?: "top" | "mid" | "bottom";
+  targetObjectiveId?: string;
+  targetEnemyHeroId?: string;
+  urgency: number;       // 0-100
+  confidence: number;    // 0-100
+  risk: number;          // 0-100
+  expectedValue: number; // valor abstrato
+  expiresAtGameTime: number;
+  reasonTags: string[];
+}
+
+export interface PlayerModeScore {
+  mode: PlayerModeType;
+  score: number;
+  urgency: number;
+  risk: number;
+  reasonTags: string[];
+}
+
+export interface BotAction {
+  type: BotActionType;
+  targetUnitId?: string;
+  targetPosition?: { x: number; y: number };
+  spellId?: string;
+  itemId?: string;
+  priority: number;
+  expectedValue: number;
+  risk: number;
+  reasonTags: string[];
+}
+
+================================================================================
+5. ESTADO ANALISADO DA PARTIDA
+================================================================================
+
+O GameStateAnalyzer deve transformar o estado bruto em métricas.
+
+export interface AnalyzedGameState {
+  gameTime: {
+    seconds: number;
+    minutes: number;
+    isDay: boolean;
+    phase: "laning" | "early_mid" | "mid_game" | "late_game" | "ultra_late";
+  };
+
+  team: Record<TeamId, TeamAnalysis>;
+  lanes: Record<"top" | "mid" | "bottom", LaneAnalysis>;
+  objectives: ObjectiveAnalysis;
+  vision: Record<TeamId, VisionAnalysis>;
+  fights: FightAnalysis;
+  map: MapAnalysis;
+}
+
+export interface TeamAnalysis {
+  teamId: TeamId;
+  netWorth: number;
+  xp: number;
+  netWorthLead: number;
+  xpLead: number;
+  aliveHeroes: number;
+  deadHeroes: number;
+  averageHealthPct: number;
+  averageManaPct: number;
+  keyUltimatesReady: number;
+  buybacksAvailable: number;
+  teamfightPower: number;
+  pickoffPower: number;
+  pushPower: number;
+  roshanPower: number;
+  defensivePower: number;
+  comebackPressure: number;
+  throwRisk: number;
+}
+
+export interface LaneAnalysis {
+  lane: "top" | "mid" | "bottom";
+  lanePosition: number; // -1 aliado, 0 centro, +1 inimigo
+  alliedPressureBlue: number;
+  alliedPressureRed: number;
+  towerThreatBlue: number;
+  towerThreatRed: number;
+  farmSafetyBlue: number;
+  farmSafetyRed: number;
+  gankRiskBlue: number;
+  gankRiskRed: number;
+}
+
+export interface ObjectiveAnalysis {
+  roshanAvailable: boolean;
+  roshanContestRiskBlue: number;
+  roshanContestRiskRed: number;
+  tormentorAvailableBlue: boolean;
+  tormentorAvailableRed: boolean;
+  nextPowerRuneTime: number;
+  nextBountyRuneTime: number;
+  highValueTowerThreats: string[];
+}
+
+export interface VisionAnalysis {
+  visionControlScore: number;
+  aggressiveVisionScore: number;
+  defensiveVisionScore: number;
+  roshanVisionScore: number;
+  darkMapRisk: number;
+  enemyMissingThreat: number;
+}
+
+export interface FightAnalysis {
+  likelyFightAreas: string[];
+  blueFightReadiness: number;
+  redFightReadiness: number;
+  blueInitiationAdvantage: number;
+  redInitiationAdvantage: number;
+  blueSaveAdvantage: number;
+  redSaveAdvantage: number;
+}
+
+export interface MapAnalysis {
+  blueMapControl: number;
+  redMapControl: number;
+  safeFarmBlue: number;
+  safeFarmRed: number;
+  contestedFarm: number;
+  splitPushThreatBlue: number;
+  splitPushThreatRed: number;
+}
+
+================================================================================
+6. PERFIL DO TIME
+================================================================================
+
+export type TeamStyle =
+  | "balanced"
+  | "aggressive"
+  | "methodical"
+  | "greedy"
+  | "pickoff"
+  | "teamfight"
+  | "split_push"
+  | "objective_focused"
+  | "defensive"
+  | "chaotic";
+
+export interface TeamAiProfile {
+  teamId: TeamId;
+  style: TeamStyle;
+
+  aggression: number;
+  discipline: number;
+  greed: number;
+  objectiveFocus: number;
+  visionDiscipline: number;
+  coordination: number;
+  tempoAwareness: number;
+  comebackPatience: number;
+  highGroundDiscipline: number;
+  roshanPriority: number;
+
+  preferredPlans: TeamPlanType[];
+}
+
+Estilos:
+
+aggressive:
+  aggression alto
+  greed baixo
+  fightDesire maior
+  smoke_gank frequente
+
+methodical:
+  visionDiscipline alto
+  objectiveFocus alto
+  só luta com visão/recursos
+
+greedy:
+  farm_map alto
+  evita fight antes de itens
+  bom late game, vulnerável a pressão
+
+chaotic:
+  variância alta
+  calls conflitantes
+  pode ganhar por pickoff inesperado ou entregar vantagem
+
+================================================================================
+7. PERFIL DO JOGADOR
+================================================================================
+
+export interface PlayerAiProfile {
+  playerId: string;
+  role: PlayerRole;
+
+  mechanics: number;
+  laning: number;
+  farmingEfficiency: number;
+  mapAwareness: number;
+  teamfight: number;
+  positioning: number;
+  communication: number;
+  discipline: number;
+  aggression: number;
+  clutch: number;
+  tiltResistance: number;
+  adaptability: number;
+  heroMastery: number;
+
+  personality: PlayerPersonality;
+}
+
+export interface PlayerPersonality {
+  riskTolerance: number;
+  greed: number;
+  selfConfidence: number;
+  obedienceToCalls: number;
+  playmakingBias: number;
+  saveAllyBias: number;
+  farmBias: number;
+  objectiveBias: number;
+  tiltLevel: number;
+  tiltResponse: "reckless" | "passive" | "focused" | "random";
+}
+
+================================================================================
+8. MEMÓRIA E CONTEXTO
+================================================================================
+
+export interface TeamMemory {
+  recentDeaths: MemoryEvent[];
+  recentKills: MemoryEvent[];
+  failedGanks: MemoryEvent[];
+  successfulGanks: MemoryEvent[];
+  lostObjectives: MemoryEvent[];
+  wonFights: MemoryEvent[];
+  enemyWardPredictions: WardPrediction[];
+  enemyBehaviorTrends: EnemyBehaviorTrend[];
+}
+
+export interface MemoryEvent {
+  gameTime: number;
+  type: string;
+  location: string;
+  involvedHeroIds: string[];
+  value: number;
+  tags: string[];
+}
+
+export interface WardPrediction {
+  areaId: string;
+  confidence: number;
+  lastUpdatedGameTime: number;
+  reasonTags: string[];
+}
+
+export interface EnemyBehaviorTrend {
+  trendId: string;
+  confidence: number;
+  tags: string[];
+}
+
+Usos:
+
+- Se o carry morreu duas vezes na mesma lane, aumentar dangerScore daquela região.
+- Se o inimigo sempre responde top, aumentar splitPushValue bottom.
+- Se o suporte inimigo wardou Roshan duas vezes, aumentar dewardChance nessa área.
+- Se o time perdeu fight sem ultimate, reduzir fightDesire quando keyCooldownsMissing.
+
+================================================================================
+9. SISTEMA DE DESEJOS DO TIME
+================================================================================
+
+TeamBrain gera planos candidatos e escolhe o melhor.
+
+teamPlanScore =
+  expectedValue
+  + styleBonus
+  + timingBonus
+  + coordinationBonus
+  - risk
+  - informationUncertainty
+  - opportunityCost
+
+selectedPlan =
+  maxBy(candidatePlans, teamPlanScore)
+
+Não trocar plano a cada tick.
+
+Se plano atual ainda é válido:
+
+currentPlan.score += planStickinessBonus
+
+planStickinessBonus = 10 a 25
+
+================================================================================
+10. PLANOS MACRO
+================================================================================
+
+10.1 Farm map
+
+farmMapScore =
+  safeFarmAvailable
+  + itemTimingNeed
+  + teamGreed
+  + lowFightReadiness
+  + scalingAdvantage
+  - enemyMapPressure
+  - objectiveAtRisk
+  - smokeThreat
+
+10.2 Group push
+
+groupPushScore =
+  towerVulnerability
+  + teamPushPower
+  + numbersAdvantage
+  + keyCooldownsReady
+  + lanePressure
+  - enemyWaveClear
+  - enemyInitiationThreat
+  - glyphAvailablePenalty
+
+10.3 Smoke gank
+
+smokeGankScore =
+  pickoffPower
+  + enemyCoreShowing
+  + visionAdvantage
+  + smokeAvailable
+  + objectiveFollowup
+  - enemyDefensiveVision
+  - lowDamageRisk
+  - timeCost
+
+10.4 Take Roshan
+
+roshanScore =
+  roshanAvailable
+  + teamBossDamage
+  + visionAroundPit
+  + lanePriority
+  + enemyDeadOrShowingFar
+  + aegisValueForCarry
+  - contestRisk
+  - lowHealthAfterRoshanRisk
+
+10.5 Defend high ground
+
+defendHighGroundScore =
+  enemySiegeThreat
+  + highGroundAdvantage
+  + buybackAvailability
+  + waveClear
+  + glyphAvailable
+  - chanceOfBeingDove
+  - splitPushAlternativeValue
+
+10.6 Split push
+
+splitPushScore =
+  splitPusherEscape
+  + sideLanePressure
+  + enemySlowResponse
+  + teleportForceValue
+  + towerTradeValue
+  - pickoffRisk
+  - teamfightMissRisk
+
+================================================================================
+11. SISTEMA DE MODOS DO JOGADOR
+================================================================================
+
+Cada PlayerAgent calcula scores para modos.
+
+selectedMode =
+  maxBy(modeScores, score)
+
+Adicionar:
+- hysteresis para evitar troca constante;
+- role bias;
+- team plan bias;
+- personalidade;
+- condição do herói;
+- informação incompleta.
+
+Final score:
+
+modeScore =
+  baseModeScore
+  + roleModifier
+  + teamPlanModifier
+  + personalityModifier
+  + heroKitModifier
+  + playerSkillModifier
+  + memoryModifier
+  + randomNoise
+  - riskPenalty
+
+randomNoise deve depender da disciplina:
+
+randomNoiseRange =
+  maxNoise * (1 - discipline / 100)
+
+================================================================================
+12. MODOS PRINCIPAIS
+================================================================================
+
+12.1 Laning
+
+laningScore =
+  lanePhaseWeight
+  + laneAssignmentValue
+  + xpNeed
+  + farmNeed
+  - killThreat
+  - rotationUrgency
+
+12.2 Last hit
+
+lastHitScore =
+  creepLastHittable
+  * playerLaningSkill
+  * heroAttackComfort
+  * laneSafety
+
+12.3 Harass
+
+harassScore =
+  attackRangeAdvantage
+  + spellHarassValue
+  + enemyRegenLow
+  + supportFollowup
+  - creepAggroRisk
+  - manaCostConcern
+
+12.4 Retreat
+
+retreatScore =
+  lowHealth
+  + incomingDamageThreat
+  + enemyNumbersAdvantage
+  + missingEnemyThreat
+  + keySpellsOnCooldown
+  - nearbyAlliedSave
+  - towerSafety
+  - playerGreed
+
+12.5 Farm lane
+
+farmLaneScore =
+  safeWaveAvailable
+  + itemTimingUrgency
+  + laneFarmValue
+  + roleFarmPriority
+  - gankRisk
+  - teamFightUrgency
+
+12.6 Farm jungle
+
+farmJungleScore =
+  campAvailability
+  + heroJungleClear
+  + safeFarmNeed
+  + laneTooDangerous
+  - objectiveUrgency
+  - inefficientPathing
+
+12.7 Join fight
+
+joinFightScore =
+  fightNearby
+  + teamPlanWantsFight
+  + heroFightReadiness
+  + numbersNeeded
+  + teleportAvailable
+  - farmTimingConflict
+  - lowResources
+
+12.8 Save ally
+
+saveAllyScore =
+  allyDeathRisk
+  + allyHeroValue
+  + saveSpellReady
+  + playerSaveAllyBias
+  - selfDeathRisk
+  - impossibleSavePenalty
+
+12.9 Finish enemy
+
+finishEnemyScore =
+  enemyLowHealth
+  + burstAvailable
+  + chaseAvailable
+  + killValue
+  - overextensionRisk
+  - baitRisk
+
+12.10 Ward
+
+wardScore =
+  supportRoleWeight
+  + objectiveSetupNeed
+  + darkMapRisk
+  + wardAvailable
+  + visionDiscipline
+  - deathRiskWhileWarding
+  - immediateFightUrgency
+
+12.11 Deward
+
+dewardScore =
+  suspectedEnemyWard
+  + sentryAvailable
+  + areaImportance
+  + safeToDeward
+  - timeCost
+
+12.12 Split push
+
+splitPushModeScore =
+  heroSplitPushKit
+  + escapeAvailable
+  + sideLaneWave
+  + teamPlanSplitPush
+  + enemyShowingFar
+  - pickoffThreat
+  - buybackUnavailableRisk
+
+================================================================================
+13. ACTION SELECTION
+================================================================================
+
+Depois do modo, escolher ação.
+
+Exemplo para farm_lane:
+
+candidateActions:
+  - move_to_lane
+  - last_hit
+  - attack_creep
+  - pull_creep_aggro
+  - retreat_to_tower
+  - use_spell_to_secure_ranged_creep
+
+Action score:
+
+actionScore =
+  expectedValue
+  + reliability
+  + roleFit
+  - risk
+  - resourceCost
+  - cooldownOpportunityCost
+
+selectedAction =
+  maxBy(candidateActions, actionScore)
+
+================================================================================
+14. MODELO DE EXECUÇÃO HUMANA
+================================================================================
+
+A decisão pode ser boa, mas a execução pode falhar.
+
+executionSuccessChance =
+  baseActionReliability
+  + relevantPlayerSkill
+  + heroMastery
+  + teamCommunication
+  + moraleModifier
+  - actionDifficulty
+  - fatiguePenalty
+  - tiltPenalty
+  - pressurePenalty
+
+executionSuccessChance =
+  clamp(executionSuccessChance, 0.05, 0.98)
+
+Se falhar:
+
+failureType =
+  weightedRandom([
+    late_reaction,
+    bad_position,
+    missed_spell,
+    wrong_target,
+    panic_retreat,
+    overcommit,
+    no_followup,
+    mechanical_error
+  ])
+
+Impacto por falha:
+- late_reaction: ação ocorre com delay.
+- bad_position: aumenta risco.
+- missed_spell: spell entra em cooldown e não aplica efeito.
+- wrong_target: aplica ação em alvo subótimo.
+- panic_retreat: cancela plano.
+- overcommit: aumenta chance de morte.
+- no_followup: reduz valor de iniciação.
+
+================================================================================
+15. COMUNICAÇÃO DO TIME
+================================================================================
+
+Mesmo que TeamBrain escolha um plano, jogadores podem não seguir.
+
+followCallChance =
+  teamCoordination
+  * playerObedienceToCalls
+  * playerCommunication
+  * planClarity
+  * moraleMultiplier
+  * (1 - tiltPenalty)
+
+Se não segue call:
+  player usa modo individual com menor teamPlanModifier.
+
+Call clarity:
+
+planClarity =
+  confidence
+  + visionInformation
+  + obviousObjectiveValue
+  - chaosLevel
+
+Chaos level:
+
+chaosLevel =
+  multipleThreats
+  + recentDeaths
+  + conflictingLanePressure
+  + lowVision
+  + teamTilt
+
+================================================================================
+16. INFORMAÇÃO IMPERFEITA
+================================================================================
+
+A IA não deve sempre saber onde todos estão.
+
+Para cada inimigo não visível:
+
+estimatedEnemyPosition =
+  lastSeenPosition
+  + likelyPathFromBehavior
+  + objectiveInterest
+  + farmPattern
+
+uncertainty =
+  timeSinceLastSeen
+  * enemyMobility
+  * mapDarkness
+
+threatFromMissingEnemy =
+  enemyGankPower
+  * uncertaintyWeight
+  * proximityToLikelyPath
+
+Se time tem alta mapAwareness:
+  reduz uncertainty.
+
+Se time tem visão boa:
+  reduz uncertainty.
+
+================================================================================
+17. PERSONALIDADE E ERROS INTERESSANTES
+================================================================================
+
+Jogador agressivo:
+  fightScore += aggression * 0.2
+  finishEnemyScore += aggression * 0.3
+  retreatScore -= aggression * 0.15
+
+Jogador disciplinado:
+  retreatScore += discipline * 0.15 quando risco alto
+  highGroundThrowRisk pesa mais
+  randomNoise menor
+
+Jogador ganancioso:
+  farmScore += greed * 0.25
+  joinFightScore -= greed * 0.10 se itemTiming próximo
+  deathRisk ignorado parcialmente
+
+Jogador playmaker:
+  gankScore += playmakingBias * 0.25
+  initiationScore += playmakingBias * 0.25
+  overcommitRisk += se discipline baixo
+
+Jogador suporte protetor:
+  saveAllyScore += saveAllyBias * 0.30
+  wardScore += visionDiscipline * 0.20
+
+================================================================================
+18. TILT E MOMENTUM
+================================================================================
+
+tiltGain =
+  deathValue
+  + throwEvent
+  + blameEvent
+  + losingStreak
+  - tiltResistance
+
+tiltRecovery =
+  goodFight
+  + coachPause
+  + objectiveTaken
+  + timeWithoutMistake
+
+tiltLevel =
+  clamp(tiltLevel + tiltGain - tiltRecovery, 0, 100)
+
+Efeitos:
+
+executionSuccessChance -= tiltLevel * 0.002
+randomNoise += tiltLevel * 0.1
+disciplineEffective -= tiltLevel * 0.3
+aggressionEffective += tiltLevel * tiltAggressionBias
+
+if personality.tiltResponse == "passive":
+  aggressionEffective -= tiltLevel * 0.2
+  retreatScore += tiltLevel * 0.2
+
+if personality.tiltResponse == "reckless":
+  aggressionEffective += tiltLevel * 0.2
+  retreatScore -= tiltLevel * 0.2
+
+================================================================================
+19. ADAPTAÇÃO DURANTE A PARTIDA
+================================================================================
+
+Se gank falhou em uma área:
+
+areaDangerMemory += failedGankPenalty
+futureGankScoreInArea -= areaDangerMemory
+
+Se split push forçou TP várias vezes:
+
+splitPushPlanScore += provenStrategyBonus
+
+Se inimigo sem buyback:
+
+endGameScore += noBuybackPunishBonus
+
+Se high ground falhou:
+
+highGroundDiscipline += temporaryCautionBonus
+highGroundAttemptScore -= recentFailedSiegePenalty
+
+================================================================================
+20. ROLE BRAIN
+================================================================================
+
+Position 1 Carry:
+  prioriza farm, item timing, segurança, late game.
+  entra em fight quando ultimate/item pronto, fight é perto, objetivo alto ou time precisa dele.
+
+Position 2 Mid:
+  prioriza runas, tempo, gank, burst, controle de mapa.
+  alterna entre farm e playmaking.
+
+Position 3 Offlane:
+  prioriza pressão, iniciar, ocupar área perigosa, quebrar mapa.
+  aceita mais risco.
+
+Position 4 Soft Support:
+  prioriza rotação, runa, gank, visão agressiva, setup.
+  cria caos.
+
+Position 5 Hard Support:
+  prioriza proteção, visão defensiva, save, pulls, stacks.
+  sacrifica recursos.
+
+================================================================================
+21. EXEMPLO DE SCORING POR ROLE
+================================================================================
+
+const ROLE_MODE_WEIGHTS = {
+  position_1_carry: {
+    farm_lane: 1.30,
+    farm_jungle: 1.25,
+    join_fight: 0.85,
+    split_push: 1.10,
+    ward: 0.10,
+    save_ally: 0.30,
+  },
+
+  position_2_mid: {
+    farm_lane: 1.05,
+    farm_jungle: 0.90,
+    gank: 1.20,
+    take_rune: 1.35,
+    join_fight: 1.10,
+    push_lane: 1.05,
+  },
+
+  position_3_offlane: {
+    defend_lane: 1.10,
+    push_lane: 1.15,
+    join_fight: 1.20,
+    take_objective: 1.10,
+    retreat: 0.90,
+  },
+
+  position_4_soft_support: {
+    gank: 1.30,
+    roam: 1.25,
+    ward: 1.00,
+    deward: 1.00,
+    farm_lane: 0.35,
+    join_fight: 1.15,
+  },
+
+  position_5_hard_support: {
+    ward: 1.35,
+    deward: 1.25,
+    save_ally: 1.30,
+    farm_lane: 0.20,
+    farm_jungle: 0.10,
+    retreat: 1.10,
+  },
+};
+
+================================================================================
+22. DRAFT INFLUENCIANDO IA
+================================================================================
+
+teamDraftIdentity:
+  - early_push
+  - pickoff
+  - teamfight
+  - split_push
+  - late_game
+  - skirmish
+  - defensive
+  - roshan
+  - high_ground_siege
+  - protect_one_core
+
+if draftIdentity includes "early_push":
+  groupPushScore += 20 before minute 25
+  farmMapScore -= 10
+  objectiveFocus += 15
+
+if draftIdentity includes "late_game":
+  farmMapScore += 20 before minute 30
+  avoidFightScore += 10 if no item timing
+  defendHighGroundScore += 15
+
+if draftIdentity includes "pickoff":
+  smokeGankScore += 20
+  wardAggressiveScore += 15
+  fiveOnFiveFightScore -= 10
+
+================================================================================
+23. ITEM TIMING INFLUENCIANDO IA
+================================================================================
+
+itemTimingUrgency =
+  goldNeededForKeyItem / expectedGpm
+
+Se item quase pronto:
+
+if expectedTimeToItemSeconds < 90:
+  farmScore += 20
+  fightScore -= 10
+  riskyMoveScore -= 15
+
+Se item acabou de fechar:
+
+if keyItemJustCompleted:
+  fightScore += 20
+  objectiveScore += 15
+  smokeGankScore += 10
+
+================================================================================
+24. COOLDOWNS INFLUENCIANDO IA
+================================================================================
+
+teamCooldownReadiness =
+  readyKeySpells / totalKeySpells
+
+fightScore += teamCooldownReadiness * 30
+
+Se ultimate importante faltando:
+
+fightScore -= missingUltimateImpact
+
+Se inimigo gastou ultimate:
+
+fightScore += enemyMissingUltimatePunishValue
+
+================================================================================
+25. BUYBACK INFLUENCIANDO IA
+================================================================================
+
+enemyBuybackThreat =
+  enemyDeadHeroesWithBuyback
+  * averageEnemyHeroPower
+  * highGroundBuybackMultiplier
+
+highGroundAttemptScore -= enemyBuybackThreat
+
+Se inimigo sem buyback:
+
+endGameScore += noBuybackWindowValue
+
+Se nosso core sem buyback:
+
+throwRisk += ourCoreNoBuybackPenalty
+
+================================================================================
+26. MAPA COMO HEATMAP
+================================================================================
+
+Criar heatmaps:
+
+dangerMap[team][cell]
+farmValueMap[team][cell]
+visionValueMap[team][cell]
+objectiveValueMap[team][cell]
+enemyProbabilityMap[team][cell]
+
+Farm action usa:
+
+farmCellScore =
+  farmValue
+  + pathEfficiency
+  + lanePriority
+  - danger
+  - opportunityCost
+
+Ward action usa:
+
+wardCellScore =
+  visionValue
+  + objectiveValue
+  + enemyPathProbability
+  - dewardRisk
+  - placementDanger
+
+Gank usa:
+
+gankPathScore =
+  targetValue
+  + pathConcealment
+  + allyFollowup
+  - enemyVisionProbability
+  - travelTimeCost
+
+================================================================================
+27. ACTION PIPELINE
+================================================================================
+
+A cada tick de IA:
+
+1. analyzeGameState(rawGameState)
+2. updateTeamMemory(events)
+3. generateTeamPlans(analyzedState, teamProfile, memory)
+4. selectTeamPlan(candidatePlans)
+5. for each player:
+   5.1 buildPlayerContext
+   5.2 scoreModes
+   5.3 selectMode with hysteresis
+   5.4 generateActionsForMode
+   5.5 selectAction
+   5.6 applyExecutionModel
+6. resolveActions
+7. store resulting events
+
+================================================================================
+28. HYSTERESIS PARA NÃO FICAR PISCANDO MODO
+================================================================================
+
+Se modo atual ainda é válido:
+
+currentModeScore += modeStickiness
+
+modeStickiness:
+  laning: 8
+  farming: 10
+  retreat: 20
+  fight: 12
+  objective: 15
+
+Trocar modo só se:
+
+newModeScore > currentModeScore + switchThreshold
+
+switchThreshold = 8
+
+================================================================================
+29. DECISION NOISE
+================================================================================
+
+noiseAmplitude =
+  baseNoise
+  * (1 - discipline / 100)
+  * (1 + tiltLevel / 100)
+  * chaosMultiplier
+
+scoreWithNoise =
+  score + random(-noiseAmplitude, noiseAmplitude)
+
+Times profissionais:
+  baseNoise = 3 a 8
+
+Times amadores:
+  baseNoise = 10 a 25
+
+================================================================================
+30. DIFICULDADE DA IA
+================================================================================
+
+A dificuldade não deve ser só bônus numérico.
+
+Easy:
+  mais noise
+  menos memória
+  menos coordenação
+  pior avaliação de risco
+
+Normal:
+  pesos equilibrados
+
+Hard:
+  menos noise
+  boa coordenação
+  reconhece timings
+  usa visão melhor
+
+Pro:
+  boa memória
+  melhor fog inference
+  pune buyback/cooldown
+  adapta estratégia
+
+aiDifficultyConfig = {
+  decisionNoiseMultiplier,
+  mapAwarenessMultiplier,
+  coordinationMultiplier,
+  executionErrorMultiplier,
+  memoryDurationMultiplier,
+  fogInferenceAccuracy,
+}
+
+================================================================================
+31. PSEUDOCÓDIGO PRINCIPAL
+================================================================================
+
+export function updateTeamAi(input: {
+  rawGameState: RawGameState;
+  teamProfile: TeamAiProfile;
+  playerProfiles: PlayerAiProfile[];
+  currentTeamMemory: TeamMemory;
+  previousTeamPlan?: TeamPlan;
+  deltaTime: number;
+}): TeamAiOutput {
+  const analyzed = analyzeGameState(input.rawGameState);
+
+  const memory = updateTeamMemory(
+    input.currentTeamMemory,
+    input.rawGameState.recentEvents,
+    input.deltaTime
+  );
+
+  const candidatePlans = generateTeamPlans({
+    analyzed,
+    teamProfile: input.teamProfile,
+    memory,
+  });
+
+  const teamPlan = selectTeamPlan({
+    candidatePlans,
+    previousPlan: input.previousTeamPlan,
+    teamProfile: input.teamProfile,
+  });
+
+  const playerOutputs = input.playerProfiles.map((playerProfile) => {
+    const context = buildPlayerContext({
+      analyzed,
+      teamPlan,
+      playerProfile,
+      memory,
+    });
+
+    const modeScores = scorePlayerModes(context);
+
+    const selectedMode = selectPlayerMode({
+      modeScores,
+      previousMode: input.rawGameState.players[playerProfile.playerId].currentMode,
+      playerProfile,
+    });
+
+    const candidateActions = generateActionsForMode({
+      mode: selectedMode,
+      context,
+    });
+
+    const selectedAction = selectAction({
+      candidateActions,
+      context,
+    });
+
+    const executedAction = applyExecutionModel({
+      action: selectedAction,
+      context,
+      playerProfile,
+    });
+
+    return {
+      playerId: playerProfile.playerId,
+      selectedMode,
+      selectedAction,
+      executedAction,
+      modeScores,
+    };
+  });
+
+  return {
+    analyzed,
+    memory,
+    teamPlan,
+    playerOutputs,
+  };
+}
+
+================================================================================
+32. EXEMPLO DE SCORE DE MODOS
+================================================================================
+
+export function scoreRetreatMode(ctx: PlayerContext): PlayerModeScore {
+  const score =
+    ctx.self.lowHealthScore
+    + ctx.self.incomingDamageThreat
+    + ctx.local.enemyNumbersAdvantage * 12
+    + ctx.map.missingEnemyThreat * 8
+    + ctx.self.keySpellsOnCooldownPenalty
+    - ctx.local.nearbyAlliedSave * 10
+    - ctx.local.towerSafety * 8
+    - ctx.profile.personality.riskTolerance * 0.15;
+
+  return {
+    mode: "retreat",
+    score,
+    urgency: Math.min(100, score),
+    risk: 100 - score,
+    reasonTags: ["health", "threat", "numbers", "safety"],
+  };
+}
+
+export function scoreFarmLaneMode(ctx: PlayerContext): PlayerModeScore {
+  const score =
+    ctx.map.safeLaneFarmValue
+    + ctx.hero.itemTimingUrgency * 0.8
+    + ctx.role.farmPriority * 10
+    + ctx.profile.personality.farmBias * 0.2
+    - ctx.map.gankRisk * 1.2
+    - ctx.teamPlan.fightUrgency * 0.8;
+
+  return {
+    mode: "farm_lane",
+    score,
+    urgency: ctx.hero.itemTimingUrgency,
+    risk: ctx.map.gankRisk,
+    reasonTags: ["farm", "item_timing", "lane"],
+  };
+}
+
+export function scoreJoinFightMode(ctx: PlayerContext): PlayerModeScore {
+  const score =
+    ctx.fight.nearbyFightValue
+    + ctx.teamPlan.fightUrgency
+    + ctx.hero.fightReadiness
+    + ctx.local.numbersNeeded * 10
+    + ctx.self.teleportAvailableValue
+    - ctx.hero.itemTimingConflict
+    - ctx.self.lowResourcePenalty;
+
+  return {
+    mode: "join_fight",
+    score,
+    urgency: ctx.teamPlan.fightUrgency,
+    risk: ctx.fight.fightRisk,
+    reasonTags: ["fight", "team_plan", "cooldowns"],
+  };
+}
+
+================================================================================
+33. EXEMPLO DE EXECUTION MODEL
+================================================================================
+
+export function applyExecutionModel(input: {
+  action: BotAction;
+  context: PlayerContext;
+  playerProfile: PlayerAiProfile;
+}): ExecutedAction {
+  const skill =
+    getRelevantSkillForAction(input.action.type, input.playerProfile);
+
+  const successChance = clamp(
+    input.action.expectedValue / 100
+      + skill / 100
+      + input.playerProfile.heroMastery / 200
+      + input.context.team.coordination / 200
+      - input.action.risk / 150
+      - input.context.player.fatigue / 200
+      - input.playerProfile.personality.tiltLevel / 200,
+    0.05,
+    0.98
+  );
+
+  const roll = random();
+
+  if (roll <= successChance) {
+    return {
+      ...input.action,
+      executed: true,
+      failureType: null,
+      delaySeconds: 0,
+    };
+  }
+
+  const failureType = chooseFailureType(input.action, input.context, input.playerProfile);
+
+  return {
+    ...input.action,
+    executed: false,
+    failureType,
+    delaySeconds: failureType === "late_reaction" ? randomBetween(0.3, 1.5) : 0,
+  };
+}
+
+================================================================================
+34. EVENTOS PARA MEMÓRIA
+================================================================================
+
+Criar eventos:
+
+hero_killed
+hero_died
+tower_destroyed
+barracks_destroyed
+roshan_killed
+tormentor_killed
+smoke_success
+smoke_failed
+gank_success
+gank_failed
+high_ground_failed
+buyback_forced
+teamfight_won
+teamfight_lost
+ward_spotted_enemy
+ward_dewarded
+core_item_completed
+ultimate_used
+ultimate_missed
+
+Cada evento deve ter:
+- gameTime
+- location
+- teamId
+- value
+- involvedHeroes
+- tags
+
+================================================================================
+35. TESTES UNITÁRIOS RECOMENDADOS
+================================================================================
+
+1. TeamBrain escolhe take_roshan quando Roshan está vivo, visão é alta e inimigos estão mortos.
+2. TeamBrain evita high ground quando enemyBuybackThreat é alto.
+3. Carry com item quase pronto prefere farm a fight pequena.
+4. Support com ward disponível e mapa escuro escolhe ward.
+5. Jogador tiltado tem mais noise e menor executionSuccess.
+6. Jogador disciplinado recua mais cedo.
+7. Jogador agressivo tenta finish_enemy com score maior.
+8. Mode hysteresis impede alternância a cada tick.
+9. Smoke gank score cai quando enemyVisionProbability é alta.
+10. Split push score aumenta quando inimigos aparecem longe.
+11. FollowCallChance aumenta com coordination e communication.
+12. ExecutionModel pode gerar missed_spell em ação cast_spell.
+13. MemorySystem reduz gankScore em área de gank recém-falho.
+14. Draft identity early_push aumenta groupPushScore antes de 25 min.
+15. Buyback unavailable aumenta endGameScore.
+
+================================================================================
+36. IMPLEMENTAÇÃO EM FASES
+================================================================================
+
+Fase 1:
+- tipos;
+- GameStateAnalyzer simples;
+- TeamBrain com 6 planos;
+- PlayerAgent com 8 modos;
+- ActionSelector básico;
+- sem fog complexa.
+
+Fase 2:
+- personalidade;
+- execution model;
+- memória curta;
+- role weights;
+- item timing;
+- cooldown readiness.
+
+Fase 3:
+- heatmaps;
+- fog inference;
+- ward/deward;
+- smoke;
+- Roshan/Tormentor;
+- high ground.
+
+Fase 4:
+- adaptação ao longo da série;
+- scouting de adversário;
+- estilo de time;
+- tilt/momentum;
+- preparação de patch/meta.
+
+================================================================================
+37. CONSTANTES INICIAIS
+================================================================================
+
+export const AI_RULES = {
+  modeSelection: {
+    switchThreshold: 8,
+    defaultModeStickiness: 10,
+    retreatStickiness: 20,
+    objectiveStickiness: 15,
+  },
+
+  noise: {
+    professionalBaseNoise: 5,
+    amateurBaseNoise: 15,
+    maxNoise: 30,
+  },
+
+  memory: {
+    recentEventDurationSeconds: 300,
+    failedGankPenaltyDurationSeconds: 240,
+    wardPredictionDurationSeconds: 360,
+  },
+
+  execution: {
+    minSuccessChance: 0.05,
+    maxSuccessChance: 0.98,
+    fatiguePenaltyDivisor: 200,
+    tiltPenaltyDivisor: 200,
+  },
+
+  teamPlans: {
+    planStickinessBonus: 15,
+    highGroundRiskMultiplier: 1.4,
+    roshanVisionMinimum: 45,
+    smokeMinimumPickoffValue: 50,
+  },
+
+  roles: {
+    carryFarmBias: 1.3,
+    midRuneBias: 1.35,
+    offlaneRiskTolerance: 1.15,
+    softSupportRoamBias: 1.3,
+    hardSupportVisionBias: 1.35,
+  },
+};
+
+================================================================================
+38. RESUMO PARA O CODEX
+================================================================================
+
+Construir uma IA de manager baseada em Utility AI com camadas:
+
+GameStateAnalyzer:
+  transforma estado bruto em análise.
+
+TeamBrain:
+  escolhe plano macro com base em estilo, visão, objetivos, timings e risco.
+
+PlayerAgent:
+  escolhe modo individual ponderado por role, personalidade, skill, plano do time e memória.
+
+ActionSelector:
+  escolhe ação concreta dentro do modo.
+
+ExecutionModel:
+  aplica erro humano, delay, falha mecânica, tilt e fadiga.
+
+MemorySystem:
+  faz a IA lembrar eventos recentes e adaptar pesos.
+
+A IA não deve ser perfeita.
+Ela deve ser crível, configurável, testável e divertida para um manager.

@@ -1,0 +1,346 @@
+// dota_like_talents_upgrades_items_formulas.txt
+// Fórmulas para talentos, upgrades, shard/scepter-like, especializações/facets e valor de itens ativos.
+// Objetivo: apoiar progressão, build, draft e IA de compra.
+
+================================================================================
+1. SKILL LEVEL POR HERO LEVEL
+================================================================================
+
+Regras sugeridas:
+
+normalSkillMaxLevel = 4
+ultimateMaxLevel = 3
+
+Ultimate pode ser upada em níveis:
+  6, 12, 18
+
+Talentos em:
+  10, 15, 20, 25
+
+Skill points:
+
+skillPointsAvailable =
+  heroLevel - spentSkillPoints
+
+Validação:
+
+canLevelUltimate =
+  heroLevel in [6, 12, 18]
+  && ultimateLevel < allowedUltimateLevel(heroLevel)
+
+================================================================================
+2. SCORE DE LEVELAR HABILIDADE
+================================================================================
+
+skillLevelChoiceScore =
+  immediatePowerGain
+  + laneNeed
+  + farmSpeedGain
+  + killThreatGain
+  + survivabilityGain
+  + manaEfficiency
+  + buildSynergy
+  - manaBurden
+  - executionDifficulty
+
+Escolher:
+
+nextSkill =
+  maxBy(availableSkillUpgrades, skillLevelChoiceScore)
+
+================================================================================
+3. TALENT CHOICE SCORE
+================================================================================
+
+talentChoiceScore =
+  statValue
+  + heroSynergy
+  + gameStateNeed
+  + roleFit
+  + enemyCounterValue
+  + timingValue
+  - opportunityCost
+
+Exemplos:
+
+damageTalentValue =
+  addedDamage * attacksPerSecond * expectedFightDuration * damageReliability
+
+healthTalentValue =
+  addedHealth / expectedIncomingDamagePerSecond
+
+castRangeTalentValue =
+  addedCastRange * spellImpact * positioningNeed
+
+cooldownTalentValue =
+  spellImpact * (oldCooldown - newCooldown) / oldCooldown
+
+================================================================================
+4. SHARD-LIKE UPGRADE
+================================================================================
+
+Shard value:
+
+shardUpgradeValue =
+  newAbilityValue
+  + modifiedAbilityValue
+  + timingValue
+  + heroSynergy
+  - goldCostOpportunity
+  - executionDifficulty
+
+Se concede nova habilidade:
+
+newAbilityValue =
+  expectedCastsPerFight
+  * expectedEffectValue
+  * reliability
+
+Se melhora habilidade existente:
+
+modifiedAbilityValue =
+  oldAbilityImpact * upgradeMultiplier - oldAbilityImpact
+
+================================================================================
+5. SCEPTER-LIKE UPGRADE
+================================================================================
+
+Scepter value:
+
+scepterUpgradeValue =
+  ultimateUpgradeValue
+  + newAbilityValue
+  + statValue
+  + lateGameScaling
+  + teamfightImpact
+  - itemSlotCost
+  - goldOpportunityCost
+
+Gold efficiency:
+
+goldEfficiency =
+  totalStatGoldValue / itemCost
+
+Mas item ativo/passivo forte deve usar:
+
+trueItemValue =
+  statValue
+  + activeValue
+  + passiveValue
+  + timingValue
+
+================================================================================
+6. INNATE / PASSIVA INATA
+================================================================================
+
+Innate scaling:
+
+innateValueAtLevel =
+  baseInnateValue
+  + level * innateLevelScaling
+  + primaryAttribute * innateAttributeScaling
+
+Innate score:
+
+innateImpact =
+  laneImpact
+  + farmImpact
+  + fightImpact
+  + mapImpact
+
+================================================================================
+7. FACET / ESPECIALIZAÇÃO
+================================================================================
+
+Facet choice score:
+
+facetScore =
+  playerStyleFit
+  + draftSynergy
+  + laneMatchupValue
+  + teamfightPlanValue
+  + scalingFit
+  - counteredByEnemy
+
+Escolha:
+
+selectedFacet =
+  maxBy(availableFacets, facetScore)
+
+================================================================================
+8. ITEM ACTIVE VALUE
+================================================================================
+
+activeItemValue =
+  effectMagnitude
+  * reliability
+  * expectedTargets
+  * fightImportance
+  * uptime
+  - manaBurden
+  - executionDifficulty
+  - overlapPenalty
+
+Uptime:
+
+uptime =
+  effectDuration / cooldown
+
+Item com cast range:
+
+positioningValue =
+  castRange * effectImpact * safetyMultiplier
+
+================================================================================
+9. DEFENSIVE ITEM VALUE
+================================================================================
+
+defensiveItemSaveValue =
+  preventedDeathChance
+  * targetHeroValue
+  * deathCost
+  * reliability
+  - cooldownOpportunityCost
+
+Prevented death chance:
+
+preventedDeathChance =
+  enemyBurstThreat
+  * itemEffectiveProtection
+  * castReliability
+  * reactionWindow
+
+================================================================================
+10. INITIATION ITEM VALUE
+================================================================================
+
+initiationItemValue =
+  catchChance
+  * targetPriority
+  * followupDamageAvailability
+  * objectiveConversionValue
+  - failedInitiationRisk
+
+Catch chance:
+
+catchChance =
+  castRangeAdvantage
+  + mobilityAdvantage
+  + visionAdvantage
+  + playerInitiationSkill
+  - enemyReaction
+  - enemySave
+
+================================================================================
+11. DISPEL ITEM VALUE
+================================================================================
+
+dispellItemValue =
+  expectedDebuffRemovedValue
+  * fightFrequency
+  * targetPriority
+  - cooldownOpportunityCost
+
+expectedDebuffRemovedValue =
+  sum(debuffImpact * probabilityDebuffOccurs)
+
+================================================================================
+12. DAMAGE ITEM EFFICIENCY
+================================================================================
+
+rightClickDamageGain =
+  addedDamage
+  * attacksPerSecond
+  * expectedCritMultiplier
+  * hitChance
+  * targetArmorMultiplier
+
+attackSpeedDamageGain =
+  averageDamage
+  * addedAttacksPerSecond
+  * hitChance
+  * targetArmorMultiplier
+
+spellDamageGain =
+  baseSpellDamage
+  * spellAmp
+  * castsPerMinute
+  * targetMagicMultiplier
+
+================================================================================
+13. SLOT EFFICIENCY
+================================================================================
+
+slotEfficiency =
+  trueItemValue / itemSlotCost
+
+No late game:
+
+itemSlotCost aumenta.
+
+slotAdjustedItemValue =
+  trueItemValue - slotPressurePenalty
+
+slotPressurePenalty =
+  max(0, inventoryFullness - slotThreshold) * slotPenaltyRate
+
+================================================================================
+14. BUILD ORDER SCORE
+================================================================================
+
+itemBuildScore =
+  itemPowerSpikeScore
+  + solvesCurrentProblem
+  + acceleratesNextItem
+  + teamTimingFit
+  + countersEnemy
+  - delaysCoreTiming
+  - goldRisk
+  - slotInefficiency
+
+Escolher próximo item:
+
+nextItem =
+  maxBy(candidateItems, itemBuildScore)
+
+================================================================================
+15. FUNÇÕES TYPESCRIPT
+================================================================================
+
+export function uptime(duration: number, cooldown: number): number {
+  return Math.min(1, duration / Math.max(0.001, cooldown));
+}
+
+export function cooldownTalentValue(spellImpact: number, oldCooldown: number, newCooldown: number): number {
+  return spellImpact * ((oldCooldown - newCooldown) / oldCooldown);
+}
+
+export function activeItemValue(input: {
+  effectMagnitude: number;
+  reliability: number;
+  expectedTargets: number;
+  fightImportance: number;
+  uptime: number;
+  manaBurden: number;
+  executionDifficulty: number;
+  overlapPenalty: number;
+}): number {
+  return input.effectMagnitude
+    * input.reliability
+    * input.expectedTargets
+    * input.fightImportance
+    * input.uptime
+    - input.manaBurden
+    - input.executionDifficulty
+    - input.overlapPenalty;
+}
+
+================================================================================
+16. TESTES RECOMENDADOS
+================================================================================
+
+1. Uptime não passa de 1.
+2. Cooldown talent value sobe quanto maior a redução.
+3. Defensive item value sobe com deathCost.
+4. Initiation item value cai com enemySave.
+5. Build order escolhe item que resolve problema atual.

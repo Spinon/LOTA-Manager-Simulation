@@ -1,0 +1,403 @@
+// dota_like_illusions_summons_clones_formulas.txt
+// Fórmulas para ilusões, summons, clones, pets, wards e unidades controladas.
+// Objetivo: simular heróis de micro, split push, pressão de mapa e dano de unidades secundárias.
+
+================================================================================
+1. TIPOS DE UNIDADE CONTROLADA
+================================================================================
+
+controlledUnitType:
+  illusion
+  strong_illusion
+  clone
+  summon
+  pet
+  ward
+  dominated_creep
+  temporary_creep
+  familiar
+
+Diferenças principais:
+
+illusion:
+  copia parte dos atributos do herói
+  causa dano reduzido
+  recebe dano aumentado
+  geralmente não usa itens ativos
+
+clone:
+  copia mais fielmente o herói
+  pode ter restrições de item/xp/gold
+
+summon:
+  possui stats próprios
+  escala por nível da habilidade
+
+pet:
+  unidade persistente ou semipersistente vinculada ao herói
+
+ward:
+  unidade imóvel, geralmente com ataques ou visão
+
+================================================================================
+2. ILUSÕES: DANO CAUSADO
+================================================================================
+
+illusionOutgoingDamage =
+  ownerAttackDamage
+  * illusionOutgoingDamagePct
+  * illusionDamageAmp
+  * targetDamageMultiplier
+
+Valores sugeridos:
+
+meleeIllusionOutgoingDamagePct = 0.33
+rangedIllusionOutgoingDamagePct = 0.28
+strongIllusionOutgoingDamagePct = 0.60
+
+Dano esperado de ilusões:
+
+illusionDps =
+  illusionAverageDamage
+  * illusionAttacksPerSecond
+  * hitChance
+  * armorDamageMultiplier
+
+totalIllusionDps =
+  illusionDps * numberOfIllusions
+
+================================================================================
+3. ILUSÕES: DANO RECEBIDO
+================================================================================
+
+illusionIncomingDamage =
+  incomingDamage
+  * illusionIncomingDamagePct
+  * damageTypeMultiplier
+
+Valores sugeridos:
+
+normalIllusionIncomingDamagePct = 2.0
+strongIllusionIncomingDamagePct = 1.5
+
+Contra estruturas:
+
+illusionBuildingDamageMultiplier = 0.35
+
+================================================================================
+4. ILUSÕES: ATRIBUTOS HERDADOS
+================================================================================
+
+illusionStrength =
+  ownerStrength * strengthInheritancePct
+
+illusionAgility =
+  ownerAgility * agilityInheritancePct
+
+illusionIntelligence =
+  ownerIntelligence * intelligenceInheritancePct
+
+Padrão:
+
+strengthInheritancePct = 1.0
+agilityInheritancePct = 1.0
+intelligenceInheritancePct = 1.0
+
+Mas dano final deve usar multiplicador de dano da ilusão.
+
+================================================================================
+5. ILUSÕES: STATS HERDADOS
+================================================================================
+
+Stats copiados:
+
+maxHealth = ownerMaxHealth * healthInheritancePct
+armor = ownerArmor
+magicResistance = ownerMagicResistance
+movementSpeed = ownerMovementSpeed
+attackSpeed = ownerAttackSpeed
+attackRange = ownerAttackRange
+
+Stats não copiados por padrão:
+
+currentGold
+xp
+itemActives
+cooldowns
+consumables
+neutralItemActive
+somePassiveModifiers
+
+================================================================================
+6. ILUSÕES: BOUNTY
+================================================================================
+
+illusionGoldBounty =
+  baseIllusionGold
+  + ownerLevel * illusionGoldPerLevel
+
+illusionXpBounty =
+  baseIllusionXp
+  + ownerLevel * illusionXpPerLevel
+
+Sugestão:
+
+baseIllusionGold = 5
+illusionGoldPerLevel = 0.5
+baseIllusionXp = 5
+illusionXpPerLevel = 1
+
+================================================================================
+7. SUMMONS
+================================================================================
+
+Summon stats por nível de habilidade:
+
+summonHealth =
+  baseSummonHealth[level]
+  + ownerAttributeScaling
+
+summonDamage =
+  baseSummonDamage[level]
+  + ownerDamageScaling
+
+summonArmor =
+  baseSummonArmor[level]
+
+summonDuration =
+  baseSummonDuration[level] * (1 + summonDurationAmp)
+
+Scaling opcional:
+
+ownerAttributeScaling =
+  ownerPrimaryAttribute * summonAttributeCoefficient
+
+ownerDamageScaling =
+  ownerAttackDamage * summonDamageCoefficient
+
+================================================================================
+8. PETS
+================================================================================
+
+Pet persistente:
+
+petRespawnTime =
+  basePetRespawnTime * (1 - petRespawnReduction)
+
+Pet stats:
+
+petMaxHealth =
+  basePetHealth
+  + ownerLevel * healthPerOwnerLevel
+  + ownerStrength * strengthScaling
+
+petDamage =
+  basePetDamage
+  + ownerLevel * damagePerOwnerLevel
+  + ownerPrimaryAttribute * attributeScaling
+
+Pet death penalty:
+
+ownerPenaltyOnPetDeath =
+  moraleLoss
+  + temporaryPowerLoss
+  + goldBountyToEnemy
+
+================================================================================
+9. CLONES
+================================================================================
+
+Clone damage:
+
+cloneOutgoingDamage =
+  ownerOutgoingDamage * cloneOutgoingDamagePct
+
+Clone damage taken:
+
+cloneIncomingDamage =
+  incomingDamage * cloneIncomingDamagePct
+
+Clone item restriction:
+
+if item.isForbiddenOnClone:
+  itemDisabled = true
+
+Clone XP/gold:
+
+cloneGainsXp = false por padrão
+cloneGivesGold = true
+cloneGivesXp = true
+
+Clone cooldown sharing:
+
+if cloneSharesCooldowns:
+  ownerCooldown[itemOrSkill] = max(ownerCooldown, cloneCooldown)
+
+================================================================================
+10. WARDS
+================================================================================
+
+Ward attack:
+
+wardDps =
+  wardDamage
+  * wardAttackSpeed
+  * armorDamageMultiplier
+
+Ward duration:
+
+wardRemainingDuration -= deltaTime
+
+Ward bounty:
+
+wardGoldBounty =
+  baseWardGold + wardLevel * wardGoldPerLevel
+
+Ward targeting:
+
+wardTargetScore =
+  targetPriority
+  + proximity
+  + heroPriority
+  + lowHealthPriority
+
+================================================================================
+11. CONTROLLED UNIT LIMIT
+================================================================================
+
+Limite total:
+
+maxControlledUnits =
+  baseControlledUnitLimit
+  + talentBonus
+  + itemBonus
+
+Se exceder:
+
+if controlledUnits.length > maxControlledUnits:
+  removeOldestOrWeakestUnit()
+
+Regra alternativa:
+
+allowExceedButApplyPenalty:
+  controlledUnitEfficiency =
+    maxControlledUnits / currentControlledUnits
+
+================================================================================
+12. MICRO BURDEN PARA MANAGER
+================================================================================
+
+Heróis de micro devem exigir mais do jogador.
+
+microBurden =
+  numberOfControlledUnits * unitComplexity
+  + activeSkillCount
+  + splitMapDemand
+  + cloneRisk
+
+Performance penalty:
+
+microPerformanceMultiplier =
+  1 - max(0, microBurden - playerMicroSkill) * microPenaltyRate
+
+microPenaltyRate = 0.01
+
+Eficiência real:
+
+effectiveSummonDps =
+  theoreticalSummonDps * microPerformanceMultiplier
+
+================================================================================
+13. SPLIT PUSH COM UNIDADES
+================================================================================
+
+splitPushPressure =
+  summonBuildingDps
+  + illusionBuildingDps
+  + creepWaveAmplification
+  + laneDistancePressure
+  - enemyWaveClear
+  - enemyCatchThreat
+
+Chance de forçar resposta:
+
+forceReactionChance =
+  sigmoid((splitPushPressure - responseThreshold) / variance)
+
+Valor:
+
+splitPushExpectedValue =
+  towerDamageValue
+  + forcedTeleportValue
+  + mapSpaceCreated
+  - feedBountyRisk
+  - ownerFarmLoss
+
+================================================================================
+14. SCOUTING COM SUMMONS
+================================================================================
+
+scoutValue =
+  visionProvided
+  + enemyPositionInformation
+  + objectiveSafety
+  - summonBountyRisk
+  - cooldownCost
+
+Chance de detectar inimigo:
+
+detectChance =
+  pathCoverage
+  * enemyPathProbability
+  * summonSurvivalChance
+
+================================================================================
+15. FUNÇÕES TYPESCRIPT
+================================================================================
+
+export function illusionOutgoingDamage(
+  ownerDamage: number,
+  outgoingPct: number,
+  amp = 1
+): number {
+  return ownerDamage * outgoingPct * amp;
+}
+
+export function illusionIncomingDamage(
+  incomingDamage: number,
+  incomingPct: number
+): number {
+  return incomingDamage * incomingPct;
+}
+
+export function summonDamage(input: {
+  baseDamage: number;
+  ownerPrimaryAttribute: number;
+  attributeCoefficient: number;
+  ownerAttackDamage: number;
+  damageCoefficient: number;
+}): number {
+  return input.baseDamage
+    + input.ownerPrimaryAttribute * input.attributeCoefficient
+    + input.ownerAttackDamage * input.damageCoefficient;
+}
+
+export function microPerformanceMultiplier(
+  microBurden: number,
+  playerMicroSkill: number,
+  penaltyRate = 0.01
+): number {
+  return Math.max(0.35, 1 - Math.max(0, microBurden - playerMicroSkill) * penaltyRate);
+}
+
+================================================================================
+16. TESTES RECOMENDADOS
+================================================================================
+
+1. Ilusão causa dano reduzido.
+2. Ilusão recebe dano aumentado.
+3. Summon escala com atributo do dono.
+4. Clone respeita restrição de item.
+5. Wards expiram por duração.
+6. Micro burden reduz eficiência se jogador tem baixa micro skill.
+7. Split push pressure aumenta com summons e ilusões.

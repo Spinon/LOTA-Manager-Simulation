@@ -1,0 +1,288 @@
+// dota_like_rating_season_progression_formulas.txt
+// Fórmulas para rating, temporada, forma, meta adaptation, scouting e progressão de equipe.
+// Objetivo: camada de manager fora da partida.
+
+================================================================================
+1. TEAM RATING
+================================================================================
+
+teamRating =
+  playerRatingsAverage
+  + synergyRating
+  + coachingRating
+  + draftRating
+  + metaReadiness
+  - fatiguePenalty
+  + moraleBonus
+
+================================================================================
+2. PLAYER RATING
+================================================================================
+
+playerRating =
+  mechanics * 0.18
+  + laning * 0.14
+  + mapAwareness * 0.14
+  + teamfight * 0.14
+  + communication * 0.10
+  + discipline * 0.10
+  + heroPoolDepth * 0.10
+  + adaptability * 0.10
+  + roleSpecificSkill * 0.10
+
+================================================================================
+3. ELO UPDATE
+================================================================================
+
+expectedScore =
+  1 / (1 + 10 ^ ((opponentRating - teamRating) / 400))
+
+ratingChange =
+  kFactor * (actualScore - expectedScore)
+
+actualScore:
+  win = 1
+  loss = 0
+
+kFactor sugerido:
+  16 para times estáveis
+  24 para times novos
+  32 para início de temporada
+
+================================================================================
+4. FORM DECAY
+================================================================================
+
+recentForm =
+  weightedAverage(lastMatches)
+
+formDecay:
+
+currentForm =
+  previousForm * decayFactor + latestPerformance * (1 - decayFactor)
+
+decayFactor = 0.85
+
+================================================================================
+5. META ADAPTATION
+================================================================================
+
+metaAdaptation =
+  patchStudy
+  + scrimsOnPatch
+  + heroPoolOverlapWithMeta
+  + coachAnalysis
+  + playerAdaptability
+  - patchComplexity
+  - stubbornnessPenalty
+
+metaAdaptationGrowthPerWeek =
+  trainingHours
+  * analystQuality
+  * adaptability
+  * diminishingReturns
+
+diminishingReturns =
+  1 - currentMetaAdaptation / 100
+
+================================================================================
+6. SCRIM HIDDEN MMR
+================================================================================
+
+scrimHiddenMmr =
+  teamRating
+  + experimentalDraftNoise
+  + hiddenStrategyPenalty
+  + scrimMotivationModifier
+
+Scrim result confidence:
+
+scrimConfidence =
+  opponentSeriousness
+  * draftRelevance
+  * sampleSizeMultiplier
+
+sampleSizeMultiplier =
+  1 - exp(-numberOfScrims / 10)
+
+================================================================================
+7. OPPONENT STRENGTH ESTIMATION
+================================================================================
+
+estimatedOpponentStrength =
+  publicMatchRating
+  + recentForm
+  + tournamentPerformance
+  + metaFit
+  + headToHeadAdjustment
+  - uncertaintyPenalty
+
+Uncertainty:
+
+uncertaintyPenalty =
+  hiddenInformationAmount * uncertaintyWeight
+
+Confidence interval:
+
+confidenceInterval =
+  baseUncertainty / sqrt(numberOfRelevantMatches)
+
+================================================================================
+8. PLAYER DEVELOPMENT
+================================================================================
+
+developmentGain =
+  trainingQuality
+  * learningRate
+  * ageMultiplier
+  * playtimeMultiplier
+  * coachingMultiplier
+  * moraleMultiplier
+  - fatiguePenalty
+  - burnoutRisk
+
+Age multiplier:
+
+age <= 18: 1.25
+19-22: 1.15
+23-26: 1.00
+27-30: 0.80
+>30: 0.60
+
+================================================================================
+9. HERO POOL DEVELOPMENT
+================================================================================
+
+heroMasteryGain =
+  practiceVolume
+  * practiceQuality
+  * playerLearningRate
+  * heroComplexityMultiplier
+  * reviewMultiplier
+  * diminishingReturns
+
+heroComplexityMultiplier:
+  complexity 1: 1.15
+  complexity 2: 1.00
+  complexity 3: 0.80
+
+diminishingReturns =
+  1 - currentHeroMastery / 100
+
+================================================================================
+10. ROLE SWAP COST
+================================================================================
+
+roleSwapPenalty =
+  unfamiliarRolePenalty
+  + heroPoolMismatch
+  + communicationPatternChange
+  + lanePartnerSynergyLoss
+
+roleSwapSuccessChance =
+  playerAdaptability
+  + coachingSupport
+  + practiceTime
+  - roleSwapPenalty
+
+================================================================================
+11. SEASON FATIGUE
+================================================================================
+
+seasonFatigue =
+  matchLoad
+  + travelLoad
+  + scrimLoad
+  + mediaObligation
+  - restQuality
+  - staffSupport
+
+Performance multiplier:
+
+seasonPerformanceMultiplier =
+  1 - seasonFatigue * fatigueImpact
+
+fatigueImpact = 0.002
+
+================================================================================
+12. TOURNAMENT PROBABILITY
+================================================================================
+
+BO1:
+pSeries = p
+
+BO3:
+pSeries = p^2 * (3 - 2p)
+
+BO5:
+pSeries =
+  p^3
+  + 3 * p^3 * (1 - p)
+  + 6 * p^3 * (1 - p)^2
+
+================================================================================
+13. GROUP STAGE EXPECTED WINS
+================================================================================
+
+expectedWins =
+  sum(winProbabilityAgainstOpponent_i)
+
+Expected standing score:
+
+standingScore =
+  expectedWins
+  + tiebreakerStrength
+  + mapDifferentialExpected
+
+================================================================================
+14. CONTRACT VALUE
+================================================================================
+
+marketValue =
+  playerRating
+  + potential
+  + roleScarcity
+  + brandValue
+  + recentForm
+  - ageRisk
+  - buyoutRisk
+
+salaryExpectation =
+  marketValue * salaryCoefficient
+  + demandPremium
+  - loyaltyDiscount
+
+================================================================================
+15. FUNÇÕES TYPESCRIPT
+================================================================================
+
+export function expectedEloScore(rating: number, opponentRating: number): number {
+  return 1 / (1 + Math.pow(10, (opponentRating - rating) / 400));
+}
+
+export function eloChange(rating: number, opponentRating: number, actualScore: number, kFactor = 24): number {
+  const expected = expectedEloScore(rating, opponentRating);
+  return kFactor * (actualScore - expected);
+}
+
+export function bestOfThree(p: number): number {
+  return p * p * (3 - 2 * p);
+}
+
+export function bestOfFive(p: number): number {
+  return Math.pow(p, 3) + 3 * Math.pow(p, 3) * (1 - p) + 6 * Math.pow(p, 3) * Math.pow(1 - p, 2);
+}
+
+export function sampleSizeConfidence(n: number): number {
+  return 1 - Math.exp(-n / 10);
+}
+
+================================================================================
+16. TESTES RECOMENDADOS
+================================================================================
+
+1. Elo aumenta ao vencer adversário mais forte.
+2. Elo cai mais ao perder para adversário fraco.
+3. BO3 > BO1 quando p > 0.5.
+4. Confidence aumenta com número de scrims.
+5. Development gain cai perto do cap.

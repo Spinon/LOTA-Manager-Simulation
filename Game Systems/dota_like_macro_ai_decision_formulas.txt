@@ -1,0 +1,258 @@
+// dota_like_macro_ai_decision_formulas.txt
+// Fórmulas de decisão macro para IA de manager: farm, fight, gank, retreat, Roshan, high ground, buyback e trade.
+// Objetivo: simular decisões estratégicas de times e jogadores.
+
+================================================================================
+1. DECISÃO DE FARM
+================================================================================
+
+farmDecisionScore =
+  expectedGoldGain
+  + expectedXpGain
+  + itemTimingUrgency
+  + laneSafety
+  + heroScalingNeed
+  - deathRisk
+  - objectiveOpportunityCost
+  - teamfightMissRisk
+
+farm =
+  farmDecisionScore > bestAlternativeScore
+
+================================================================================
+2. DECISÃO DE FIGHT
+================================================================================
+
+fightDecisionScore =
+  teamPowerNow
+  + cooldownAdvantage
+  + numbersAdvantage
+  + visionAdvantage
+  + positioningAdvantage
+  + objectiveReward
+  - enemyTeamPower
+  - buybackRisk
+  - formationRisk
+  - throwRisk
+
+takeFight =
+  fightDecisionScore > fightThreshold
+
+================================================================================
+3. DECISÃO DE RETREAT
+================================================================================
+
+retreatScore =
+  enemyPowerSpike
+  + lostVision
+  + lowResources
+  + badFormation
+  + keyCooldownMissing
+  + enemyBuybacks
+  - objectiveCommitment
+  - alliedEscapeTools
+
+retreat =
+  retreatScore > retreatThreshold
+
+================================================================================
+4. GANK DECISION
+================================================================================
+
+gankSuccessChance =
+  catchTools
+  + smokeBonus
+  + visionAdvantage
+  + targetOverextension
+  + targetLowMobility
+  + numbersAdvantage
+  - enemyCountergankThreat
+  - targetSave
+  - wardRisk
+
+gankExpectedValue =
+  gankSuccessChance * killValue
+  + objectiveFollowupValue
+  - timeCost
+  - failedGankPunishRisk
+
+gank =
+  gankExpectedValue > gankThreshold
+
+================================================================================
+5. ROSHAN / BOSS DECISION
+================================================================================
+
+bossAttemptScore =
+  teamBossDps
+  + tankiness
+  + sustain
+  + visionControl
+  + lanePriority
+  + enemyDeadTime
+  - enemyContestPower
+  - lowHealthAfterBossRisk
+
+bossSuccessChance =
+  sigmoid((bossAttemptScore - bossDifficulty) / variance)
+
+bossExpectedValue =
+  bossSuccessChance * bossRewardValue
+  - (1 - bossSuccessChance) * throwCost
+
+takeBoss =
+  bossExpectedValue > bossThreshold
+
+================================================================================
+6. SPLIT PUSH DECISION
+================================================================================
+
+splitPushScore =
+  sideLanePressure
+  + heroEscapeScore
+  + buildingDamage
+  + enemySlowResponse
+  + teleportForcingValue
+  - catchRisk
+  - teamfightMissRisk
+
+splitPush =
+  splitPushScore > splitPushThreshold
+
+================================================================================
+7. DEFEND HIGH GROUND
+================================================================================
+
+defendHighGroundScore =
+  enemySiegeThreat
+  + structureValueAtRisk
+  + waveClearAvailable
+  + buybackAvailability
+  + glyphAvailability
+  - fightLossRisk
+  - splitPushTradeValue
+
+defend =
+  defendHighGroundScore > defendThreshold
+
+================================================================================
+8. FORCE BUYBACK
+================================================================================
+
+forceBuybackScore =
+  objectiveAtRisk
+  + ancientThreat
+  + barracksThreat
+  + teamCanWinFightAfterBuyback
+  - buybackCooldownFutureCost
+  - lowImpactRespawn
+
+forceBuyback =
+  forceBuybackScore > buybackThreshold
+
+Save buyback:
+
+saveBuybackScore =
+  futureRoshanFight
+  + ancientDefenseLater
+  + lowCurrentObjectiveRisk
+  + impossibleFightNow
+
+saveBuyback =
+  saveBuybackScore > forceBuybackScore
+
+================================================================================
+9. TRADE OBJECTIVE
+================================================================================
+
+tradeScore =
+  objectiveWeTakeValue
+  - objectiveWeLoseValue
+  + tempoGain
+  + mapPressureAfterTrade
+  - longTermStructuralLoss
+
+acceptTrade =
+  tradeScore > 0
+
+================================================================================
+10. MAP CONTROL FROM LEAD
+================================================================================
+
+mapControl =
+  baseMapControl
+  + netWorthLeadValue
+  + towerLeadValue
+  + visionLeadValue
+  + pickoffThreat
+  - wavePressureAgainstUs
+
+netWorthLeadValue =
+  netWorthDiff / scalingFactor
+
+================================================================================
+11. THROW RISK
+================================================================================
+
+throwRisk =
+  overextension
+  + enemyBuybackThreat
+  + highGroundPenalty
+  + objectiveBaitRisk
+  + visionDisadvantage
+  + shutdownGoldRisk
+  - discipline
+  - escapeTools
+
+================================================================================
+12. DEATH TIMER OBJECTIVE CONVERSION
+================================================================================
+
+objectiveConversionValue =
+  enemyDeadTimeRemaining
+  * alliedObjectiveDps
+  * lanePositionMultiplier
+  * travelTimeMultiplier
+
+travelTimeMultiplier =
+  1 / (1 + travelTimeToObjective / 30)
+
+================================================================================
+13. FUNÇÕES TYPESCRIPT
+================================================================================
+
+export function sigmoid(x: number): number {
+  return 1 / (1 + Math.exp(-x));
+}
+
+export function decisionChance(score: number, threshold: number, variance = 10): number {
+  return sigmoid((score - threshold) / variance);
+}
+
+export function shouldTakeDecision(score: number, threshold: number): boolean {
+  return score > threshold;
+}
+
+export function objectiveConversionValue(input: {
+  enemyDeadTimeRemaining: number;
+  alliedObjectiveDps: number;
+  lanePositionMultiplier: number;
+  travelTimeToObjective: number;
+}): number {
+  const travelTimeMultiplier = 1 / (1 + input.travelTimeToObjective / 30);
+
+  return input.enemyDeadTimeRemaining
+    * input.alliedObjectiveDps
+    * input.lanePositionMultiplier
+    * travelTimeMultiplier;
+}
+
+================================================================================
+14. TESTES RECOMENDADOS
+================================================================================
+
+1. Fight score aumenta com numbers advantage.
+2. Retreat score aumenta quando recursos estão baixos.
+3. Boss success cai com enemy contest power.
+4. Buyback força quando ancient threat é alto.
+5. Trade score positivo aceita troca.

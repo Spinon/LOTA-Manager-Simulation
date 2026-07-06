@@ -1,0 +1,329 @@
+// dota_like_spell_geometry_projectile_uptime_formulas.txt
+// Fórmulas para cast range, AoE, geometria de skills, projéteis, travel time, dodge, cooldown, mana e uptime.
+// Não cobre animações. O foco é simulação matemática.
+
+================================================================================
+1. CAST RANGE
+================================================================================
+
+finalCastRange =
+  baseCastRange
+  + flatCastRangeBonus
+
+Se houver percentual:
+
+finalCastRange =
+  finalCastRange * (1 + percentCastRangeBonus)
+
+Range clamp opcional:
+
+finalCastRange =
+  clamp(finalCastRange, minCastRange, maxCastRange)
+
+================================================================================
+2. ÁREA CIRCULAR
+================================================================================
+
+Área:
+
+area = PI * radius^2
+
+Alvos atingidos:
+
+targetsHit =
+  count(enemyUnits where distance(spellCenter, unitPosition) <= radius)
+
+Expected targets hit para manager:
+
+expectedTargetsHit =
+  enemyClusterDensity * area * hitReliability
+
+================================================================================
+3. LINHA
+================================================================================
+
+Skill line:
+
+lineLength
+lineWidth
+
+Área aproximada:
+
+lineArea =
+  lineLength * lineWidth
+
+Hit:
+
+targetHit =
+  distanceFromPointToLine(targetPosition, lineSegment) <= lineWidth / 2
+
+Expected hit chance:
+
+lineSkillHitChance =
+  playerSkillshotSkill
+  + setupControl
+  + targetPredictability
+  - targetMobility
+  - castDistancePenalty
+
+================================================================================
+4. CONE
+================================================================================
+
+Cone:
+
+coneRadius
+coneAngleRadians
+
+Área:
+
+coneArea =
+  0.5 * coneAngleRadians * coneRadius^2
+
+Hit:
+
+targetInCone =
+  distance <= coneRadius
+  && angleBetween(casterForward, targetDirection) <= coneAngle / 2
+
+================================================================================
+5. BOUNCE / CHAIN
+================================================================================
+
+Bounce:
+
+currentTarget = initialTarget
+
+for jump in 1..maxJumps:
+  nextTarget = nearestValidTargetWithinJumpRange(currentTarget)
+  if no target: stop
+  applyEffect(nextTarget)
+
+Dano com perda:
+
+damageAtJump =
+  initialDamage * (1 - damageLossPct)^jumpIndex
+
+Dano com aumento:
+
+damageAtJump =
+  initialDamage * (1 + damageIncreasePct)^jumpIndex
+
+================================================================================
+6. FALL OFF DAMAGE
+================================================================================
+
+Dano por distância:
+
+distanceRatio =
+  clamp(distanceFromCenter / radius, 0, 1)
+
+damageMultiplier =
+  1 - distanceRatio * falloffPct
+
+damage =
+  baseDamage * damageMultiplier
+
+================================================================================
+7. PROJECTILE TRAVEL TIME
+================================================================================
+
+travelTime =
+  distance / projectileSpeed
+
+arrivalTime =
+  castTime + travelTime
+
+Se projectileSpeed = infinity:
+
+travelTime = 0
+
+================================================================================
+8. DODGE / DISJOINT
+================================================================================
+
+Projétil pode ser desviado se o alvo fica invulnerável, invisível, hidden, disjoint ou sai da validade.
+
+canDodgeProjectile =
+  projectile.isDisjointable
+  && targetUsesDisjointBeforeArrival
+
+Dodge chance para manager:
+
+dodgeChance =
+  targetReactionSkill
+  + mobilityAvailable
+  + projectileTravelTime * reactionWindowValue
+  - setupControl
+  - projectileSpeedPressure
+
+dodgeChance = clamp(dodgeChance, 0, 0.95)
+
+effectiveHitChance =
+  baseHitChance * (1 - dodgeChance)
+
+================================================================================
+9. COOLDOWN
+================================================================================
+
+finalCooldown =
+  baseCooldown * (1 - cooldownReduction)
+
+Multiplicativo:
+
+finalCooldown =
+  baseCooldown * PRODUCT(1 - cooldownReduction_i)
+
+Cooldown increase:
+
+finalCooldown =
+  baseCooldown * (1 + cooldownIncrease)
+
+Cooldown rate:
+
+cooldownRemaining -= deltaTime * cooldownRateMultiplier
+
+================================================================================
+10. MANA COST
+================================================================================
+
+finalManaCost =
+  baseManaCost * (1 - manaCostReduction)
+
+Mana burden:
+
+manaBurdenPerMinute =
+  castsPerMinute * finalManaCost
+
+Mana sustain:
+
+manaSustainPerMinute =
+  manaRegenPerSecond * 60
+  + expectedManaRestorationPerMinute
+
+canSustainSpell =
+  manaSustainPerMinute >= manaBurdenPerMinute
+
+================================================================================
+11. CASTS PER MINUTE
+================================================================================
+
+castsPerMinute =
+  60 / finalCooldown
+
+Se mana limita:
+
+manaLimitedCastsPerMinute =
+  manaSustainPerMinute / finalManaCost
+
+effectiveCastsPerMinute =
+  min(castsPerMinute, manaLimitedCastsPerMinute)
+
+================================================================================
+12. UPTIME
+================================================================================
+
+Buff uptime:
+
+uptime =
+  duration / cooldown
+
+uptime = min(uptime, 1)
+
+Com charges:
+
+effectiveCooldown =
+  rechargeTime / maxCharges
+
+uptimeWithCharges =
+  min(1, duration / effectiveCooldown)
+
+================================================================================
+13. EXPECTED FIGHT CASTS
+================================================================================
+
+expectedFightCasts =
+  1
+  + floor(max(0, fightDuration - initialCastDelay) / finalCooldown)
+
+Se mana limita:
+
+expectedFightCasts =
+  min(expectedFightCasts, floor(currentMana / finalManaCost))
+
+================================================================================
+14. ULTIMATE READINESS
+================================================================================
+
+ultimateReady =
+  cooldownRemaining <= 0
+  && currentMana >= manaCost
+
+ultimateReadinessScore =
+  ultimateImpact
+  * readyState
+  * fightLikelihood
+  - wastedCooldownRisk
+
+readyState:
+  1 se pronto
+  0 se não pronto
+
+Se cooldown quase pronto:
+
+readyState =
+  1 - cooldownRemaining / ultimateCooldown
+
+================================================================================
+15. POWER SPIKE COM COOLDOWN
+================================================================================
+
+teamFightPower =
+  baseTeamPower
+  + sum(readySpellImpact)
+  + sum(readyItemImpact)
+  - missingCooldownPenalty
+
+missingCooldownPenalty =
+  spellImpact * cooldownRemainingPct
+
+cooldownRemainingPct =
+  cooldownRemaining / cooldownTotal
+
+================================================================================
+16. FUNÇÕES TYPESCRIPT
+================================================================================
+
+export function projectileTravelTime(distance: number, projectileSpeed: number): number {
+  if (!Number.isFinite(projectileSpeed)) return 0;
+  return distance / projectileSpeed;
+}
+
+export function uptime(duration: number, cooldown: number): number {
+  return Math.min(1, duration / Math.max(0.001, cooldown));
+}
+
+export function castsPerMinute(cooldown: number): number {
+  return 60 / Math.max(0.001, cooldown);
+}
+
+export function manaLimitedCastsPerMinute(manaSustainPerMinute: number, manaCost: number): number {
+  return manaSustainPerMinute / Math.max(1, manaCost);
+}
+
+export function expectedFightCasts(fightDuration: number, cooldown: number, currentMana: number, manaCost: number): number {
+  const cooldownCasts = 1 + Math.floor(Math.max(0, fightDuration) / Math.max(0.001, cooldown));
+  const manaCasts = Math.floor(currentMana / Math.max(1, manaCost));
+  return Math.max(0, Math.min(cooldownCasts, manaCasts));
+}
+
+================================================================================
+17. TESTES RECOMENDADOS
+================================================================================
+
+1. Projectile travel time aumenta com distância.
+2. Uptime nunca passa de 1.
+3. Mana limita casts por minuto.
+4. Expected fight casts considera cooldown e mana.
+5. Cone só acerta alvo dentro de ângulo e raio.
+6. Linha só acerta alvo dentro de largura.

@@ -1,0 +1,12597 @@
+// all_hero_seeds_moba_manager.txt
+// Seed data de 128 heróis adaptados para um simulador de manager de MOBA.
+// Não usa nomes oficiais de Dota 2. Os ids e arquétipos são genéricos.
+// Objetivo: servir como base para cards, draft, balanceamento, cálculo de atributos e futura simulação de skills.
+// Observação: valores são iniciais e balanceáveis, não são estatísticas oficiais.
+
+export type PrimaryAttribute = "strength" | "agility" | "intelligence" | "universal";
+export type AttackType = "melee" | "ranged";
+export type HeroRole =
+  | "carry"
+  | "mid"
+  | "offlane"
+  | "soft_support"
+  | "hard_support"
+  | "initiator"
+  | "durable"
+  | "disabler"
+  | "nuker"
+  | "escape"
+  | "pusher"
+  | "healer"
+  | "scout";
+
+export type DamageType = "physical" | "magical" | "pure" | "none";
+export type SkillKind = "active" | "passive" | "toggle";
+export type SkillTarget = "self" | "unit" | "point" | "area" | "global" | "passive";
+
+export interface SkillSeed {
+  key: "Q" | "W" | "E" | "R";
+  id: string;
+  kind: SkillKind;
+  target: SkillTarget;
+  damageType: DamageType;
+  tags: string[];
+  values?: Record<string, number | number[] | string | boolean>;
+  scaling?: {
+    attribute?: PrimaryAttribute | "highest" | "total";
+    coefficient?: number;
+  };
+}
+
+export interface HeroSeed {
+  id: string;
+  referenceSlot: string;
+  archetype: string;
+  primaryAttribute: PrimaryAttribute;
+  attackType: AttackType;
+  roles: HeroRole[];
+  complexity: 1 | 2 | 3;
+  preferredPositions: number[];
+  designTags: string[];
+
+  baseAttributes: {
+    strength: number;
+    agility: number;
+    intelligence: number;
+  };
+
+  attributeGrowth: {
+    strengthGain: number;
+    agilityGain: number;
+    intelligenceGain: number;
+  };
+
+  baseStats: {
+    baseHealth: number;
+    baseHealthRegen: number;
+    baseMana: number;
+    baseManaRegen: number;
+    baseDamageMin: number;
+    baseDamageMax: number;
+    baseArmor: number;
+    baseMagicResistance: number;
+    baseStatusResistance: number;
+    baseSlowResistance: number;
+    baseAttackSpeed: number;
+    baseAttackTime: number;
+    attackRange: number;
+    acquisitionRange: number;
+    movementSpeed: number;
+    turnRate: number;
+    collisionSize: number;
+    dayVision: number;
+    nightVision: number;
+  };
+
+  skills: SkillSeed[];
+}
+
+export const HERO_SEEDS: HeroSeed[] = [
+  {
+    id: "h001_anti_magic_mobile_carry",
+    referenceSlot: "dota_like_slot_001",
+    archetype: "carry anti-magia de mobilidade",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "escape"],
+    complexity: 2,
+    preferredPositions: [1],
+    designTags: ["anti_magic", "mobility", "mana_burn", "late_game"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 24.8,
+      intelligence: 16.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.2,
+      agilityGain: 3.32,
+      intelligenceGain: 1.94
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 28,
+      baseDamageMax: 35,
+      baseArmor: 2.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 305,
+      turnRate: 0.85,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "anti_magic_mobile_carry_anti_magic",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["anti_magic", "carry", "escape"],
+        values: {
+          damage: [70, 115, 160, 205],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "anti_magic_mobile_carry_mobility",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["mobility", "carry", "escape"],
+        values: {
+          damage: [70, 115, 160, 205],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "anti_magic_mobile_carry_mana_burn",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["mana_burn", "carry", "escape"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        },
+        scaling: {
+          attribute: "agility",
+          coefficient: 0.45
+        }
+      },
+      {
+        key: "R",
+        id: "anti_magic_mobile_carry_late_game",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["late_game", "carry", "escape"],
+        values: {
+          damage: [210, 280, 350],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h002_taunt_berserker_tank",
+    referenceSlot: "dota_like_slot_002",
+    archetype: "tanque berserker de provocação e execução",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    complexity: 1,
+    preferredPositions: [3],
+    designTags: ["taunt", "counterattack", "execute", "armor"],
+    baseAttributes: {
+      strength: 27.8,
+      agility: 14.0,
+      intelligence: 18.6
+    },
+    attributeGrowth: {
+      strengthGain: 3.34,
+      agilityGain: 1.58,
+      intelligenceGain: 1.92
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 2.0,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 32,
+      baseDamageMax: 40,
+      baseArmor: 3.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "taunt_berserker_tank_taunt",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["taunt", "offlane", "initiator"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "taunt_berserker_tank_counterattack",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["counterattack", "offlane", "initiator"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "taunt_berserker_tank_execute",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["execute", "offlane", "initiator"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "taunt_berserker_tank_armor",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["armor", "offlane", "initiator"],
+        values: {
+          cooldown: [120, 100, 80],
+          armorChange: [2, 3, 4]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h003_nightmare_controller",
+    referenceSlot: "dota_like_slot_003",
+    archetype: "controlador de pesadelo, sono e drenagem",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "nuker"],
+    complexity: 3,
+    preferredPositions: [5],
+    designTags: ["sleep", "drain", "enfeeble", "channel"],
+    baseAttributes: {
+      strength: 23.0,
+      agility: 18.0,
+      intelligence: 22.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.38,
+      agilityGain: 2.34,
+      intelligenceGain: 2.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.22,
+      baseDamageMin: 26,
+      baseDamageMax: 35,
+      baseArmor: 1.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "nightmare_controller_sleep",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["sleep", "hard_support", "disabler"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "nightmare_controller_drain",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["drain", "hard_support", "disabler"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          radius: 445
+        }
+      },
+      {
+        key: "E",
+        id: "nightmare_controller_enfeeble",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["enfeeble", "hard_support", "disabler"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "nightmare_controller_channel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["channel", "hard_support", "disabler"],
+        values: {
+          damage: [315, 420, 525],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h004_blood_duelist",
+    referenceSlot: "dota_like_slot_004",
+    archetype: "lutador de caça e execução por vida baixa",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "mid", "escape"],
+    complexity: 2,
+    preferredPositions: [1, 2],
+    designTags: ["execute", "silence", "speed", "anti_mobility"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 24.8,
+      intelligence: 18.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.32,
+      agilityGain: 3.2,
+      intelligenceGain: 1.58
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 27,
+      baseDamageMax: 33,
+      baseArmor: 2.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 320,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "blood_duelist_execute",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["execute", "carry", "mid"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "blood_duelist_silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["silence", "carry", "mid"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          silence: [2.0, 2.5, 3.0, 3.5]
+        }
+      },
+      {
+        key: "E",
+        id: "blood_duelist_speed",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["speed", "carry", "mid"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          attackSpeed: [25, 45, 65, 85]
+        }
+      },
+      {
+        key: "R",
+        id: "blood_duelist_anti_mobility",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["anti_mobility", "carry", "mid"],
+        values: {
+          damage: [330, 440, 550],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h005_frost_marksman",
+    referenceSlot: "dota_like_slot_005",
+    archetype: "atirador de lentidão e aura de precisão",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "pusher"],
+    complexity: 1,
+    preferredPositions: [1],
+    designTags: ["slow", "ranged_scaling", "aura", "armor_pierce"],
+    baseAttributes: {
+      strength: 17.0,
+      agility: 24.8,
+      intelligence: 14.6
+    },
+    attributeGrowth: {
+      strengthGain: 1.96,
+      agilityGain: 2.96,
+      intelligenceGain: 1.46
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 29,
+      baseDamageMax: 36,
+      baseArmor: 1.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 285,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "frost_marksman_slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["slow", "carry", "pusher"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "frost_marksman_ranged_scaling",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["ranged_scaling", "carry", "pusher"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [650, 770, 890, 1010]
+        },
+        scaling: {
+          attribute: "agility",
+          coefficient: 0.65
+        }
+      },
+      {
+        key: "E",
+        id: "frost_marksman_aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["aura", "carry", "pusher"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "R",
+        id: "frost_marksman_armor_pierce",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["armor_pierce", "carry", "pusher"],
+        values: {
+          cooldown: [120, 100, 80],
+          armorChange: [2, 3, 4]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h006_quake_initiator",
+    referenceSlot: "dota_like_slot_006",
+    archetype: "iniciador sísmico de controle em área",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler"],
+    complexity: 2,
+    preferredPositions: [3, 4],
+    designTags: ["stun", "terrain", "aftershock", "teamfight"],
+    baseAttributes: {
+      strength: 28.0,
+      agility: 14.0,
+      intelligence: 17.8
+    },
+    attributeGrowth: {
+      strengthGain: 3.1,
+      agilityGain: 1.82,
+      intelligenceGain: 2.04
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.3,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 32,
+      baseDamageMax: 40,
+      baseArmor: 2.4,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 200,
+      acquisitionRange: 600,
+      movementSpeed: 295,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "quake_initiator_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["stun", "offlane", "soft_support"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "quake_initiator_terrain",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["terrain", "offlane", "soft_support"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          radius: 325
+        }
+      },
+      {
+        key: "E",
+        id: "quake_initiator_aftershock",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["aftershock", "offlane", "soft_support"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "quake_initiator_teamfight",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["teamfight", "offlane", "soft_support"],
+        values: {
+          damage: [285, 380, 475],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h007_sword_tempest",
+    referenceSlot: "dota_like_slot_007",
+    archetype: "carry de giro, cura posicionada e acertos críticos",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "pusher"],
+    complexity: 1,
+    preferredPositions: [1],
+    designTags: ["spin", "heal", "critical", "untargetable"],
+    baseAttributes: {
+      strength: 18.0,
+      agility: 24.8,
+      intelligence: 18.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.44,
+      agilityGain: 3.08,
+      intelligenceGain: 1.82
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 27,
+      baseDamageMax: 36,
+      baseArmor: 2.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "sword_tempest_spin",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["spin", "carry", "pusher"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "sword_tempest_heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["heal", "carry", "pusher"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "sword_tempest_critical",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        tags: ["critical", "carry", "pusher"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [150, 180, 210, 240]
+        }
+      },
+      {
+        key: "R",
+        id: "sword_tempest_untargetable",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["untargetable", "carry", "pusher"],
+        values: {
+          damage: [300, 400, 500],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h008_moon_huntress",
+    referenceSlot: "dota_like_slot_008",
+    archetype: "caçadora lunar de salto, flecha e aura noturna",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["carry", "soft_support", "nuker", "escape"],
+    complexity: 2,
+    preferredPositions: [1, 4],
+    designTags: ["leap", "long_stun", "vision", "global_stealth"],
+    baseAttributes: {
+      strength: 23.0,
+      agility: 19.8,
+      intelligence: 21.4
+    },
+    attributeGrowth: {
+      strengthGain: 2.38,
+      agilityGain: 2.34,
+      intelligenceGain: 2.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 28,
+      baseDamageMax: 34,
+      baseArmor: 1.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "moon_huntress_leap",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["leap", "carry", "soft_support"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "moon_huntress_long_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["long_stun", "carry", "soft_support"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "E",
+        id: "moon_huntress_vision",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["vision", "carry", "soft_support"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "moon_huntress_global_stealth",
+        kind: "active",
+        target: "global",
+        damageType: "none",
+        tags: ["global_stealth", "carry", "soft_support"],
+        values: {
+          cooldown: [120, 100, 80],
+          global: true
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h009_fluid_shifter",
+    referenceSlot: "dota_like_slot_009",
+    archetype: "carry flexível que converte força e agilidade",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "mid", "escape"],
+    complexity: 3,
+    preferredPositions: [1, 2],
+    designTags: ["attribute_shift", "wave_dash", "copy", "burst"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 24.8,
+      intelligence: 18.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.32,
+      agilityGain: 3.2,
+      intelligenceGain: 1.58
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 30,
+      baseDamageMax: 37,
+      baseArmor: 2.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 600,
+      acquisitionRange: 800,
+      movementSpeed: 310,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "fluid_shifter_attribute_shift",
+        kind: "toggle",
+        target: "self",
+        damageType: "magical",
+        tags: ["attribute_shift", "carry", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10]
+        },
+        scaling: {
+          attribute: "agility",
+          coefficient: 0.55
+        }
+      },
+      {
+        key: "W",
+        id: "fluid_shifter_wave_dash",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["wave_dash", "carry", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "fluid_shifter_copy",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["copy", "carry", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "fluid_shifter_burst",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["burst", "carry", "mid"],
+        values: {
+          damage: [405, 540, 675],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h010_shadow_bomber",
+    referenceSlot: "dota_like_slot_010",
+    archetype: "mago de almas, dano crescente e presença de mapa",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "carry"],
+    complexity: 2,
+    preferredPositions: [2],
+    designTags: ["souls", "triple_nuke", "aura", "fear"],
+    baseAttributes: {
+      strength: 17.0,
+      agility: 24.2,
+      intelligence: 16.4
+    },
+    attributeGrowth: {
+      strengthGain: 1.96,
+      agilityGain: 2.96,
+      intelligenceGain: 1.46
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 30,
+      baseDamageMax: 38,
+      baseArmor: 1.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 285,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "shadow_bomber_souls",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["souls", "mid", "nuker"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "shadow_bomber_triple_nuke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["triple_nuke", "mid", "nuker"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "shadow_bomber_aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["aura", "mid", "nuker"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "R",
+        id: "shadow_bomber_fear",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["fear", "mid", "nuker"],
+        values: {
+          damage: [420, 560, 700],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h011_illusion_lancer",
+    referenceSlot: "dota_like_slot_011",
+    archetype: "carry de ilusões e perseguição prolongada",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "pusher", "escape"],
+    complexity: 3,
+    preferredPositions: [1],
+    designTags: ["illusion", "dispel", "chase", "swarm"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 25.4,
+      intelligence: 16.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.2,
+      agilityGain: 3.32,
+      intelligenceGain: 1.94
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 27,
+      baseDamageMax: 36,
+      baseArmor: 2.4,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 325,
+      turnRate: 0.85,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "illusion_lancer_illusion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["illusion", "carry", "pusher"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "W",
+        id: "illusion_lancer_dispel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["dispel", "carry", "pusher"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "illusion_lancer_chase",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["chase", "carry", "pusher"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "illusion_lancer_swarm",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["swarm", "carry", "pusher"],
+        values: {
+          damage: [360, 480, 600],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h012_fae_trickster",
+    referenceSlot: "dota_like_slot_012",
+    archetype: "mago evasivo de silêncio, jaula e controle em área",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "disabler", "escape"],
+    complexity: 3,
+    preferredPositions: [2],
+    designTags: ["phase_shift", "silence", "orb", "leash"],
+    baseAttributes: {
+      strength: 18.0,
+      agility: 14.6,
+      intelligence: 28.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.24,
+      agilityGain: 1.48,
+      intelligenceGain: 3.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 23,
+      baseDamageMax: 29,
+      baseArmor: 1.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.8,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "fae_trickster_phase_shift",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["phase_shift", "mid", "disabler"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "fae_trickster_silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["silence", "mid", "disabler"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          silence: [2.0, 2.5, 3.0, 3.5]
+        }
+      },
+      {
+        key: "E",
+        id: "fae_trickster_orb",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["orb", "mid", "disabler"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "fae_trickster_leash",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["leash", "mid", "disabler"],
+        values: {
+          damage: [450, 600, 750],
+          cooldown: [120, 100, 80],
+          root: [1.2, 1.6, 2.0],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h013_chain_vanguard",
+    referenceSlot: "dota_like_slot_013",
+    archetype: "tanque de gancho, podridão e isolamento",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "durable", "disabler"],
+    complexity: 2,
+    preferredPositions: [3, 4],
+    designTags: ["hook", "aura_dot", "regen_stacks", "channel_disable"],
+    baseAttributes: {
+      strength: 30.8,
+      agility: 14.0,
+      intelligence: 16.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.98,
+      agilityGain: 1.94,
+      intelligenceGain: 1.8
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 2.0,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 33,
+      baseDamageMax: 40,
+      baseArmor: 3.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 295,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "chain_vanguard_hook",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["hook", "offlane", "soft_support"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "chain_vanguard_aura_dot",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["aura_dot", "offlane", "soft_support"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "E",
+        id: "chain_vanguard_regen_stacks",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["regen_stacks", "offlane", "soft_support"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        },
+        scaling: {
+          attribute: "strength",
+          coefficient: 0.45
+        }
+      },
+      {
+        key: "R",
+        id: "chain_vanguard_channel_disable",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["channel_disable", "offlane", "soft_support"],
+        values: {
+          damage: [390, 520, 650],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h014_storm_channeler",
+    referenceSlot: "dota_like_slot_014",
+    archetype: "mago móvel de mana, remanescentes e pickoff",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "escape", "nuker"],
+    complexity: 3,
+    preferredPositions: [2],
+    designTags: ["mana_scaling", "mobility", "pull", "overload"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 14.6,
+      intelligence: 28.4
+    },
+    attributeGrowth: {
+      strengthGain: 2.12,
+      agilityGain: 1.6,
+      intelligenceGain: 3.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 26,
+      baseDamageMax: 34,
+      baseArmor: 1.1,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 600,
+      acquisitionRange: 800,
+      movementSpeed: 310,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "storm_channeler_mana_scaling",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["mana_scaling", "mid", "escape"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        },
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.5
+        }
+      },
+      {
+        key: "W",
+        id: "storm_channeler_mobility",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["mobility", "mid", "escape"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "storm_channeler_pull",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["pull", "mid", "escape"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "storm_channeler_overload",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["overload", "mid", "escape"],
+        values: {
+          damage: [480, 640, 800],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h015_burrow_sentinel",
+    referenceSlot: "dota_like_slot_015",
+    archetype: "iniciador de areia, stun em linha e dano persistente",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler", "escape"],
+    complexity: 2,
+    preferredPositions: [3, 4],
+    designTags: ["burrow", "sandstorm", "death_explosion", "aoe_channel"],
+    baseAttributes: {
+      strength: 22.0,
+      agility: 18.6,
+      intelligence: 19.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.26,
+      agilityGain: 1.86,
+      intelligenceGain: 2.06
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 27,
+      baseDamageMax: 36,
+      baseArmor: 2.1,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "burrow_sentinel_burrow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["burrow", "offlane", "soft_support"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "burrow_sentinel_sandstorm",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["sandstorm", "offlane", "soft_support"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          radius: 445
+        }
+      },
+      {
+        key: "E",
+        id: "burrow_sentinel_death_explosion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["death_explosion", "offlane", "soft_support"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "burrow_sentinel_aoe_channel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["aoe_channel", "offlane", "soft_support"],
+        values: {
+          damage: [420, 560, 700],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h016_lightning_archmage",
+    referenceSlot: "dota_like_slot_016",
+    archetype: "mago de raio, dano em cadeia e pressão global",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "pusher"],
+    complexity: 2,
+    preferredPositions: [2, 4],
+    designTags: ["chain_lightning", "global_nuke", "percent_damage", "vision"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 14.6,
+      intelligence: 28.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.0,
+      agilityGain: 1.72,
+      intelligenceGain: 3.54
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 25,
+      baseDamageMax: 31,
+      baseArmor: 0.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 290,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "lightning_archmage_chain_lightning",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["chain_lightning", "mid", "nuker"],
+        values: {
+          damage: [170, 215, 260, 305],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "lightning_archmage_global_nuke",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["global_nuke", "mid", "nuker"],
+        values: {
+          damage: [170, 215, 260, 305],
+          cooldown: [16, 14, 12, 10],
+          global: true
+        }
+      },
+      {
+        key: "E",
+        id: "lightning_archmage_percent_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["percent_damage", "mid", "nuker"],
+        values: {
+          damage: [170, 215, 260, 305],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "lightning_archmage_vision",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["vision", "mid", "nuker"],
+        values: {
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h017_sea_captain",
+    referenceSlot: "dota_like_slot_017",
+    archetype: "iniciador naval de controle, maré e reposicionamento",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "mid", "initiator", "durable", "disabler"],
+    complexity: 2,
+    preferredPositions: [2, 3],
+    designTags: ["torrent", "cleave", "mark_return", "ship_buff"],
+    baseAttributes: {
+      strength: 27.8,
+      agility: 14.0,
+      intelligence: 19.8
+    },
+    attributeGrowth: {
+      strengthGain: 3.34,
+      agilityGain: 1.58,
+      intelligenceGain: 1.92
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 2.0,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 35,
+      baseDamageMax: 42,
+      baseArmor: 3.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "sea_captain_torrent",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["torrent", "offlane", "mid"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "sea_captain_cleave",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["cleave", "offlane", "mid"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "sea_captain_mark_return",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["mark_return", "offlane", "mid"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "sea_captain_ship_buff",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["ship_buff", "offlane", "mid"],
+        values: {
+          damage: [525, 700, 875],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h018_fire_invoker",
+    referenceSlot: "dota_like_slot_018",
+    archetype: "mago explosivo de stun, área e burst direto",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "disabler"],
+    complexity: 1,
+    preferredPositions: [2],
+    designTags: ["stun", "aoe_nuke", "mana_regen", "burst"],
+    baseAttributes: {
+      strength: 21.0,
+      agility: 14.0,
+      intelligence: 27.0
+    },
+    attributeGrowth: {
+      strengthGain: 1.88,
+      agilityGain: 1.84,
+      intelligenceGain: 3.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 26,
+      baseDamageMax: 34,
+      baseArmor: 0.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "fire_invoker_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["stun", "mid", "nuker"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "fire_invoker_aoe_nuke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["aoe_nuke", "mid", "nuker"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "fire_invoker_mana_regen",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["mana_regen", "mid", "nuker"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        },
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.4
+        }
+      },
+      {
+        key: "R",
+        id: "fire_invoker_burst",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["burst", "mid", "nuker"],
+        values: {
+          damage: [270, 360, 450],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h019_ice_lich",
+    referenceSlot: "dota_like_slot_019",
+    archetype: "suporte de armadura gelada e ultimate ricocheteante",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "nuker", "disabler"],
+    complexity: 2,
+    preferredPositions: [5],
+    designTags: ["frost_armor", "slow", "chain_ultimate", "sacrifice"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 14.0,
+      intelligence: 29.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.12,
+      agilityGain: 1.6,
+      intelligenceGain: 3.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 23,
+      baseDamageMax: 32,
+      baseArmor: 0.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 600,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "ice_lich_frost_armor",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["frost_armor", "hard_support", "nuker"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          armorChange: [2, 3, 4, 5]
+        }
+      },
+      {
+        key: "W",
+        id: "ice_lich_slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["slow", "hard_support", "nuker"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "ice_lich_chain_ultimate",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["chain_ultimate", "hard_support", "nuker"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "ice_lich_sacrifice",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["sacrifice", "hard_support", "nuker"],
+        values: {
+          damage: [285, 380, 475],
+          cooldown: [120, 100, 80],
+          slowPct: [15, 22, 29],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h020_hex_warden",
+    referenceSlot: "dota_like_slot_020",
+    archetype: "suporte de hex, raio encadeado e amarras",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "soft_support", "disabler", "pusher"],
+    complexity: 2,
+    preferredPositions: [4, 5],
+    designTags: ["hex", "chain_nuke", "shackle", "summon_wards"],
+    baseAttributes: {
+      strength: 17.0,
+      agility: 14.6,
+      intelligence: 27.2
+    },
+    attributeGrowth: {
+      strengthGain: 1.76,
+      agilityGain: 1.36,
+      intelligenceGain: 3.06
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 22,
+      baseDamageMax: 28,
+      baseArmor: 0.4,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 285,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "hex_warden_hex",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["hex", "hard_support", "soft_support"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "hex_warden_chain_nuke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["chain_nuke", "hard_support", "soft_support"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "hex_warden_shackle",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["shackle", "hard_support", "soft_support"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "hex_warden_summon_wards",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["summon_wards", "hard_support", "soft_support"],
+        values: {
+          damage: [225, 300, 375],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660],
+          summons: [1, 2, 3],
+          summonDuration: [18, 24, 30]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h021_serpent_crusher",
+    referenceSlot: "dota_like_slot_021",
+    archetype: "frontliner anfíbio de sprint, bash e corrosão",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    complexity: 2,
+    preferredPositions: [3],
+    designTags: ["bash", "sprint", "armor_reduction", "single_target_stun"],
+    baseAttributes: {
+      strength: 29.8,
+      agility: 14.0,
+      intelligence: 16.6
+    },
+    attributeGrowth: {
+      strengthGain: 3.1,
+      agilityGain: 1.82,
+      intelligenceGain: 2.04
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 2.0,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 33,
+      baseDamageMax: 40,
+      baseArmor: 3.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 305,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "serpent_crusher_bash",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        tags: ["bash", "offlane", "initiator"],
+        values: {
+          damage: [80, 125, 170, 215],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85]
+        }
+      },
+      {
+        key: "W",
+        id: "serpent_crusher_sprint",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["sprint", "offlane", "initiator"],
+        values: {
+          damage: [80, 125, 170, 215],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "serpent_crusher_armor_reduction",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["armor_reduction", "offlane", "initiator"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          armorChange: [2, 3, 4, 5]
+        }
+      },
+      {
+        key: "R",
+        id: "serpent_crusher_single_target_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["single_target_stun", "offlane", "initiator"],
+        values: {
+          damage: [240, 320, 400],
+          cooldown: [120, 100, 80],
+          stun: [0.8, 1.15, 1.5],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h022_tide_colossus",
+    referenceSlot: "dota_like_slot_022",
+    archetype: "tanque de maré, redução de dano e stun massivo",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    complexity: 1,
+    preferredPositions: [3],
+    designTags: ["aoe_stun", "damage_block", "armor_reduction", "damage_reduction"],
+    baseAttributes: {
+      strength: 27.8,
+      agility: 14.0,
+      intelligence: 18.6
+    },
+    attributeGrowth: {
+      strengthGain: 3.34,
+      agilityGain: 1.58,
+      intelligenceGain: 1.92
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 2.0,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 32,
+      baseDamageMax: 40,
+      baseArmor: 3.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "tide_colossus_aoe_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["aoe_stun", "offlane", "initiator"],
+        values: {
+          damage: [85, 130, 175, 220],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "tide_colossus_damage_block",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["damage_block", "offlane", "initiator"],
+        values: {
+          damage: [85, 130, 175, 220],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "tide_colossus_armor_reduction",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["armor_reduction", "offlane", "initiator"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          armorChange: [2, 3, 4, 5]
+        }
+      },
+      {
+        key: "R",
+        id: "tide_colossus_damage_reduction",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["damage_reduction", "offlane", "initiator"],
+        values: {
+          damage: [255, 340, 425],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h023_witch_shaman",
+    referenceSlot: "dota_like_slot_023",
+    archetype: "suporte vodu de maldição, cura e dano em cadeia",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "healer", "nuker"],
+    complexity: 2,
+    preferredPositions: [5],
+    designTags: ["heal", "curse", "bounce", "death_ward"],
+    baseAttributes: {
+      strength: 21.0,
+      agility: 14.0,
+      intelligence: 28.8
+    },
+    attributeGrowth: {
+      strengthGain: 1.88,
+      agilityGain: 1.84,
+      intelligenceGain: 3.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 23,
+      baseDamageMax: 32,
+      baseArmor: 0.5,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "witch_shaman_heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["heal", "hard_support", "disabler"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "witch_shaman_curse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["curse", "hard_support", "disabler"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "witch_shaman_bounce",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["bounce", "hard_support", "disabler"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "witch_shaman_death_ward",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["death_ward", "hard_support", "disabler"],
+        values: {
+          damage: [345, 460, 575],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660],
+          summons: [1, 2, 3],
+          summonDuration: [18, 24, 30]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h024_stealth_assassin",
+    referenceSlot: "dota_like_slot_024",
+    archetype: "assassino invisível de fumaça e explosão pelas costas",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "escape", "scout"],
+    complexity: 2,
+    preferredPositions: [1, 2],
+    designTags: ["stealth", "backstab", "smoke", "blink_strike"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 25.4,
+      intelligence: 17.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.32,
+      agilityGain: 3.2,
+      intelligenceGain: 1.58
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 25,
+      baseDamageMax: 31,
+      baseArmor: 2.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 200,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 1200
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "stealth_assassin_stealth",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["stealth", "carry", "escape"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "stealth_assassin_backstab",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        tags: ["backstab", "carry", "escape"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "E",
+        id: "stealth_assassin_smoke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["smoke", "carry", "escape"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "stealth_assassin_blink_strike",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["blink_strike", "carry", "escape"],
+        values: {
+          damage: [285, 380, 475],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h025_gravity_summoner",
+    referenceSlot: "dota_like_slot_025",
+    archetype: "mago gravitacional de buraco negro e conversão",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["offlane", "soft_support", "initiator", "disabler", "pusher"],
+    complexity: 3,
+    preferredPositions: [3, 4],
+    designTags: ["black_hole", "conversion", "pulse", "dispel"],
+    baseAttributes: {
+      strength: 22.0,
+      agility: 18.6,
+      intelligence: 20.4
+    },
+    attributeGrowth: {
+      strengthGain: 2.26,
+      agilityGain: 1.86,
+      intelligenceGain: 2.06
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 30,
+      baseDamageMax: 37,
+      baseArmor: 2.1,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 285,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "gravity_summoner_black_hole",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["black_hole", "offlane", "soft_support"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          radius: 365
+        }
+      },
+      {
+        key: "W",
+        id: "gravity_summoner_conversion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["conversion", "offlane", "soft_support"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "gravity_summoner_pulse",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["pulse", "offlane", "soft_support"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          radius: 365
+        }
+      },
+      {
+        key: "R",
+        id: "gravity_summoner_dispel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["dispel", "offlane", "soft_support"],
+        values: {
+          damage: [300, 400, 500],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h026_gadget_mage",
+    referenceSlot: "dota_like_slot_026",
+    archetype: "engenheiro arcano de lasers, máquinas e reposicionamento",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "pusher"],
+    complexity: 3,
+    preferredPositions: [2],
+    designTags: ["laser", "machines", "teleport", "rearm"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 14.6,
+      intelligence: 28.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.0,
+      agilityGain: 1.72,
+      intelligenceGain: 3.54
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 27,
+      baseDamageMax: 35,
+      baseArmor: 0.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 290,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "gadget_mage_laser",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["laser", "mid", "nuker"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "gadget_mage_machines",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["machines", "mid", "nuker"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "gadget_mage_teleport",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["teleport", "mid", "nuker"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "gadget_mage_rearm",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["rearm", "mid", "nuker"],
+        values: {
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h027_longshot_artillerist",
+    referenceSlot: "dota_like_slot_027",
+    archetype: "atirador de alcance extremo e execução à distância",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "mid"],
+    complexity: 1,
+    preferredPositions: [1, 2],
+    designTags: ["range", "headshot", "shrapnel", "execute"],
+    baseAttributes: {
+      strength: 18.0,
+      agility: 24.2,
+      intelligence: 19.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.44,
+      agilityGain: 3.08,
+      intelligenceGain: 1.82
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 28,
+      baseDamageMax: 37,
+      baseArmor: 2.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "longshot_artillerist_range",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["range", "carry", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "W",
+        id: "longshot_artillerist_headshot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["headshot", "carry", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "E",
+        id: "longshot_artillerist_shrapnel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["shrapnel", "carry", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "longshot_artillerist_execute",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["execute", "carry", "mid"],
+        values: {
+          damage: [405, 540, 675],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h028_plague_saint",
+    referenceSlot: "dota_like_slot_028",
+    archetype: "mago resistente de cura, decomposição e sentença",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["offlane", "mid", "durable", "healer"],
+    complexity: 2,
+    preferredPositions: [2, 3],
+    designTags: ["heal_nuke", "aura_dot", "ethereal", "execute"],
+    baseAttributes: {
+      strength: 24.6,
+      agility: 14.0,
+      intelligence: 26.4
+    },
+    attributeGrowth: {
+      strengthGain: 1.88,
+      agilityGain: 1.84,
+      intelligenceGain: 3.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 24,
+      baseDamageMax: 30,
+      baseArmor: 2.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "plague_saint_heal_nuke",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["heal_nuke", "offlane", "mid"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "plague_saint_aura_dot",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["aura_dot", "offlane", "mid"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "E",
+        id: "plague_saint_ethereal",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["ethereal", "offlane", "mid"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "plague_saint_execute",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["execute", "offlane", "mid"],
+        values: {
+          damage: [420, 560, 700],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h029_soul_warlock",
+    referenceSlot: "dota_like_slot_029",
+    archetype: "suporte de laços, cura em área e invocação infernal",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "healer", "disabler", "initiator"],
+    complexity: 2,
+    preferredPositions: [5],
+    designTags: ["heal", "fatal_bonds", "summon_golem", "slow_zone"],
+    baseAttributes: {
+      strength: 20.2,
+      agility: 14.0,
+      intelligence: 29.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.12,
+      agilityGain: 1.6,
+      intelligenceGain: 3.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.55,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 25,
+      baseDamageMax: 32,
+      baseArmor: 1.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 600,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "soul_warlock_heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["heal", "hard_support", "healer"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "soul_warlock_fatal_bonds",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["fatal_bonds", "hard_support", "healer"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [150, 180, 210, 240]
+        }
+      },
+      {
+        key: "E",
+        id: "soul_warlock_summon_golem",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["summon_golem", "hard_support", "healer"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "R",
+        id: "soul_warlock_slow_zone",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["slow_zone", "hard_support", "healer"],
+        values: {
+          damage: [360, 480, 600],
+          cooldown: [120, 100, 80],
+          slowPct: [15, 22, 29],
+          radius: 625
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h030_beast_commander",
+    referenceSlot: "dota_like_slot_030",
+    archetype: "offlaner de aura, animais e rugido de iniciação",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "pusher", "scout"],
+    complexity: 2,
+    preferredPositions: [3],
+    designTags: ["summon", "aura", "roar", "scout"],
+    baseAttributes: {
+      strength: 22.0,
+      agility: 19.2,
+      intelligence: 18.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.26,
+      agilityGain: 1.86,
+      intelligenceGain: 2.06
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 29,
+      baseDamageMax: 37,
+      baseArmor: 2.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 200,
+      acquisitionRange: 600,
+      movementSpeed: 295,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 1200
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "beast_commander_summon",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["summon", "offlane", "initiator"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "W",
+        id: "beast_commander_aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["aura", "offlane", "initiator"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "E",
+        id: "beast_commander_roar",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["roar", "offlane", "initiator"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "beast_commander_scout",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["scout", "offlane", "initiator"],
+        values: {
+          damage: [375, 500, 625],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h031_blink_assassin",
+    referenceSlot: "dota_like_slot_031",
+    archetype: "assassina de salto, grito e burst mágico",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "escape"],
+    complexity: 2,
+    preferredPositions: [2],
+    designTags: ["blink", "scream", "dagger_dot", "sonic_wave"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 14.6,
+      intelligence: 27.4
+    },
+    attributeGrowth: {
+      strengthGain: 2.0,
+      agilityGain: 1.72,
+      intelligenceGain: 3.54
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 25,
+      baseDamageMax: 34,
+      baseArmor: 0.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.85,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "blink_assassin_blink",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["blink", "mid", "nuker"],
+        values: {
+          damage: [155, 200, 245, 290],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "blink_assassin_scream",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["scream", "mid", "nuker"],
+        values: {
+          damage: [155, 200, 245, 290],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "blink_assassin_dagger_dot",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["dagger_dot", "mid", "nuker"],
+        values: {
+          damage: [155, 200, 245, 290],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "blink_assassin_sonic_wave",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["sonic_wave", "mid", "nuker"],
+        values: {
+          damage: [465, 620, 775],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h032_poison_alchemist",
+    referenceSlot: "dota_like_slot_032",
+    archetype: "zoner venenoso de wards, veneno e ultimate infecciosa",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "offlane", "nuker", "pusher"],
+    complexity: 2,
+    preferredPositions: [3, 4],
+    designTags: ["poison", "wards", "slow", "plague"],
+    baseAttributes: {
+      strength: 21.8,
+      agility: 18.6,
+      intelligence: 25.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.74,
+      agilityGain: 1.98,
+      intelligenceGain: 2.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.9,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 27,
+      baseDamageMax: 33,
+      baseArmor: 2.5,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "poison_alchemist_poison",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["poison", "soft_support", "offlane"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "poison_alchemist_wards",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["wards", "soft_support", "offlane"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "E",
+        id: "poison_alchemist_slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["slow", "soft_support", "offlane"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "poison_alchemist_plague",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["plague", "soft_support", "offlane"],
+        values: {
+          damage: [480, 640, 800],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h033_chrono_duelist",
+    referenceSlot: "dota_like_slot_033",
+    archetype: "carry temporal de esquiva, salto e prisão em área",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "initiator", "escape"],
+    complexity: 2,
+    preferredPositions: [1],
+    designTags: ["time_walk", "bash", "cooldown_slow", "time_dome"],
+    baseAttributes: {
+      strength: 22.2,
+      agility: 24.8,
+      intelligence: 15.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.08,
+      agilityGain: 3.44,
+      intelligenceGain: 1.7
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.65,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 29,
+      baseDamageMax: 36,
+      baseArmor: 2.5,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "chrono_duelist_time_walk",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["time_walk", "carry", "initiator"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "chrono_duelist_bash",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        tags: ["bash", "carry", "initiator"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85]
+        }
+      },
+      {
+        key: "E",
+        id: "chrono_duelist_cooldown_slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["cooldown_slow", "carry", "initiator"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "chrono_duelist_time_dome",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["time_dome", "carry", "initiator"],
+        values: {
+          damage: [420, 560, 700],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h034_skeleton_monarch",
+    referenceSlot: "dota_like_slot_034",
+    archetype: "carry resiliente de crítico, esqueletos e segunda vida",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["carry", "durable", "pusher"],
+    complexity: 1,
+    preferredPositions: [1],
+    designTags: ["lifesteal", "crit", "summon_skeletons", "reincarnation"],
+    baseAttributes: {
+      strength: 25.8,
+      agility: 15.8,
+      intelligence: 17.6
+    },
+    attributeGrowth: {
+      strengthGain: 3.22,
+      agilityGain: 1.7,
+      intelligenceGain: 1.68
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.5,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 34,
+      baseDamageMax: 42,
+      baseArmor: 2.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "skeleton_monarch_lifesteal",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        tags: ["lifesteal", "carry", "durable"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165]
+        }
+      },
+      {
+        key: "W",
+        id: "skeleton_monarch_crit",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        tags: ["crit", "carry", "durable"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [150, 180, 210, 240]
+        }
+      },
+      {
+        key: "E",
+        id: "skeleton_monarch_summon_skeletons",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["summon_skeletons", "carry", "durable"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "R",
+        id: "skeleton_monarch_reincarnation",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["reincarnation", "carry", "durable"],
+        values: {
+          damage: [435, 580, 725],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h035_death_singer",
+    referenceSlot: "dota_like_slot_035",
+    archetype: "mago de silêncio, espírito e pressão de torres",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "pusher", "nuker", "durable"],
+    complexity: 2,
+    preferredPositions: [2],
+    designTags: ["silence", "spirit_swarm", "siphon", "exorcism"],
+    baseAttributes: {
+      strength: 18.8,
+      agility: 14.6,
+      intelligence: 26.0
+    },
+    attributeGrowth: {
+      strengthGain: 1.76,
+      agilityGain: 1.36,
+      intelligenceGain: 3.06
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.05,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 26,
+      baseDamageMax: 35,
+      baseArmor: 1.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 280,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "death_singer_silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["silence", "mid", "pusher"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          silence: [2.0, 2.5, 3.0, 3.5]
+        }
+      },
+      {
+        key: "W",
+        id: "death_singer_spirit_swarm",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["spirit_swarm", "mid", "pusher"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "death_singer_siphon",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["siphon", "mid", "pusher"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "death_singer_exorcism",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["exorcism", "mid", "pusher"],
+        values: {
+          damage: [525, 700, 875],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h036_blade_assassin",
+    referenceSlot: "dota_like_slot_036",
+    archetype: "assassina física de adaga, evasão e crítico extremo",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "escape"],
+    complexity: 2,
+    preferredPositions: [1],
+    designTags: ["dagger", "blink", "evasion", "critical"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 24.8,
+      intelligence: 16.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.2,
+      agilityGain: 3.32,
+      intelligenceGain: 1.94
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 25,
+      baseDamageMax: 31,
+      baseArmor: 2.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 200,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.85,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "blade_assassin_dagger",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["dagger", "carry", "escape"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "blade_assassin_blink",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["blink", "carry", "escape"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "blade_assassin_evasion",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        tags: ["evasion", "carry", "escape"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "R",
+        id: "blade_assassin_critical",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        tags: ["critical", "carry", "escape"],
+        values: {
+          damage: [195, 260, 325],
+          cooldown: [120, 100, 80],
+          critChance: [12, 16, 20],
+          critMultiplier: [150, 180, 210]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h037_nether_pusher",
+    referenceSlot: "dota_like_slot_037",
+    archetype: "mago de drenagem, explosão e antimagia estrutural",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "pusher", "nuker"],
+    complexity: 2,
+    preferredPositions: [2],
+    designTags: ["life_drain", "nether_blast", "decrepify", "ward"],
+    baseAttributes: {
+      strength: 18.0,
+      agility: 14.6,
+      intelligence: 30.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.24,
+      agilityGain: 1.48,
+      intelligenceGain: 3.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 28,
+      baseDamageMax: 35,
+      baseArmor: 1.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "nether_pusher_life_drain",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["life_drain", "mid", "pusher"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          radius: 365
+        }
+      },
+      {
+        key: "W",
+        id: "nether_pusher_nether_blast",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["nether_blast", "mid", "pusher"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          root: [1.2, 1.6, 2.0, 2.4000000000000004],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "nether_pusher_decrepify",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["decrepify", "mid", "pusher"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "nether_pusher_ward",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["ward", "mid", "pusher"],
+        values: {
+          damage: [285, 380, 475],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660],
+          summons: [1, 2, 3],
+          summonDuration: [18, 24, 30]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h038_psychic_assassin",
+    referenceSlot: "dota_like_slot_038",
+    archetype: "carry psíquica de refração, armadilhas e burst",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["mid", "carry"],
+    complexity: 3,
+    preferredPositions: [1, 2],
+    designTags: ["shield_charges", "psi_blades", "traps", "meld"],
+    baseAttributes: {
+      strength: 21.0,
+      agility: 24.2,
+      intelligence: 16.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.08,
+      agilityGain: 3.44,
+      intelligenceGain: 1.7
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 29,
+      baseDamageMax: 37,
+      baseArmor: 2.1,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "psychic_assassin_shield_charges",
+        kind: "active",
+        target: "point",
+        damageType: "none",
+        tags: ["shield_charges", "mid", "carry"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "psychic_assassin_psi_blades",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["psi_blades", "mid", "carry"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "psychic_assassin_traps",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["traps", "mid", "carry"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          radius: 405
+        }
+      },
+      {
+        key: "R",
+        id: "psychic_assassin_meld",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["meld", "mid", "carry"],
+        values: {
+          damage: [300, 400, 500],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h039_venom_dragon",
+    referenceSlot: "dota_like_slot_039",
+    archetype: "dragão venenoso de corrosão, lentidão e break",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["mid", "offlane", "nuker", "durable"],
+    complexity: 1,
+    preferredPositions: [2, 3],
+    designTags: ["poison_attack", "break", "slow", "corrosive_skin"],
+    baseAttributes: {
+      strength: 22.6,
+      agility: 23.0,
+      intelligence: 19.4
+    },
+    attributeGrowth: {
+      strengthGain: 2.32,
+      agilityGain: 3.2,
+      intelligenceGain: 1.58
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 27,
+      baseDamageMax: 36,
+      baseArmor: 3.5,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 110,
+      baseAttackTime: 1.65,
+      attackRange: 600,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "venom_dragon_poison_attack",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["poison_attack", "mid", "offlane"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "venom_dragon_break",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["break", "mid", "offlane"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          armorChange: [2, 3, 4, 5],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "venom_dragon_slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["slow", "mid", "offlane"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "venom_dragon_corrosive_skin",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["corrosive_skin", "mid", "offlane"],
+        values: {
+          damage: [315, 420, 525],
+          cooldown: [120, 100, 80],
+          armorChange: [2, 3, 4],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h040_lunar_raider",
+    referenceSlot: "dota_like_slot_040",
+    archetype: "carry lunar de ricochete, aura e bombardeio mágico",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "pusher", "nuker"],
+    complexity: 1,
+    preferredPositions: [1],
+    designTags: ["bounce", "aura", "beam", "eclipse"],
+    baseAttributes: {
+      strength: 17.0,
+      agility: 24.8,
+      intelligence: 15.8
+    },
+    attributeGrowth: {
+      strengthGain: 1.96,
+      agilityGain: 2.96,
+      intelligenceGain: 1.46
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 27,
+      baseDamageMax: 33,
+      baseArmor: 1.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 285,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "lunar_raider_bounce",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["bounce", "carry", "pusher"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "lunar_raider_aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["aura", "carry", "pusher"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "E",
+        id: "lunar_raider_beam",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["beam", "carry", "pusher"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "lunar_raider_eclipse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["eclipse", "carry", "pusher"],
+        values: {
+          damage: [330, 440, 550],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h041_dragon_knight",
+    referenceSlot: "dota_like_slot_041",
+    archetype: "tanque de linha, stun e forma dracônica",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["mid", "offlane", "durable", "pusher", "disabler"],
+    complexity: 1,
+    preferredPositions: [2, 3],
+    designTags: ["dragon_form", "stun", "armor_regen", "breath"],
+    baseAttributes: {
+      strength: 28.6,
+      agility: 14.6,
+      intelligence: 18.4
+    },
+    attributeGrowth: {
+      strengthGain: 3.1,
+      agilityGain: 1.82,
+      intelligenceGain: 2.04
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.8,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 35,
+      baseDamageMax: 42,
+      baseArmor: 3.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "dragon_knight_dragon_form",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["dragon_form", "mid", "offlane"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "dragon_knight_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["stun", "mid", "offlane"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "dragon_knight_armor_regen",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["armor_regen", "mid", "offlane"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          armorChange: [2, 3, 4, 5]
+        }
+      },
+      {
+        key: "R",
+        id: "dragon_knight_breath",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["breath", "mid", "offlane"],
+        values: {
+          damage: [345, 460, 575],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h042_grave_savior",
+    referenceSlot: "dota_like_slot_042",
+    archetype: "suporte de cura, veneno e negação de morte",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["hard_support", "healer", "disabler"],
+    complexity: 2,
+    preferredPositions: [5],
+    designTags: ["save", "heal", "armor_shift", "poison"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 18.0,
+      intelligence: 25.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.74,
+      agilityGain: 1.98,
+      intelligenceGain: 2.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.22,
+      baseDamageMin: 26,
+      baseDamageMax: 34,
+      baseArmor: 1.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "grave_savior_save",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["save", "hard_support", "healer"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "grave_savior_heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["heal", "hard_support", "healer"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "grave_savior_armor_shift",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["armor_shift", "hard_support", "healer"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          armorChange: [2, 3, 4, 5]
+        }
+      },
+      {
+        key: "R",
+        id: "grave_savior_poison",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["poison", "hard_support", "healer"],
+        values: {
+          damage: [285, 380, 475],
+          cooldown: [120, 100, 80],
+          slowPct: [15, 22, 29],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h043_clockwork_trapper",
+    referenceSlot: "dota_like_slot_043",
+    archetype: "iniciador mecânico de jaula, foguetes e gancho",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler"],
+    complexity: 2,
+    preferredPositions: [3, 4],
+    designTags: ["cogs", "hookshot", "rocket_vision", "battery"],
+    baseAttributes: {
+      strength: 26.0,
+      agility: 18.0,
+      intelligence: 20.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.38,
+      agilityGain: 2.34,
+      intelligenceGain: 2.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 27,
+      baseDamageMax: 36,
+      baseArmor: 2.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "clockwork_trapper_cogs",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["cogs", "offlane", "soft_support"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "clockwork_trapper_hookshot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["hookshot", "offlane", "soft_support"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "E",
+        id: "clockwork_trapper_rocket_vision",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["rocket_vision", "offlane", "soft_support"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "clockwork_trapper_battery",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["battery", "offlane", "soft_support"],
+        values: {
+          damage: [300, 400, 500],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h044_lightning_demon",
+    referenceSlot: "dota_like_slot_044",
+    archetype: "caster de vínculo elétrico, empurrão e tempestade",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "offlane", "nuker"],
+    complexity: 2,
+    preferredPositions: [2, 3],
+    designTags: ["link_damage", "plasma", "storm_eye", "speed"],
+    baseAttributes: {
+      strength: 20.8,
+      agility: 14.0,
+      intelligence: 28.4
+    },
+    attributeGrowth: {
+      strengthGain: 2.12,
+      agilityGain: 1.6,
+      intelligenceGain: 3.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.65,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 25,
+      baseDamageMax: 31,
+      baseArmor: 1.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 600,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "lightning_demon_link_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["link_damage", "mid", "offlane"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "lightning_demon_plasma",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["plasma", "mid", "offlane"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "lightning_demon_storm_eye",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["storm_eye", "mid", "offlane"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          radius: 405
+        }
+      },
+      {
+        key: "R",
+        id: "lightning_demon_speed",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["speed", "mid", "offlane"],
+        values: {
+          damage: [390, 520, 650],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660],
+          attackSpeed: [25, 45, 65]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h045_forest_commander",
+    referenceSlot: "dota_like_slot_045",
+    archetype: "mago global de teleporte, árvores e invocação",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["offlane", "mid", "pusher"],
+    complexity: 3,
+    preferredPositions: [2, 3],
+    designTags: ["global", "summon", "tree_trap", "wrath"],
+    baseAttributes: {
+      strength: 18.8,
+      agility: 14.6,
+      intelligence: 24.8
+    },
+    attributeGrowth: {
+      strengthGain: 1.76,
+      agilityGain: 1.36,
+      intelligenceGain: 3.06
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.65,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 28,
+      baseDamageMax: 35,
+      baseArmor: 1.1,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 285,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "forest_commander_global",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["global", "offlane", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          global: true
+        }
+      },
+      {
+        key: "W",
+        id: "forest_commander_summon",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["summon", "offlane", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "E",
+        id: "forest_commander_tree_trap",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["tree_trap", "offlane", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          radius: 445
+        }
+      },
+      {
+        key: "R",
+        id: "forest_commander_wrath",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["wrath", "offlane", "mid"],
+        values: {
+          damage: [405, 540, 675],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h046_lifesteal_berserker",
+    referenceSlot: "dota_like_slot_046",
+    archetype: "carry de roubo de vida, imunidade curta e infestação",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["carry", "durable", "escape"],
+    complexity: 1,
+    preferredPositions: [1],
+    designTags: ["lifesteal", "rage", "open_wounds", "infest"],
+    baseAttributes: {
+      strength: 26.8,
+      agility: 15.8,
+      intelligence: 16.0
+    },
+    attributeGrowth: {
+      strengthGain: 3.1,
+      agilityGain: 1.82,
+      intelligenceGain: 2.04
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.5,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 33,
+      baseDamageMax: 41,
+      baseArmor: 2.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.85,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "lifesteal_berserker_lifesteal",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        tags: ["lifesteal", "carry", "durable"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165]
+        }
+      },
+      {
+        key: "W",
+        id: "lifesteal_berserker_rage",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        tags: ["rage", "carry", "durable"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "E",
+        id: "lifesteal_berserker_open_wounds",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["open_wounds", "carry", "durable"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "lifesteal_berserker_infest",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["infest", "carry", "durable"],
+        values: {
+          damage: [345, 460, 575],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h047_dark_vector",
+    referenceSlot: "dota_like_slot_047",
+    archetype: "offlaner de vácuo, parede e corrida acelerada",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "pusher"],
+    complexity: 3,
+    preferredPositions: [3],
+    designTags: ["vacuum", "wall", "ion_shell", "surge"],
+    baseAttributes: {
+      strength: 23.0,
+      agility: 18.6,
+      intelligence: 22.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.74,
+      agilityGain: 1.98,
+      intelligenceGain: 2.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 28,
+      baseDamageMax: 37,
+      baseArmor: 2.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 320,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "dark_vector_vacuum",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["vacuum", "offlane", "initiator"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "dark_vector_wall",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["wall", "offlane", "initiator"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          radius: 525
+        }
+      },
+      {
+        key: "E",
+        id: "dark_vector_ion_shell",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["ion_shell", "offlane", "initiator"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "dark_vector_surge",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["surge", "offlane", "initiator"],
+        values: {
+          damage: [360, 480, 600],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h048_bone_archer",
+    referenceSlot: "dota_like_slot_048",
+    archetype: "atirador invisível de fogo, esqueletos e pickoff",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "mid", "pusher", "escape"],
+    complexity: 2,
+    preferredPositions: [1, 2],
+    designTags: ["stealth", "searing_arrows", "summon_skeletons", "strafe"],
+    baseAttributes: {
+      strength: 21.0,
+      agility: 25.4,
+      intelligence: 16.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.08,
+      agilityGain: 3.44,
+      intelligenceGain: 1.7
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 28,
+      baseDamageMax: 34,
+      baseArmor: 2.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "bone_archer_stealth",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["stealth", "carry", "mid"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "bone_archer_searing_arrows",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["searing_arrows", "carry", "mid"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "E",
+        id: "bone_archer_summon_skeletons",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["summon_skeletons", "carry", "mid"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "R",
+        id: "bone_archer_strafe",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["strafe", "carry", "mid"],
+        values: {
+          damage: [450, 600, 750],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h049_dark_paladin",
+    referenceSlot: "dota_like_slot_049",
+    archetype: "frontliner universal de escudo, cura e negação",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "hard_support", "durable", "healer"],
+    complexity: 1,
+    preferredPositions: [3, 5],
+    designTags: ["shield", "borrowed_life", "heal_damage", "curse"],
+    baseAttributes: {
+      strength: 24.6,
+      agility: 18.0,
+      intelligence: 24.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.62,
+      agilityGain: 2.1,
+      intelligenceGain: 2.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.6,
+      baseMana: 75,
+      baseManaRegen: 0.22,
+      baseDamageMin: 28,
+      baseDamageMax: 35,
+      baseArmor: 3.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 295,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "dark_paladin_shield",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["shield", "offlane", "hard_support"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "dark_paladin_borrowed_life",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["borrowed_life", "offlane", "hard_support"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "dark_paladin_heal_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["heal_damage", "offlane", "hard_support"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "dark_paladin_curse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["curse", "offlane", "hard_support"],
+        values: {
+          damage: [390, 520, 650],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h050_wild_enchantress",
+    referenceSlot: "dota_like_slot_050",
+    archetype: "suporte selvagem de cura, controle de creeps e poke",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "soft_support", "pusher"],
+    complexity: 2,
+    preferredPositions: [4, 5],
+    designTags: ["heal", "creep_control", "slow", "untouchable"],
+    baseAttributes: {
+      strength: 17.0,
+      agility: 14.6,
+      intelligence: 26.6
+    },
+    attributeGrowth: {
+      strengthGain: 1.76,
+      agilityGain: 1.36,
+      intelligenceGain: 3.06
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 24,
+      baseDamageMax: 32,
+      baseArmor: 0.4,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 285,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "wild_enchantress_heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["heal", "hard_support", "soft_support"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "wild_enchantress_creep_control",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["creep_control", "hard_support", "soft_support"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "wild_enchantress_slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["slow", "hard_support", "soft_support"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "wild_enchantress_untouchable",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["untouchable", "hard_support", "soft_support"],
+        values: {
+          damage: [405, 540, 675],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h051_spear_martyr",
+    referenceSlot: "dota_like_slot_051",
+    archetype: "lutador de sacrifício, fogo interior e dano crescente",
+    primaryAttribute: "strength",
+    attackType: "ranged",
+    roles: ["carry", "offlane", "durable"],
+    complexity: 2,
+    preferredPositions: [1, 3],
+    designTags: ["sacrifice", "burning_spears", "regen_break", "berserk"],
+    baseAttributes: {
+      strength: 28.6,
+      agility: 15.2,
+      intelligence: 16.0
+    },
+    attributeGrowth: {
+      strengthGain: 3.1,
+      agilityGain: 1.82,
+      intelligenceGain: 2.04
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.8,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 33,
+      baseDamageMax: 42,
+      baseArmor: 3.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.8,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 285,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "spear_martyr_sacrifice",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["sacrifice", "carry", "offlane"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "spear_martyr_burning_spears",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["burning_spears", "carry", "offlane"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "spear_martyr_regen_break",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["regen_break", "carry", "offlane"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          armorChange: [2, 3, 4, 5],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "spear_martyr_berserk",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["berserk", "carry", "offlane"],
+        values: {
+          damage: [420, 560, 700],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h052_night_hunter",
+    referenceSlot: "dota_like_slot_052",
+    archetype: "caçador noturno de silêncio, voo e visão superior",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler"],
+    complexity: 2,
+    preferredPositions: [3, 4],
+    designTags: ["night_power", "silence", "void_slow", "vision"],
+    baseAttributes: {
+      strength: 26.0,
+      agility: 14.0,
+      intelligence: 19.8
+    },
+    attributeGrowth: {
+      strengthGain: 3.34,
+      agilityGain: 1.58,
+      intelligenceGain: 1.92
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.3,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 30,
+      baseDamageMax: 36,
+      baseArmor: 2.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "night_hunter_night_power",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["night_power", "offlane", "soft_support"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "night_hunter_silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["silence", "offlane", "soft_support"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          silence: [2.0, 2.5, 3.0, 3.5]
+        }
+      },
+      {
+        key: "E",
+        id: "night_hunter_void_slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["void_slow", "offlane", "soft_support"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "night_hunter_vision",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["vision", "offlane", "soft_support"],
+        values: {
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h053_brood_matriarch",
+    referenceSlot: "dota_like_slot_053",
+    archetype: "pusher de teia, mobilidade territorial e crias",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "mid", "pusher", "escape"],
+    complexity: 3,
+    preferredPositions: [2, 3],
+    designTags: ["webs", "spawn", "lifesteal", "territory"],
+    baseAttributes: {
+      strength: 24.8,
+      agility: 19.2,
+      intelligence: 20.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.38,
+      agilityGain: 2.34,
+      intelligenceGain: 2.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.9,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 31,
+      baseDamageMax: 38,
+      baseArmor: 2.1,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 325,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "brood_matriarch_webs",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["webs", "offlane", "mid"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "brood_matriarch_spawn",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["spawn", "offlane", "mid"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "brood_matriarch_lifesteal",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        tags: ["lifesteal", "offlane", "mid"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165]
+        }
+      },
+      {
+        key: "R",
+        id: "brood_matriarch_territory",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["territory", "offlane", "mid"],
+        values: {
+          damage: [525, 700, 875],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h054_bounty_scout",
+    referenceSlot: "dota_like_slot_054",
+    archetype: "caçador furtivo de visão, ouro e perseguição",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["soft_support", "scout", "escape"],
+    complexity: 2,
+    preferredPositions: [4],
+    designTags: ["track", "stealth", "bonus_gold", "shuriken"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 24.2,
+      intelligence: 18.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.32,
+      agilityGain: 3.2,
+      intelligenceGain: 1.58
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 24,
+      baseDamageMax: 32,
+      baseArmor: 2.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 110,
+      baseAttackTime: 1.65,
+      attackRange: 200,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 1200
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "bounty_scout_track",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["track", "soft_support", "scout"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "bounty_scout_stealth",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["stealth", "soft_support", "scout"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "bounty_scout_bonus_gold",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["bonus_gold", "soft_support", "scout"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "bounty_scout_shuriken",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["shuriken", "soft_support", "scout"],
+        values: {
+          damage: [195, 260, 325],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h055_time_weaver",
+    referenceSlot: "dota_like_slot_055",
+    archetype: "carry móvel de insetos, redução de armadura e reversão",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "escape", "scout"],
+    complexity: 3,
+    preferredPositions: [1],
+    designTags: ["time_lapse", "swarm", "shukuchi", "double_hit"],
+    baseAttributes: {
+      strength: 17.0,
+      agility: 25.4,
+      intelligence: 14.0
+    },
+    attributeGrowth: {
+      strengthGain: 1.96,
+      agilityGain: 2.96,
+      intelligenceGain: 1.46
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 26,
+      baseDamageMax: 35,
+      baseArmor: 2.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 290,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 1200
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "time_weaver_time_lapse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["time_lapse", "carry", "escape"],
+        values: {
+          damage: [70, 115, 160, 205],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "time_weaver_swarm",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["swarm", "carry", "escape"],
+        values: {
+          damage: [70, 115, 160, 205],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "time_weaver_shukuchi",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["shukuchi", "carry", "escape"],
+        values: {
+          damage: [70, 115, 160, 205],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "time_weaver_double_hit",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["double_hit", "carry", "escape"],
+        values: {
+          damage: [210, 280, 350],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h056_twin_dragon",
+    referenceSlot: "dota_like_slot_056",
+    archetype: "suporte bicéfalo de gelo/fogo e controle de área",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "pusher", "disabler", "nuker"],
+    complexity: 1,
+    preferredPositions: [5],
+    designTags: ["dual_breath", "ice_path", "liquid_fire", "macropyre"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 14.6,
+      intelligence: 29.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.0,
+      agilityGain: 1.72,
+      intelligenceGain: 3.54
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 23,
+      baseDamageMax: 29,
+      baseArmor: 0.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 290,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "twin_dragon_dual_breath",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["dual_breath", "hard_support", "pusher"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "twin_dragon_ice_path",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["ice_path", "hard_support", "pusher"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "twin_dragon_liquid_fire",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["liquid_fire", "hard_support", "pusher"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "twin_dragon_macropyre",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["macropyre", "hard_support", "pusher"],
+        values: {
+          damage: [300, 400, 500],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h057_fire_rider",
+    referenceSlot: "dota_like_slot_057",
+    archetype: "iniciador voador de óleo, trilha de fogo e arrasto",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["offlane", "initiator", "disabler", "escape"],
+    complexity: 3,
+    preferredPositions: [3],
+    designTags: ["sticky_oil", "trail_fire", "drag", "knockback"],
+    baseAttributes: {
+      strength: 23.0,
+      agility: 18.6,
+      intelligence: 22.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.74,
+      agilityGain: 1.98,
+      intelligenceGain: 2.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 29,
+      baseDamageMax: 36,
+      baseArmor: 2.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.8,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "fire_rider_sticky_oil",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["sticky_oil", "offlane", "initiator"],
+        values: {
+          damage: [80, 125, 170, 215],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "fire_rider_trail_fire",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["trail_fire", "offlane", "initiator"],
+        values: {
+          damage: [80, 125, 170, 215],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "fire_rider_drag",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["drag", "offlane", "initiator"],
+        values: {
+          damage: [80, 125, 170, 215],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "fire_rider_knockback",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["knockback", "offlane", "initiator"],
+        values: {
+          damage: [240, 320, 400],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h058_animal_priest",
+    referenceSlot: "dota_like_slot_058",
+    archetype: "suporte de controle espiritual e exército neutro",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["hard_support", "pusher", "healer"],
+    complexity: 3,
+    preferredPositions: [5],
+    designTags: ["convert", "heal", "global_recall", "army"],
+    baseAttributes: {
+      strength: 23.0,
+      agility: 18.6,
+      intelligence: 22.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.38,
+      agilityGain: 2.34,
+      intelligenceGain: 2.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.22,
+      baseDamageMin: 27,
+      baseDamageMax: 35,
+      baseArmor: 1.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "animal_priest_convert",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["convert", "hard_support", "pusher"],
+        values: {
+          damage: [85, 130, 175, 220],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "animal_priest_heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["heal", "hard_support", "pusher"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "animal_priest_global_recall",
+        kind: "active",
+        target: "global",
+        damageType: "none",
+        tags: ["global_recall", "hard_support", "pusher"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          global: true
+        }
+      },
+      {
+        key: "R",
+        id: "animal_priest_army",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["army", "hard_support", "pusher"],
+        values: {
+          damage: [255, 340, 425],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h059_specter_global",
+    referenceSlot: "dota_like_slot_059",
+    archetype: "carry espectral de dispersão e presença global",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "durable"],
+    complexity: 2,
+    preferredPositions: [1],
+    designTags: ["dispersion", "global_shadow", "dagger_path", "desolate"],
+    baseAttributes: {
+      strength: 20.8,
+      agility: 24.2,
+      intelligence: 17.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.32,
+      agilityGain: 3.2,
+      intelligenceGain: 1.58
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.15,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 26,
+      baseDamageMax: 35,
+      baseArmor: 3.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "specter_global_dispersion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["dispersion", "carry", "durable"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "specter_global_global_shadow",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["global_shadow", "carry", "durable"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          global: true
+        }
+      },
+      {
+        key: "E",
+        id: "specter_global_dagger_path",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["dagger_path", "carry", "durable"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "specter_global_desolate",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["desolate", "carry", "durable"],
+        values: {
+          damage: [270, 360, 450],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h060_doom_bringer",
+    referenceSlot: "dota_like_slot_060",
+    archetype: "brutamontes de devorar, maldição e silêncio supremo",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    complexity: 2,
+    preferredPositions: [3],
+    designTags: ["devour", "infernal_blade", "scorched_earth", "doom"],
+    baseAttributes: {
+      strength: 26.8,
+      agility: 14.0,
+      intelligence: 14.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.86,
+      agilityGain: 1.46,
+      intelligenceGain: 1.56
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 2.0,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 30,
+      baseDamageMax: 36,
+      baseArmor: 2.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 200,
+      acquisitionRange: 600,
+      movementSpeed: 290,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "doom_bringer_devour",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["devour", "offlane", "initiator"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "doom_bringer_infernal_blade",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["infernal_blade", "offlane", "initiator"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "doom_bringer_scorched_earth",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["scorched_earth", "offlane", "initiator"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "doom_bringer_doom",
+        kind: "active",
+        target: "unit",
+        damageType: "pure",
+        tags: ["doom", "offlane", "initiator"],
+        values: {
+          damage: [285, 380, 475],
+          cooldown: [120, 100, 80],
+          silence: [2.0, 2.5, 3.0],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h061_ice_ancient",
+    referenceSlot: "dota_like_slot_061",
+    archetype: "suporte glacial de negação de cura e controle global",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "nuker", "disabler"],
+    complexity: 2,
+    preferredPositions: [5],
+    designTags: ["anti_heal", "ice_blast", "chilling_touch", "cold_feet"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 14.0,
+      intelligence: 28.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.0,
+      agilityGain: 1.72,
+      intelligenceGain: 3.54
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 25,
+      baseDamageMax: 32,
+      baseArmor: 0.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 290,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "ice_ancient_anti_heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["anti_heal", "hard_support", "nuker"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "ice_ancient_ice_blast",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["ice_blast", "hard_support", "nuker"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "ice_ancient_chilling_touch",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["chilling_touch", "hard_support", "nuker"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "ice_ancient_cold_feet",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["cold_feet", "hard_support", "nuker"],
+        values: {
+          damage: [375, 500, 625],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h062_bear_berserker",
+    referenceSlot: "dota_like_slot_062",
+    archetype: "carry de fúria acumulada e burst corpo a corpo",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "durable"],
+    complexity: 1,
+    preferredPositions: [1],
+    designTags: ["fury_swipes", "enrage", "earthshock", "overpower"],
+    baseAttributes: {
+      strength: 19.8,
+      agility: 24.2,
+      intelligence: 18.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.44,
+      agilityGain: 3.08,
+      intelligenceGain: 1.82
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.15,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 27,
+      baseDamageMax: 35,
+      baseArmor: 3.4,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "bear_berserker_fury_swipes",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["fury_swipes", "carry", "durable"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "bear_berserker_enrage",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        tags: ["enrage", "carry", "durable"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "E",
+        id: "bear_berserker_earthshock",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["earthshock", "carry", "durable"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "bear_berserker_overpower",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["overpower", "carry", "durable"],
+        values: {
+          damage: [315, 420, 525],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660],
+          attackSpeed: [25, 45, 65]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h063_horned_charger",
+    referenceSlot: "dota_like_slot_063",
+    archetype: "ganker global de investida, resistência e bash",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "durable"],
+    complexity: 2,
+    preferredPositions: [3, 4],
+    designTags: ["global_charge", "bash", "status_resist", "impact"],
+    baseAttributes: {
+      strength: 30.8,
+      agility: 14.0,
+      intelligence: 16.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.98,
+      agilityGain: 1.94,
+      intelligenceGain: 1.8
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 2.0,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 31,
+      baseDamageMax: 40,
+      baseArmor: 3.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 305,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "horned_charger_global_charge",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["global_charge", "offlane", "soft_support"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          global: true
+        }
+      },
+      {
+        key: "W",
+        id: "horned_charger_bash",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        tags: ["bash", "offlane", "soft_support"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85]
+        }
+      },
+      {
+        key: "E",
+        id: "horned_charger_status_resist",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["status_resist", "offlane", "soft_support"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "horned_charger_impact",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["impact", "offlane", "soft_support"],
+        values: {
+          damage: [330, 440, 550],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h064_gyro_artillery",
+    referenceSlot: "dota_like_slot_064",
+    archetype: "atirador tecnológico de foguetes, flak e bombardeio",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "nuker"],
+    complexity: 2,
+    preferredPositions: [1],
+    designTags: ["flak", "rocket", "missile", "call_down"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 24.2,
+      intelligence: 18.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.32,
+      agilityGain: 3.2,
+      intelligenceGain: 1.58
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 26,
+      baseDamageMax: 32,
+      baseArmor: 2.4,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 600,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "gyro_artillery_flak",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["flak", "carry", "nuker"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "gyro_artillery_rocket",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["rocket", "carry", "nuker"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "gyro_artillery_missile",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["missile", "carry", "nuker"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "gyro_artillery_call_down",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["call_down", "carry", "nuker"],
+        values: {
+          damage: [420, 560, 700],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h065_chemical_brawler",
+    referenceSlot: "dota_like_slot_065",
+    archetype: "lutador químico de stun preparado e farm acelerado",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["carry", "offlane", "durable"],
+    complexity: 2,
+    preferredPositions: [1, 3],
+    designTags: ["chemical_rage", "acid_zone", "unstable_stun", "gold_scaling"],
+    baseAttributes: {
+      strength: 25.6,
+      agility: 15.2,
+      intelligence: 14.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.86,
+      agilityGain: 1.46,
+      intelligenceGain: 1.56
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.8,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 35,
+      baseDamageMax: 42,
+      baseArmor: 2.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "chemical_brawler_chemical_rage",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        tags: ["chemical_rage", "carry", "offlane"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "W",
+        id: "chemical_brawler_acid_zone",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["acid_zone", "carry", "offlane"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          radius: 525
+        }
+      },
+      {
+        key: "E",
+        id: "chemical_brawler_unstable_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["unstable_stun", "carry", "offlane"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "chemical_brawler_gold_scaling",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["gold_scaling", "carry", "offlane"],
+        values: {
+          damage: [360, 480, 600],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        },
+        scaling: {
+          attribute: "strength",
+          coefficient: 0.65
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h066_complex_mage",
+    referenceSlot: "dota_like_slot_066",
+    archetype: "arquimago complexo de dez magias combinatórias",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "disabler", "escape"],
+    complexity: 3,
+    preferredPositions: [2],
+    designTags: ["spell_weaving", "summon", "global_blast", "control"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 14.6,
+      intelligence: 28.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.0,
+      agilityGain: 1.72,
+      intelligenceGain: 3.54
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 26,
+      baseDamageMax: 34,
+      baseArmor: 0.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.85,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "complex_mage_spell_weaving",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["spell_weaving", "mid", "nuker"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "complex_mage_summon",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["summon", "mid", "nuker"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "E",
+        id: "complex_mage_global_blast",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["global_blast", "mid", "nuker"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          global: true
+        }
+      },
+      {
+        key: "R",
+        id: "complex_mage_control",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["control", "mid", "nuker"],
+        values: {
+          damage: [450, 600, 750],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h067_silence_warden",
+    referenceSlot: "dota_like_slot_067",
+    archetype: "controlador de silêncio, roubo de inteligência e punição global",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "hard_support", "disabler"],
+    complexity: 2,
+    preferredPositions: [2, 5],
+    designTags: ["silence", "int_steal", "glaives", "global_silence"],
+    baseAttributes: {
+      strength: 18.0,
+      agility: 14.0,
+      intelligence: 30.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.24,
+      agilityGain: 1.48,
+      intelligenceGain: 3.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 24,
+      baseDamageMax: 33,
+      baseArmor: 1.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "silence_warden_silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["silence", "mid", "hard_support"],
+        values: {
+          damage: [155, 200, 245, 290],
+          cooldown: [16, 14, 12, 10],
+          silence: [2.0, 2.5, 3.0, 3.5]
+        }
+      },
+      {
+        key: "W",
+        id: "silence_warden_int_steal",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["int_steal", "mid", "hard_support"],
+        values: {
+          damage: [155, 200, 245, 290],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "silence_warden_glaives",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["glaives", "mid", "hard_support"],
+        values: {
+          damage: [155, 200, 245, 290],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "silence_warden_global_silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["global_silence", "mid", "hard_support"],
+        values: {
+          damage: [465, 620, 775],
+          cooldown: [120, 100, 80],
+          silence: [2.0, 2.5, 3.0],
+          global: true
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h068_astral_destroyer",
+    referenceSlot: "dota_like_slot_068",
+    archetype: "mago astral de roubo de mana e dano puro",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "disabler"],
+    complexity: 2,
+    preferredPositions: [2],
+    designTags: ["astral_prison", "pure_damage", "mana_pool", "sanity"],
+    baseAttributes: {
+      strength: 21.0,
+      agility: 14.0,
+      intelligence: 27.0
+    },
+    attributeGrowth: {
+      strengthGain: 1.88,
+      agilityGain: 1.84,
+      intelligenceGain: 3.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 24,
+      baseDamageMax: 30,
+      baseArmor: 0.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "astral_destroyer_astral_prison",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["astral_prison", "mid", "nuker"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "astral_destroyer_pure_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "pure",
+        tags: ["pure_damage", "mid", "nuker"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "astral_destroyer_mana_pool",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["mana_pool", "mid", "nuker"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        },
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.5
+        }
+      },
+      {
+        key: "R",
+        id: "astral_destroyer_sanity",
+        kind: "active",
+        target: "unit",
+        damageType: "pure",
+        tags: ["sanity", "mid", "nuker"],
+        values: {
+          damage: [480, 640, 800],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h069_wolf_alpha",
+    referenceSlot: "dota_like_slot_069",
+    archetype: "pusher lupino de aura, summons e transformação",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "carry", "pusher"],
+    complexity: 2,
+    preferredPositions: [1, 3],
+    designTags: ["wolves", "howl", "shapeshift", "aura"],
+    baseAttributes: {
+      strength: 22.8,
+      agility: 19.8,
+      intelligence: 21.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.62,
+      agilityGain: 2.1,
+      intelligenceGain: 2.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.9,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 32,
+      baseDamageMax: 39,
+      baseArmor: 2.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "wolf_alpha_wolves",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["wolves", "offlane", "carry"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "wolf_alpha_howl",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["howl", "offlane", "carry"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "wolf_alpha_shapeshift",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["shapeshift", "offlane", "carry"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "wolf_alpha_aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["aura", "offlane", "carry"],
+        values: {
+          cooldown: [120, 100, 80]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h070_brew_master",
+    referenceSlot: "dota_like_slot_070",
+    archetype: "offlaner evasivo que divide em três formas",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    complexity: 3,
+    preferredPositions: [3],
+    designTags: ["split", "drunken", "clap", "brew"],
+    baseAttributes: {
+      strength: 23.8,
+      agility: 18.0,
+      intelligence: 18.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.26,
+      agilityGain: 1.86,
+      intelligenceGain: 2.06
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.8,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 28,
+      baseDamageMax: 36,
+      baseArmor: 2.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "brew_master_split",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["split", "offlane", "initiator"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "brew_master_drunken",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["drunken", "offlane", "initiator"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "brew_master_clap",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["clap", "offlane", "initiator"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "brew_master_brew",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["brew", "offlane", "initiator"],
+        values: {
+          damage: [435, 580, 725],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h071_shadow_demon",
+    referenceSlot: "dota_like_slot_071",
+    archetype: "suporte de banimento, ilusões e amplificação de dano",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "nuker"],
+    complexity: 3,
+    preferredPositions: [5],
+    designTags: ["banish", "illusion", "purge", "damage_amp"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 14.0,
+      intelligence: 28.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.0,
+      agilityGain: 1.72,
+      intelligenceGain: 3.54
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 23,
+      baseDamageMax: 32,
+      baseArmor: 0.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 290,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "shadow_demon_banish",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["banish", "hard_support", "disabler"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "shadow_demon_illusion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["illusion", "hard_support", "disabler"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "E",
+        id: "shadow_demon_purge",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["purge", "hard_support", "disabler"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "shadow_demon_damage_amp",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["damage_amp", "hard_support", "disabler"],
+        values: {
+          damage: [525, 700, 875],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h072_druid_dual",
+    referenceSlot: "dota_like_slot_072",
+    archetype: "carry de dupla unidade, urso e vínculo",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["carry", "pusher", "durable"],
+    complexity: 3,
+    preferredPositions: [1],
+    designTags: ["pet", "bond", "savage_roar", "transform"],
+    baseAttributes: {
+      strength: 21.8,
+      agility: 19.8,
+      intelligence: 22.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.74,
+      agilityGain: 1.98,
+      intelligenceGain: 2.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.3,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 28,
+      baseDamageMax: 34,
+      baseArmor: 3.1,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 290,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "druid_dual_pet",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["pet", "carry", "pusher"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "W",
+        id: "druid_dual_bond",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["bond", "carry", "pusher"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "druid_dual_savage_roar",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["savage_roar", "carry", "pusher"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "druid_dual_transform",
+        kind: "active",
+        target: "self",
+        damageType: "none",
+        tags: ["transform", "carry", "pusher"],
+        values: {
+          cooldown: [120, 100, 80]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h073_chaos_lancer",
+    referenceSlot: "dota_like_slot_073",
+    archetype: "carry de ilusões fortes, crítico e teleporte caótico",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["carry", "durable", "disabler"],
+    complexity: 2,
+    preferredPositions: [1],
+    designTags: ["chaos_bolt", "pull", "crit_lifesteal", "illusion_ultimate"],
+    baseAttributes: {
+      strength: 27.8,
+      agility: 15.2,
+      intelligence: 15.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.98,
+      agilityGain: 1.94,
+      intelligenceGain: 1.8
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.5,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 34,
+      baseDamageMax: 41,
+      baseArmor: 2.4,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 295,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "chaos_lancer_chaos_bolt",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["chaos_bolt", "carry", "durable"],
+        values: {
+          damage: [70, 115, 160, 205],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "chaos_lancer_pull",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["pull", "carry", "durable"],
+        values: {
+          damage: [70, 115, 160, 205],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "chaos_lancer_crit_lifesteal",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        tags: ["crit_lifesteal", "carry", "durable"],
+        values: {
+          damage: [70, 115, 160, 205],
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [150, 180, 210, 240]
+        }
+      },
+      {
+        key: "R",
+        id: "chaos_lancer_illusion_ultimate",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["illusion_ultimate", "carry", "durable"],
+        values: {
+          damage: [210, 280, 350],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660],
+          summons: [1, 2, 3],
+          summonDuration: [18, 24, 30]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h074_clone_tactician",
+    referenceSlot: "dota_like_slot_074",
+    archetype: "micro-herói de múltiplos clones permanentes",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "pusher", "escape"],
+    complexity: 3,
+    preferredPositions: [1, 2],
+    designTags: ["clones", "net", "poof", "stat_share"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 25.4,
+      intelligence: 17.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.32,
+      agilityGain: 3.2,
+      intelligenceGain: 1.58
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 28,
+      baseDamageMax: 36,
+      baseArmor: 2.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "clone_tactician_clones",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["clones", "carry", "pusher"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "W",
+        id: "clone_tactician_net",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["net", "carry", "pusher"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          root: [1.2, 1.6, 2.0, 2.4000000000000004],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "clone_tactician_poof",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["poof", "carry", "pusher"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "clone_tactician_stat_share",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["stat_share", "carry", "pusher"],
+        values: {
+          damage: [225, 300, 375],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h075_tree_guardian",
+    referenceSlot: "dota_like_slot_075",
+    archetype: "suporte tanque de raízes, cura global e invisibilidade natural",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["hard_support", "offlane", "healer", "disabler"],
+    complexity: 2,
+    preferredPositions: [3, 5],
+    designTags: ["tree_walk", "armor_heal", "root_ultimate", "leech_seed"],
+    baseAttributes: {
+      strength: 23.8,
+      agility: 14.0,
+      intelligence: 17.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.86,
+      agilityGain: 1.46,
+      intelligenceGain: 1.56
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.15,
+      baseDamageMin: 30,
+      baseDamageMax: 39,
+      baseArmor: 1.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "tree_guardian_tree_walk",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["tree_walk", "hard_support", "offlane"],
+        values: {
+          damage: [80, 125, 170, 215],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "tree_guardian_armor_heal",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["armor_heal", "hard_support", "offlane"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          armorChange: [2, 3, 4, 5]
+        }
+      },
+      {
+        key: "E",
+        id: "tree_guardian_root_ultimate",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["root_ultimate", "hard_support", "offlane"],
+        values: {
+          damage: [80, 125, 170, 215],
+          cooldown: [16, 14, 12, 10],
+          root: [1.2, 1.6, 2.0, 2.4000000000000004],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "tree_guardian_leech_seed",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["leech_seed", "hard_support", "offlane"],
+        values: {
+          damage: [240, 320, 400],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h076_brute_mage",
+    referenceSlot: "dota_like_slot_076",
+    archetype: "suporte de alto corpo, multicast e buffs simples",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["hard_support", "durable", "disabler"],
+    complexity: 1,
+    preferredPositions: [5],
+    designTags: ["multicast", "stun", "ignite", "bloodlust"],
+    baseAttributes: {
+      strength: 26.8,
+      agility: 14.0,
+      intelligence: 18.4
+    },
+    attributeGrowth: {
+      strengthGain: 3.1,
+      agilityGain: 1.82,
+      intelligenceGain: 2.04
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.5,
+      baseMana: 75,
+      baseManaRegen: 0.15,
+      baseDamageMin: 28,
+      baseDamageMax: 34,
+      baseArmor: 2.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "brute_mage_multicast",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["multicast", "hard_support", "durable"],
+        values: {
+          damage: [85, 130, 175, 220],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "brute_mage_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["stun", "hard_support", "durable"],
+        values: {
+          damage: [85, 130, 175, 220],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "brute_mage_ignite",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["ignite", "hard_support", "durable"],
+        values: {
+          damage: [85, 130, 175, 220],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "brute_mage_bloodlust",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["bloodlust", "hard_support", "durable"],
+        values: {
+          damage: [255, 340, 425],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h077_decay_zombie",
+    referenceSlot: "dota_like_slot_077",
+    archetype: "frontliner de decomposição, lápide e roubo de força",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "hard_support", "durable"],
+    complexity: 2,
+    preferredPositions: [3, 5],
+    designTags: ["decay", "tombstone", "soul_rip", "flesh_golem"],
+    baseAttributes: {
+      strength: 26.6,
+      agility: 14.0,
+      intelligence: 19.8
+    },
+    attributeGrowth: {
+      strengthGain: 3.34,
+      agilityGain: 1.58,
+      intelligenceGain: 1.92
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.8,
+      baseMana: 75,
+      baseManaRegen: 0.15,
+      baseDamageMin: 32,
+      baseDamageMax: 39,
+      baseArmor: 3.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "decay_zombie_decay",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["decay", "offlane", "hard_support"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "decay_zombie_tombstone",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["tombstone", "offlane", "hard_support"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "decay_zombie_soul_rip",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["soul_rip", "offlane", "hard_support"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "decay_zombie_flesh_golem",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["flesh_golem", "offlane", "hard_support"],
+        values: {
+          damage: [270, 360, 450],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h078_spell_thief",
+    referenceSlot: "dota_like_slot_078",
+    archetype: "suporte universal de telecinese e roubo de magia",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "hard_support", "disabler", "nuker"],
+    complexity: 3,
+    preferredPositions: [4, 5],
+    designTags: ["spell_steal", "lift", "fade_bolt", "arcane_supremacy"],
+    baseAttributes: {
+      strength: 23.0,
+      agility: 18.0,
+      intelligence: 23.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.38,
+      agilityGain: 2.34,
+      intelligenceGain: 2.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.22,
+      baseDamageMin: 27,
+      baseDamageMax: 35,
+      baseArmor: 1.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "spell_thief_spell_steal",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["spell_steal", "soft_support", "hard_support"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "spell_thief_lift",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["lift", "soft_support", "hard_support"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "spell_thief_fade_bolt",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["fade_bolt", "soft_support", "hard_support"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "spell_thief_arcane_supremacy",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["arcane_supremacy", "soft_support", "hard_support"],
+        values: {
+          damage: [360, 480, 600],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h079_storm_disruptor",
+    referenceSlot: "dota_like_slot_079",
+    archetype: "suporte de reposicionamento, campo cinético e tempestade",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "nuker"],
+    complexity: 2,
+    preferredPositions: [5],
+    designTags: ["glimpse", "kinetic_field", "static_storm", "thunder_strike"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 14.0,
+      intelligence: 29.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.12,
+      agilityGain: 1.6,
+      intelligenceGain: 3.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 23,
+      baseDamageMax: 32,
+      baseArmor: 0.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 600,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "storm_disruptor_glimpse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["glimpse", "hard_support", "disabler"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "storm_disruptor_kinetic_field",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["kinetic_field", "hard_support", "disabler"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          root: [1.2, 1.6, 2.0, 2.4000000000000004],
+          radius: 365
+        }
+      },
+      {
+        key: "E",
+        id: "storm_disruptor_static_storm",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["static_storm", "hard_support", "disabler"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          radius: 365
+        }
+      },
+      {
+        key: "R",
+        id: "storm_disruptor_thunder_strike",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["thunder_strike", "hard_support", "disabler"],
+        values: {
+          damage: [375, 500, 625],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h080_carapace_assassin",
+    referenceSlot: "dota_like_slot_080",
+    archetype: "assassino de carapaça, mana burn e espinhos",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["soft_support", "disabler", "scout"],
+    complexity: 2,
+    preferredPositions: [4],
+    designTags: ["carapace", "impale", "mana_burn", "burrow"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 18.6,
+      intelligence: 19.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.26,
+      agilityGain: 1.86,
+      intelligenceGain: 2.06
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 24,
+      baseDamageMax: 30,
+      baseArmor: 1.1,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 305,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 1200
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "carapace_assassin_carapace",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["carapace", "soft_support", "disabler"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "carapace_assassin_impale",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["impale", "soft_support", "disabler"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "carapace_assassin_mana_burn",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["mana_burn", "soft_support", "disabler"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        },
+        scaling: {
+          attribute: "total",
+          coefficient: 0.5
+        }
+      },
+      {
+        key: "R",
+        id: "carapace_assassin_burrow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["burrow", "soft_support", "disabler"],
+        values: {
+          damage: [315, 420, 525],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h081_naga_siren",
+    referenceSlot: "dota_like_slot_081",
+    archetype: "carry de ilusões, rede e canção global curta",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "pusher", "disabler"],
+    complexity: 3,
+    preferredPositions: [1],
+    designTags: ["illusion", "net", "rip_tide", "song"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 24.8,
+      intelligence: 17.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.2,
+      agilityGain: 3.32,
+      intelligenceGain: 1.94
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 29,
+      baseDamageMax: 36,
+      baseArmor: 2.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "naga_siren_illusion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["illusion", "carry", "pusher"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "W",
+        id: "naga_siren_net",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["net", "carry", "pusher"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          root: [1.2, 1.6, 2.0, 2.4000000000000004],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "naga_siren_rip_tide",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["rip_tide", "carry", "pusher"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "naga_siren_song",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["song", "carry", "pusher"],
+        values: {
+          damage: [330, 440, 550],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h082_light_keeper",
+    referenceSlot: "dota_like_slot_082",
+    archetype: "suporte de luz, mana, onda carregada e recall",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "nuker", "pusher"],
+    complexity: 3,
+    preferredPositions: [5],
+    designTags: ["mana_restore", "charged_wave", "blinding_light", "spirit_form"],
+    baseAttributes: {
+      strength: 18.0,
+      agility: 14.6,
+      intelligence: 30.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.24,
+      agilityGain: 1.48,
+      intelligenceGain: 3.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 25,
+      baseDamageMax: 33,
+      baseArmor: 1.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "light_keeper_mana_restore",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["mana_restore", "hard_support", "nuker"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        },
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.6
+        }
+      },
+      {
+        key: "W",
+        id: "light_keeper_charged_wave",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["charged_wave", "hard_support", "nuker"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "light_keeper_blinding_light",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["blinding_light", "hard_support", "nuker"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "light_keeper_spirit_form",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["spirit_form", "hard_support", "nuker"],
+        values: {
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h083_spirit_tether",
+    referenceSlot: "dota_like_slot_083",
+    archetype: "suporte de vínculo, cura compartilhada e relocação",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["hard_support", "healer", "escape"],
+    complexity: 3,
+    preferredPositions: [5],
+    designTags: ["tether", "heal_share", "overcharge", "relocate"],
+    baseAttributes: {
+      strength: 23.0,
+      agility: 18.6,
+      intelligence: 22.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.38,
+      agilityGain: 2.34,
+      intelligenceGain: 2.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.22,
+      baseDamageMin: 25,
+      baseDamageMax: 34,
+      baseArmor: 1.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "spirit_tether_tether",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["tether", "hard_support", "healer"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "spirit_tether_heal_share",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["heal_share", "hard_support", "healer"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "spirit_tether_overcharge",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["overcharge", "hard_support", "healer"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "spirit_tether_relocate",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["relocate", "hard_support", "healer"],
+        values: {
+          damage: [360, 480, 600],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h084_gargoyle_brood",
+    referenceSlot: "dota_like_slot_084",
+    archetype: "summoner de familiares, camadas defensivas e burst",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["offlane", "mid", "pusher"],
+    complexity: 3,
+    preferredPositions: [2, 3],
+    designTags: ["summon_familiars", "gravekeeper", "soul_assumption", "slow"],
+    baseAttributes: {
+      strength: 22.8,
+      agility: 18.6,
+      intelligence: 22.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.62,
+      agilityGain: 2.1,
+      intelligenceGain: 2.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.9,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 28,
+      baseDamageMax: 34,
+      baseArmor: 2.4,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 600,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "gargoyle_brood_summon_familiars",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["summon_familiars", "offlane", "mid"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "W",
+        id: "gargoyle_brood_gravekeeper",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["gravekeeper", "offlane", "mid"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "gargoyle_brood_soul_assumption",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["soul_assumption", "offlane", "mid"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "gargoyle_brood_slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["slow", "offlane", "mid"],
+        values: {
+          damage: [450, 600, 750],
+          cooldown: [120, 100, 80],
+          slowPct: [15, 22, 29],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h085_vampire_carry",
+    referenceSlot: "dota_like_slot_085",
+    archetype: "carry de roubo de atributos, pacto e regeneração nas sombras",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "escape"],
+    complexity: 2,
+    preferredPositions: [1],
+    designTags: ["stat_steal", "leash", "self_dispel", "shadow_regen"],
+    baseAttributes: {
+      strength: 17.0,
+      agility: 24.8,
+      intelligence: 14.0
+    },
+    attributeGrowth: {
+      strengthGain: 1.96,
+      agilityGain: 2.96,
+      intelligenceGain: 1.46
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 28,
+      baseDamageMax: 35,
+      baseArmor: 1.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 305,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "vampire_carry_stat_steal",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["stat_steal", "carry", "escape"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "vampire_carry_leash",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["leash", "carry", "escape"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          root: [1.2, 1.6, 2.0, 2.4000000000000004],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "vampire_carry_self_dispel",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        tags: ["self_dispel", "carry", "escape"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "R",
+        id: "vampire_carry_shadow_regen",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["shadow_regen", "carry", "escape"],
+        values: {
+          damage: [390, 520, 650],
+          cooldown: [120, 100, 80],
+          heal: [60, 95, 130],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h086_stone_gaze_guardian",
+    referenceSlot: "dota_like_slot_086",
+    archetype: "carry tanque de mana shield, split shot e petrificação",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "durable"],
+    complexity: 2,
+    preferredPositions: [1],
+    designTags: ["mana_shield", "split_shot", "stone_gaze", "snake"],
+    baseAttributes: {
+      strength: 21.8,
+      agility: 24.2,
+      intelligence: 16.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.2,
+      agilityGain: 3.32,
+      intelligenceGain: 1.94
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.15,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 27,
+      baseDamageMax: 35,
+      baseArmor: 3.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 285,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "stone_gaze_guardian_mana_shield",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["mana_shield", "carry", "durable"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        },
+        scaling: {
+          attribute: "agility",
+          coefficient: 0.5
+        }
+      },
+      {
+        key: "W",
+        id: "stone_gaze_guardian_split_shot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["split_shot", "carry", "durable"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "E",
+        id: "stone_gaze_guardian_stone_gaze",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["stone_gaze", "carry", "durable"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "stone_gaze_guardian_snake",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["snake", "carry", "durable"],
+        values: {
+          damage: [405, 540, 675],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h087_troll_switcher",
+    referenceSlot: "dota_like_slot_087",
+    archetype: "carry alternador de melee/ranged e fúria de ataque",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry"],
+    complexity: 2,
+    preferredPositions: [1],
+    designTags: ["form_switch", "fervor", "whirling_axes", "battle_trance"],
+    baseAttributes: {
+      strength: 18.0,
+      agility: 24.2,
+      intelligence: 18.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.44,
+      agilityGain: 3.08,
+      intelligenceGain: 1.82
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 26,
+      baseDamageMax: 35,
+      baseArmor: 2.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "troll_switcher_form_switch",
+        kind: "toggle",
+        target: "self",
+        damageType: "none",
+        tags: ["form_switch", "carry"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "W",
+        id: "troll_switcher_fervor",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        tags: ["fervor", "carry"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          attackSpeed: [25, 45, 65, 85]
+        }
+      },
+      {
+        key: "E",
+        id: "troll_switcher_whirling_axes",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["whirling_axes", "carry"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "troll_switcher_battle_trance",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["battle_trance", "carry"],
+        values: {
+          damage: [420, 560, 700],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h088_centaur_retaliator",
+    referenceSlot: "dota_like_slot_088",
+    archetype: "tanque de retaliação, stun e corrida global",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable"],
+    complexity: 1,
+    preferredPositions: [3],
+    designTags: ["retaliate", "stomp", "double_edge", "stampede"],
+    baseAttributes: {
+      strength: 30.8,
+      agility: 14.0,
+      intelligence: 15.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.98,
+      agilityGain: 1.94,
+      intelligenceGain: 1.8
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 2.0,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 30,
+      baseDamageMax: 36,
+      baseArmor: 3.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "centaur_retaliator_retaliate",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        tags: ["retaliate", "offlane", "initiator"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "W",
+        id: "centaur_retaliator_stomp",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["stomp", "offlane", "initiator"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "centaur_retaliator_double_edge",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["double_edge", "offlane", "initiator"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [150, 180, 210, 240]
+        }
+      },
+      {
+        key: "R",
+        id: "centaur_retaliator_stampede",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["stampede", "offlane", "initiator"],
+        values: {
+          damage: [435, 580, 725],
+          cooldown: [120, 100, 80]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h089_gravity_general",
+    referenceSlot: "dota_like_slot_089",
+    archetype: "iniciador universal de empurrão, buff físico e agrupamento",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "disabler", "pusher"],
+    complexity: 2,
+    preferredPositions: [3],
+    designTags: ["shockwave", "empower", "skewer", "reverse_gravity"],
+    baseAttributes: {
+      strength: 24.0,
+      agility: 18.6,
+      intelligence: 22.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.62,
+      agilityGain: 2.1,
+      intelligenceGain: 2.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 30,
+      baseDamageMax: 37,
+      baseArmor: 2.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 320,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "gravity_general_shockwave",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["shockwave", "offlane", "initiator"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "gravity_general_empower",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["empower", "offlane", "initiator"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "gravity_general_skewer",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["skewer", "offlane", "initiator"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "gravity_general_reverse_gravity",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["reverse_gravity", "offlane", "initiator"],
+        values: {
+          damage: [450, 600, 750],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h090_timber_mech",
+    referenceSlot: "dota_like_slot_090",
+    archetype: "offlaner mecânico de corrente, corte e acúmulo de armadura",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "durable", "escape"],
+    complexity: 3,
+    preferredPositions: [3],
+    designTags: ["chain", "pure_damage", "reactive_armor", "saw"],
+    baseAttributes: {
+      strength: 25.6,
+      agility: 14.6,
+      intelligence: 14.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.86,
+      agilityGain: 1.46,
+      intelligenceGain: 1.56
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.8,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 31,
+      baseDamageMax: 39,
+      baseArmor: 2.5,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 200,
+      acquisitionRange: 600,
+      movementSpeed: 295,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "timber_mech_chain",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["chain", "offlane", "durable"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "timber_mech_pure_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "pure",
+        tags: ["pure_damage", "offlane", "durable"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "timber_mech_reactive_armor",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["reactive_armor", "offlane", "durable"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          armorChange: [2, 3, 4, 5]
+        }
+      },
+      {
+        key: "R",
+        id: "timber_mech_saw",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["saw", "offlane", "durable"],
+        values: {
+          damage: [195, 260, 325],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h091_quill_tank",
+    referenceSlot: "dota_like_slot_091",
+    archetype: "tanque de espinhos, gosma e dano acumulativo",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "durable"],
+    complexity: 1,
+    preferredPositions: [3],
+    designTags: ["quills", "goo", "back_reduction", "warpath"],
+    baseAttributes: {
+      strength: 28.6,
+      agility: 14.0,
+      intelligence: 16.0
+    },
+    attributeGrowth: {
+      strengthGain: 3.1,
+      agilityGain: 1.82,
+      intelligenceGain: 2.04
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.8,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 30,
+      baseDamageMax: 39,
+      baseArmor: 2.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 295,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "quill_tank_quills",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["quills", "offlane", "durable"],
+        values: {
+          damage: [70, 115, 160, 205],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "quill_tank_goo",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["goo", "offlane", "durable"],
+        values: {
+          damage: [70, 115, 160, 205],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "quill_tank_back_reduction",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["back_reduction", "offlane", "durable"],
+        values: {
+          damage: [70, 115, 160, 205],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "quill_tank_warpath",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        tags: ["warpath", "offlane", "durable"],
+        values: {
+          damage: [210, 280, 350],
+          cooldown: [120, 100, 80]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h092_polar_berserker",
+    referenceSlot: "dota_like_slot_092",
+    archetype: "lutador polar de salto, bloqueio de terreno e soco crítico",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "carry", "durable", "initiator"],
+    complexity: 2,
+    preferredPositions: [1, 3],
+    designTags: ["snowball", "ice_shards", "critical_punch", "save"],
+    baseAttributes: {
+      strength: 27.8,
+      agility: 15.2,
+      intelligence: 18.0
+    },
+    attributeGrowth: {
+      strengthGain: 3.34,
+      agilityGain: 1.58,
+      intelligenceGain: 1.92
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 2.0,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 33,
+      baseDamageMax: 39,
+      baseArmor: 4.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "polar_berserker_snowball",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["snowball", "offlane", "carry"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "polar_berserker_ice_shards",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["ice_shards", "offlane", "carry"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "polar_berserker_critical_punch",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        tags: ["critical_punch", "offlane", "carry"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [150, 180, 210, 240]
+        }
+      },
+      {
+        key: "R",
+        id: "polar_berserker_save",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["save", "offlane", "carry"],
+        values: {
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h093_sky_mage",
+    referenceSlot: "dota_like_slot_093",
+    archetype: "mago de longo alcance, silêncio e burst místico",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["soft_support", "mid", "nuker", "disabler"],
+    complexity: 1,
+    preferredPositions: [2, 4],
+    designTags: ["long_range_nuke", "silence_amp", "slow", "mystic_flare"],
+    baseAttributes: {
+      strength: 21.0,
+      agility: 14.0,
+      intelligence: 28.2
+    },
+    attributeGrowth: {
+      strengthGain: 1.88,
+      agilityGain: 1.84,
+      intelligenceGain: 3.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 27,
+      baseDamageMax: 34,
+      baseArmor: 0.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "sky_mage_long_range_nuke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["long_range_nuke", "soft_support", "mid"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "W",
+        id: "sky_mage_silence_amp",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["silence_amp", "soft_support", "mid"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          silence: [2.0, 2.5, 3.0, 3.5]
+        }
+      },
+      {
+        key: "E",
+        id: "sky_mage_slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["slow", "soft_support", "mid"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "sky_mage_mystic_flare",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["mystic_flare", "soft_support", "mid"],
+        values: {
+          damage: [315, 420, 525],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h094_dark_paladin_2",
+    referenceSlot: "dota_like_slot_094",
+    archetype: "cavaleiro sombrio de escudo explosivo e cura invertida",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "hard_support", "durable", "healer"],
+    complexity: 1,
+    preferredPositions: [3, 5],
+    designTags: ["shield", "heal_damage", "curse", "borrowed_life"],
+    baseAttributes: {
+      strength: 24.6,
+      agility: 18.0,
+      intelligence: 24.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.62,
+      agilityGain: 2.1,
+      intelligenceGain: 2.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.6,
+      baseMana: 75,
+      baseManaRegen: 0.22,
+      baseDamageMin: 27,
+      baseDamageMax: 35,
+      baseArmor: 3.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "dark_paladin_2_shield",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["shield", "offlane", "hard_support"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "dark_paladin_2_heal_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["heal_damage", "offlane", "hard_support"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "dark_paladin_2_curse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["curse", "offlane", "hard_support"],
+        values: {
+          damage: [85, 130, 175, 220],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "dark_paladin_2_borrowed_life",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["borrowed_life", "offlane", "hard_support"],
+        values: {
+          damage: [255, 340, 425],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h095_ancient_titan",
+    referenceSlot: "dota_like_slot_095",
+    archetype: "iniciador espiritual de eco, sono e redução de resistência",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler"],
+    complexity: 3,
+    preferredPositions: [3, 4],
+    designTags: ["spirit", "stomp", "resist_reduction", "earth_splitter"],
+    baseAttributes: {
+      strength: 25.0,
+      agility: 14.0,
+      intelligence: 15.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.86,
+      agilityGain: 1.46,
+      intelligenceGain: 1.56
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.3,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 31,
+      baseDamageMax: 40,
+      baseArmor: 2.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 320,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "ancient_titan_spirit",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["spirit", "offlane", "soft_support"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "ancient_titan_stomp",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["stomp", "offlane", "soft_support"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "ancient_titan_resist_reduction",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["resist_reduction", "offlane", "soft_support"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "ancient_titan_earth_splitter",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["earth_splitter", "offlane", "soft_support"],
+        values: {
+          damage: [270, 360, 450],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h096_arena_duelist",
+    referenceSlot: "dota_like_slot_096",
+    archetype: "duelista de comando, purga e vitória escalável",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "carry", "initiator"],
+    complexity: 2,
+    preferredPositions: [1, 3],
+    designTags: ["duel", "press_attack", "overwhelming", "moment"],
+    baseAttributes: {
+      strength: 28.0,
+      agility: 15.2,
+      intelligence: 16.0
+    },
+    attributeGrowth: {
+      strengthGain: 3.1,
+      agilityGain: 1.82,
+      intelligenceGain: 2.04
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.3,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 33,
+      baseDamageMax: 39,
+      baseArmor: 2.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.8,
+      attackRange: 200,
+      acquisitionRange: 600,
+      movementSpeed: 295,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "arena_duelist_duel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["duel", "offlane", "carry"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "arena_duelist_press_attack",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["press_attack", "offlane", "carry"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "arena_duelist_overwhelming",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["overwhelming", "offlane", "carry"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "arena_duelist_moment",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["moment", "offlane", "carry"],
+        values: {
+          damage: [285, 380, 475],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h097_demolition_goblin",
+    referenceSlot: "dota_like_slot_097",
+    archetype: "zoner de bombas, minas e explosão controlada",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "nuker", "disabler", "pusher"],
+    complexity: 3,
+    preferredPositions: [4],
+    designTags: ["mines", "sticky_bomb", "blast_jump", "stasis"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 18.6,
+      intelligence: 25.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.74,
+      agilityGain: 1.98,
+      intelligenceGain: 2.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 29,
+      baseDamageMax: 36,
+      baseArmor: 1.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "demolition_goblin_mines",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["mines", "soft_support", "nuker"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          radius: 365
+        }
+      },
+      {
+        key: "W",
+        id: "demolition_goblin_sticky_bomb",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["sticky_bomb", "soft_support", "nuker"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "demolition_goblin_blast_jump",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["blast_jump", "soft_support", "nuker"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "demolition_goblin_stasis",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["stasis", "soft_support", "nuker"],
+        values: {
+          damage: [375, 500, 625],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h098_ember_duelist",
+    referenceSlot: "dota_like_slot_098",
+    archetype: "espadachim de fogo, correntes e remanescentes",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["mid", "carry", "escape", "nuker"],
+    complexity: 3,
+    preferredPositions: [1, 2],
+    designTags: ["remnant", "chains", "sleight", "flame_guard"],
+    baseAttributes: {
+      strength: 21.0,
+      agility: 24.8,
+      intelligence: 17.4
+    },
+    attributeGrowth: {
+      strengthGain: 2.08,
+      agilityGain: 3.44,
+      intelligenceGain: 1.7
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 30,
+      baseDamageMax: 38,
+      baseArmor: 2.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "ember_duelist_remnant",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["remnant", "mid", "carry"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "ember_duelist_chains",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["chains", "mid", "carry"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "ember_duelist_sleight",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["sleight", "mid", "carry"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "ember_duelist_flame_guard",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["flame_guard", "mid", "carry"],
+        values: {
+          damage: [390, 520, 650],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h099_stone_monk",
+    referenceSlot: "dota_like_slot_099",
+    archetype: "monge universal de chutes, reposicionamento e marcas",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["soft_support", "offlane", "initiator", "disabler", "escape"],
+    complexity: 3,
+    preferredPositions: [3, 4],
+    designTags: ["kick", "roll", "silence", "magnetize"],
+    baseAttributes: {
+      strength: 24.0,
+      agility: 18.6,
+      intelligence: 22.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.62,
+      agilityGain: 2.1,
+      intelligenceGain: 2.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 27,
+      baseDamageMax: 36,
+      baseArmor: 2.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "stone_monk_kick",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["kick", "soft_support", "offlane"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "stone_monk_roll",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["roll", "soft_support", "offlane"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "stone_monk_silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["silence", "soft_support", "offlane"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          silence: [2.0, 2.5, 3.0, 3.5]
+        }
+      },
+      {
+        key: "R",
+        id: "stone_monk_magnetize",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["magnetize", "soft_support", "offlane"],
+        values: {
+          damage: [330, 440, 550],
+          cooldown: [120, 100, 80],
+          root: [1.2, 1.6, 2.0],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h100_abyss_lord",
+    referenceSlot: "dota_like_slot_100",
+    archetype: "senhor abissal de aura, portal e zona de fogo",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "durable", "pusher"],
+    complexity: 2,
+    preferredPositions: [3],
+    designTags: ["pit_root", "firestorm", "damage_aura", "portal"],
+    baseAttributes: {
+      strength: 25.6,
+      agility: 14.6,
+      intelligence: 14.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.86,
+      agilityGain: 1.46,
+      intelligenceGain: 1.56
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.8,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 30,
+      baseDamageMax: 36,
+      baseArmor: 2.5,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 310,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "abyss_lord_pit_root",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["pit_root", "offlane", "durable"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          root: [1.2, 1.6, 2.0, 2.4000000000000004],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "abyss_lord_firestorm",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["firestorm", "offlane", "durable"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          radius: 485
+        }
+      },
+      {
+        key: "E",
+        id: "abyss_lord_damage_aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["damage_aura", "offlane", "durable"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "R",
+        id: "abyss_lord_portal",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["portal", "offlane", "durable"],
+        values: {
+          damage: [345, 460, 575],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h101_demon_metamorph",
+    referenceSlot: "dota_like_slot_101",
+    archetype: "carry demoníaco de metamorfose, ilusões e troca de vida",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "pusher"],
+    complexity: 2,
+    preferredPositions: [1],
+    designTags: ["metamorph", "reflection", "illusion", "sunder"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 24.8,
+      intelligence: 16.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.2,
+      agilityGain: 3.32,
+      intelligenceGain: 1.94
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 29,
+      baseDamageMax: 36,
+      baseArmor: 2.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 290,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "demon_metamorph_metamorph",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["metamorph", "carry", "pusher"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "demon_metamorph_reflection",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["reflection", "carry", "pusher"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "demon_metamorph_illusion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["illusion", "carry", "pusher"],
+        values: {
+          damage: [120, 165, 210, 255],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "R",
+        id: "demon_metamorph_sunder",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["sunder", "carry", "pusher"],
+        values: {
+          damage: [360, 480, 600],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h102_solar_bird",
+    referenceSlot: "dota_like_slot_102",
+    archetype: "ave solar de cura, mergulho e supernova",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "offlane", "healer", "nuker"],
+    complexity: 3,
+    preferredPositions: [3, 4],
+    designTags: ["sun_ray", "dive", "spirits", "supernova"],
+    baseAttributes: {
+      strength: 21.8,
+      agility: 18.0,
+      intelligence: 25.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.74,
+      agilityGain: 1.98,
+      intelligenceGain: 2.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.9,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 28,
+      baseDamageMax: 36,
+      baseArmor: 2.4,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "solar_bird_sun_ray",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["sun_ray", "soft_support", "offlane"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "solar_bird_dive",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["dive", "soft_support", "offlane"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "solar_bird_spirits",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["spirits", "soft_support", "offlane"],
+        values: {
+          damage: [150, 195, 240, 285],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "solar_bird_supernova",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["supernova", "soft_support", "offlane"],
+        values: {
+          damage: [450, 600, 750],
+          cooldown: [120, 100, 80],
+          radius: 425
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h103_fate_oracle",
+    referenceSlot: "dota_like_slot_103",
+    archetype: "suporte de destino, purga, cura explosiva e falsa promessa",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "healer", "disabler"],
+    complexity: 3,
+    preferredPositions: [5],
+    designTags: ["purge", "fate_edict", "purifying_flames", "false_promise"],
+    baseAttributes: {
+      strength: 21.0,
+      agility: 14.0,
+      intelligence: 27.6
+    },
+    attributeGrowth: {
+      strengthGain: 1.88,
+      agilityGain: 1.84,
+      intelligenceGain: 3.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 22,
+      baseDamageMax: 31,
+      baseArmor: 0.5,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "fate_oracle_purge",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["purge", "hard_support", "healer"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "fate_oracle_fate_edict",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["fate_edict", "hard_support", "healer"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "fate_oracle_purifying_flames",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["purifying_flames", "hard_support", "healer"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "fate_oracle_false_promise",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["false_promise", "hard_support", "healer"],
+        values: {
+          damage: [390, 520, 650],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h104_winter_controller",
+    referenceSlot: "dota_like_slot_104",
+    archetype: "suporte de gelo, cura protetiva e maldição em área",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "healer", "nuker"],
+    complexity: 3,
+    preferredPositions: [5],
+    designTags: ["cold_embrace", "winter_curse", "splinter", "arctic_range"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 14.0,
+      intelligence: 30.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.12,
+      agilityGain: 1.6,
+      intelligenceGain: 3.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 22,
+      baseDamageMax: 28,
+      baseArmor: 0.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 600,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "winter_controller_cold_embrace",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["cold_embrace", "hard_support", "disabler"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "winter_controller_winter_curse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["winter_curse", "hard_support", "disabler"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "winter_controller_splinter",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["splinter", "hard_support", "disabler"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "winter_controller_arctic_range",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["arctic_range", "hard_support", "disabler"],
+        values: {
+          damage: [480, 640, 800],
+          cooldown: [120, 100, 80],
+          range: [650, 770, 890]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h105_arc_double",
+    referenceSlot: "dota_like_slot_105",
+    archetype: "mago/carry de duplicata temporária, campo e fluxo",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["mid", "carry", "pusher"],
+    complexity: 3,
+    preferredPositions: [1, 2],
+    designTags: ["double", "flux", "magnetic_field", "spark"],
+    baseAttributes: {
+      strength: 17.0,
+      agility: 24.8,
+      intelligence: 15.8
+    },
+    attributeGrowth: {
+      strengthGain: 1.96,
+      agilityGain: 2.96,
+      intelligenceGain: 1.46
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 31,
+      baseDamageMax: 38,
+      baseArmor: 2.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 285,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "arc_double_double",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["double", "mid", "carry"],
+        values: {
+          damage: [165, 210, 255, 300],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "arc_double_flux",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["flux", "mid", "carry"],
+        values: {
+          damage: [165, 210, 255, 300],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "arc_double_magnetic_field",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["magnetic_field", "mid", "carry"],
+        values: {
+          damage: [165, 210, 255, 300],
+          cooldown: [16, 14, 12, 10],
+          root: [1.2, 1.6, 2.0, 2.4000000000000004],
+          radius: 445
+        }
+      },
+      {
+        key: "R",
+        id: "arc_double_spark",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["spark", "mid", "carry"],
+        values: {
+          damage: [495, 660, 825],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h106_monkey_warrior",
+    referenceSlot: "dota_like_slot_106",
+    archetype: "carry acrobático de árvores, clone circular e bastão",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "mid", "escape"],
+    complexity: 3,
+    preferredPositions: [1, 2],
+    designTags: ["tree_jump", "boundless", "jingu", "command"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 24.8,
+      intelligence: 17.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.2,
+      agilityGain: 3.32,
+      intelligenceGain: 1.94
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 29,
+      baseDamageMax: 37,
+      baseArmor: 2.4,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 320,
+      turnRate: 0.85,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "monkey_warrior_tree_jump",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["tree_jump", "carry", "mid"],
+        values: {
+          damage: [170, 215, 260, 305],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "monkey_warrior_boundless",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["boundless", "carry", "mid"],
+        values: {
+          damage: [170, 215, 260, 305],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "monkey_warrior_jingu",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["jingu", "carry", "mid"],
+        values: {
+          damage: [170, 215, 260, 305],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "monkey_warrior_command",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["command", "carry", "mid"],
+        values: {
+          damage: [510, 680, 850],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h107_dark_fae",
+    referenceSlot: "dota_like_slot_107",
+    archetype: "suporte universal de medo, raízes e burst atrasado",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "hard_support", "disabler", "nuker"],
+    complexity: 3,
+    preferredPositions: [4, 5],
+    designTags: ["fear", "bramble", "untargetable", "delayed_stun"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 18.0,
+      intelligence: 26.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.74,
+      agilityGain: 1.98,
+      intelligenceGain: 2.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.22,
+      baseDamageMin: 26,
+      baseDamageMax: 35,
+      baseArmor: 1.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "dark_fae_fear",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["fear", "soft_support", "hard_support"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "dark_fae_bramble",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["bramble", "soft_support", "hard_support"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "dark_fae_untargetable",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["untargetable", "soft_support", "hard_support"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "dark_fae_delayed_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["delayed_stun", "soft_support", "hard_support"],
+        values: {
+          damage: [525, 700, 875],
+          cooldown: [120, 100, 80],
+          stun: [0.8, 1.15, 1.5],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h108_rolling_duelist",
+    referenceSlot: "dota_like_slot_108",
+    archetype: "duelista universal de dash, desarme e ultimate rolante",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler", "escape"],
+    complexity: 3,
+    preferredPositions: [3, 4],
+    designTags: ["roll", "dash_hits", "disarm", "crash"],
+    baseAttributes: {
+      strength: 26.0,
+      agility: 18.6,
+      intelligence: 20.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.38,
+      agilityGain: 2.34,
+      intelligenceGain: 2.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 26,
+      baseDamageMax: 32,
+      baseArmor: 2.3,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 200,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "rolling_duelist_roll",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["roll", "offlane", "soft_support"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "rolling_duelist_dash_hits",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["dash_hits", "offlane", "soft_support"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "rolling_duelist_disarm",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["disarm", "offlane", "soft_support"],
+        values: {
+          damage: [65, 110, 155, 200],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "rolling_duelist_crash",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["crash", "offlane", "soft_support"],
+        values: {
+          damage: [195, 260, 325],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h109_ink_warlock",
+    referenceSlot: "dota_like_slot_109",
+    archetype: "suporte de tinta, silêncio, vínculo duplo e fantasma",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["soft_support", "hard_support", "disabler", "nuker"],
+    complexity: 2,
+    preferredPositions: [4, 5],
+    designTags: ["ink_swell", "silence", "soulbind", "phantom"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 14.0,
+      intelligence: 30.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.12,
+      agilityGain: 1.6,
+      intelligenceGain: 3.18
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 25,
+      baseDamageMax: 32,
+      baseArmor: 0.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 600,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "ink_warlock_ink_swell",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["ink_swell", "soft_support", "hard_support"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "ink_warlock_silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["silence", "soft_support", "hard_support"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          silence: [2.0, 2.5, 3.0, 3.5]
+        }
+      },
+      {
+        key: "E",
+        id: "ink_warlock_soulbind",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["soulbind", "soft_support", "hard_support"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "ink_warlock_phantom",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["phantom", "soft_support", "hard_support"],
+        values: {
+          damage: [285, 380, 475],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h110_arena_sentinel",
+    referenceSlot: "dota_like_slot_110",
+    archetype: "soldado de arena, lança, escudo frontal e zona de duelo",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    complexity: 2,
+    preferredPositions: [3],
+    designTags: ["arena", "spear", "shield", "rebuke"],
+    baseAttributes: {
+      strength: 26.8,
+      agility: 14.0,
+      intelligence: 14.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.86,
+      agilityGain: 1.46,
+      intelligenceGain: 1.56
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 2.0,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 32,
+      baseDamageMax: 40,
+      baseArmor: 2.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "arena_sentinel_arena",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["arena", "offlane", "initiator"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          radius: 405
+        }
+      },
+      {
+        key: "W",
+        id: "arena_sentinel_spear",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["spear", "offlane", "initiator"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "arena_sentinel_shield",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["shield", "offlane", "initiator"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "arena_sentinel_rebuke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["rebuke", "offlane", "initiator"],
+        values: {
+          damage: [225, 300, 375],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h111_void_duelist",
+    referenceSlot: "dota_like_slot_111",
+    archetype: "universal móvel com remanescentes e controle vetorial",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["mid", "escape", "nuker", "disabler"],
+    complexity: 3,
+    preferredPositions: [2],
+    designTags: ["astral_step", "remnant", "pulse", "shield"],
+    baseAttributes: {
+      strength: 22.0,
+      agility: 18.6,
+      intelligence: 23.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.5,
+      agilityGain: 2.22,
+      intelligenceGain: 2.54
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 28,
+      baseDamageMax: 37,
+      baseArmor: 1.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.85,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "void_duelist_astral_step",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["astral_step", "mid", "escape"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "void_duelist_remnant",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["remnant", "mid", "escape"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "void_duelist_pulse",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["pulse", "mid", "escape"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          radius: 445
+        }
+      },
+      {
+        key: "R",
+        id: "void_duelist_shield",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["shield", "mid", "escape"],
+        values: {
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h112_artillery_grandma",
+    referenceSlot: "dota_like_slot_112",
+    archetype: "suporte universal de poke, montaria e artilharia",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "hard_support", "nuker", "disabler"],
+    complexity: 2,
+    preferredPositions: [4, 5],
+    designTags: ["scatter", "cookie", "rapid_fire", "mortar"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 18.0,
+      intelligence: 26.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.74,
+      agilityGain: 1.98,
+      intelligenceGain: 2.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.22,
+      baseDamageMin: 25,
+      baseDamageMax: 31,
+      baseArmor: 1.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "artillery_grandma_scatter",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["scatter", "soft_support", "hard_support"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "artillery_grandma_cookie",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["cookie", "soft_support", "hard_support"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "artillery_grandma_rapid_fire",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["rapid_fire", "soft_support", "hard_support"],
+        values: {
+          damage: [110, 155, 200, 245],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "artillery_grandma_mortar",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["mortar", "soft_support", "hard_support"],
+        values: {
+          damage: [330, 440, 550],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h113_forest_trickster",
+    referenceSlot: "dota_like_slot_113",
+    archetype: "atiradora da mata de armadilhas, boomerang e fuga",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "soft_support", "escape", "nuker"],
+    complexity: 2,
+    preferredPositions: [1, 4],
+    designTags: ["bushwhack", "boomerang", "scurry", "sharpshot"],
+    baseAttributes: {
+      strength: 21.0,
+      agility: 24.8,
+      intelligence: 17.4
+    },
+    attributeGrowth: {
+      strengthGain: 2.08,
+      agilityGain: 3.44,
+      intelligenceGain: 1.7
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 29,
+      baseDamageMax: 36,
+      baseArmor: 2.1,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 305,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "forest_trickster_bushwhack",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["bushwhack", "carry", "soft_support"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "forest_trickster_boomerang",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["boomerang", "carry", "soft_support"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "forest_trickster_scurry",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["scurry", "carry", "soft_support"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "forest_trickster_sharpshot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["sharpshot", "carry", "soft_support"],
+        values: {
+          damage: [345, 460, 575],
+          cooldown: [120, 100, 80],
+          range: [650, 770, 890]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h114_dawn_paladin",
+    referenceSlot: "dota_like_slot_114",
+    archetype: "paladina global de cura, martelo e presença de luta",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "carry", "healer", "initiator"],
+    complexity: 2,
+    preferredPositions: [1, 3],
+    designTags: ["hammer", "luminosity", "global_heal", "starbreaker"],
+    baseAttributes: {
+      strength: 27.0,
+      agility: 15.2,
+      intelligence: 18.2
+    },
+    attributeGrowth: {
+      strengthGain: 3.22,
+      agilityGain: 1.7,
+      intelligenceGain: 1.68
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.3,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 35,
+      baseDamageMax: 43,
+      baseArmor: 3.0,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.8,
+      attackRange: 200,
+      acquisitionRange: 600,
+      movementSpeed: 295,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "dawn_paladin_hammer",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["hammer", "offlane", "carry"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "dawn_paladin_luminosity",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["luminosity", "offlane", "carry"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "dawn_paladin_global_heal",
+        kind: "active",
+        target: "global",
+        damageType: "none",
+        tags: ["global_heal", "offlane", "carry"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          heal: [60, 95, 130, 165],
+          global: true
+        }
+      },
+      {
+        key: "R",
+        id: "dawn_paladin_starbreaker",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["starbreaker", "offlane", "carry"],
+        values: {
+          damage: [285, 380, 475],
+          cooldown: [120, 100, 80],
+          armorChange: [2, 3, 4],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h115_grapple_brawler",
+    referenceSlot: "dota_like_slot_115",
+    archetype: "lutadora de agarrão, arremesso e save agressivo",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["soft_support", "offlane", "initiator", "escape"],
+    complexity: 2,
+    preferredPositions: [3, 4],
+    designTags: ["dispose", "rebound", "sidekick", "unleash"],
+    baseAttributes: {
+      strength: 22.0,
+      agility: 18.6,
+      intelligence: 19.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.26,
+      agilityGain: 1.86,
+      intelligenceGain: 2.06
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 27,
+      baseDamageMax: 36,
+      baseArmor: 2.1,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 305,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "grapple_brawler_dispose",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["dispose", "soft_support", "offlane"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "grapple_brawler_rebound",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["rebound", "soft_support", "offlane"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "grapple_brawler_sidekick",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["sidekick", "soft_support", "offlane"],
+        values: {
+          damage: [100, 145, 190, 235],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "grapple_brawler_unleash",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["unleash", "soft_support", "offlane"],
+        values: {
+          damage: [300, 400, 500],
+          cooldown: [120, 100, 80],
+          root: [1.2, 1.6, 2.0],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h116_primal_beast",
+    referenceSlot: "dota_like_slot_116",
+    archetype: "fera colossal de investida, pisoteio e agarrão brutal",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    complexity: 2,
+    preferredPositions: [3],
+    designTags: ["onslaught", "trample", "uproar", "pulverize"],
+    baseAttributes: {
+      strength: 29.8,
+      agility: 14.0,
+      intelligence: 16.6
+    },
+    attributeGrowth: {
+      strengthGain: 3.1,
+      agilityGain: 1.82,
+      intelligenceGain: 2.04
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 2.0,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 30,
+      baseDamageMax: 36,
+      baseArmor: 3.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "primal_beast_onslaught",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["onslaught", "offlane", "initiator"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "primal_beast_trample",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["trample", "offlane", "initiator"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "primal_beast_uproar",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["uproar", "offlane", "initiator"],
+        values: {
+          damage: [105, 150, 195, 240],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "primal_beast_pulverize",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["pulverize", "offlane", "initiator"],
+        values: {
+          damage: [315, 420, 525],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h117_gunslinger_wraith",
+    referenceSlot: "dota_like_slot_117",
+    archetype: "atiradora espectral de medo, silêncio e tiros paralelos",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["carry", "mid", "nuker"],
+    complexity: 2,
+    preferredPositions: [1, 2],
+    designTags: ["deadshot", "silence_zone", "double_shot", "ethereal_attack"],
+    baseAttributes: {
+      strength: 18.0,
+      agility: 15.2,
+      intelligence: 29.4
+    },
+    attributeGrowth: {
+      strengthGain: 2.24,
+      agilityGain: 1.48,
+      intelligenceGain: 3.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 30,
+      baseDamageMax: 37,
+      baseArmor: 1.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "gunslinger_wraith_deadshot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["deadshot", "carry", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "W",
+        id: "gunslinger_wraith_silence_zone",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        tags: ["silence_zone", "carry", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          silence: [2.0, 2.5, 3.0, 3.5]
+        }
+      },
+      {
+        key: "E",
+        id: "gunslinger_wraith_double_shot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["double_shot", "carry", "mid"],
+        values: {
+          damage: [135, 180, 225, 270],
+          cooldown: [16, 14, 12, 10],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "R",
+        id: "gunslinger_wraith_ethereal_attack",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["ethereal_attack", "carry", "mid"],
+        values: {
+          damage: [405, 540, 675],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h118_circus_controller",
+    referenceSlot: "dota_like_slot_118",
+    archetype: "controlador circense de medo, armadilhas e salvamento",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["soft_support", "hard_support", "disabler"],
+    complexity: 2,
+    preferredPositions: [4, 5],
+    designTags: ["fear_whip", "escape_box", "wheel", "knife_barrage"],
+    baseAttributes: {
+      strength: 21.0,
+      agility: 14.0,
+      intelligence: 27.6
+    },
+    attributeGrowth: {
+      strengthGain: 1.88,
+      agilityGain: 1.84,
+      intelligenceGain: 3.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 23,
+      baseDamageMax: 31,
+      baseArmor: 0.5,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 500,
+      acquisitionRange: 800,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "circus_controller_fear_whip",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["fear_whip", "soft_support", "hard_support"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "circus_controller_escape_box",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["escape_box", "soft_support", "hard_support"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "circus_controller_wheel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["wheel", "soft_support", "hard_support"],
+        values: {
+          damage: [115, 160, 205, 250],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "circus_controller_knife_barrage",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        tags: ["knife_barrage", "soft_support", "hard_support"],
+        values: {
+          damage: [345, 460, 575],
+          cooldown: [120, 100, 80]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h119_twin_blade_duelist",
+    referenceSlot: "dota_like_slot_119",
+    archetype: "duelista de duas posturas, corte veloz e disciplina de combate",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "mid", "escape"],
+    complexity: 3,
+    preferredPositions: [1, 2],
+    designTags: ["stance_switch", "dash_slash", "parry", "flurry"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 24.8,
+      intelligence: 18.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.32,
+      agilityGain: 3.2,
+      intelligenceGain: 1.58
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 28,
+      baseDamageMax: 37,
+      baseArmor: 2.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 325,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "twin_blade_duelist_stance_switch",
+        kind: "toggle",
+        target: "self",
+        damageType: "none",
+        tags: ["stance_switch", "carry", "mid"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "W",
+        id: "twin_blade_duelist_dash_slash",
+        kind: "active",
+        target: "point",
+        damageType: "physical",
+        tags: ["dash_slash", "carry", "mid"],
+        values: {
+          damage: [145, 190, 235, 280],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "twin_blade_duelist_parry",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["parry", "carry", "mid"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "twin_blade_duelist_flurry",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["flurry", "carry", "mid"],
+        values: {
+          damage: [435, 580, 725],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h120_heavy_artillery_commander",
+    referenceSlot: "dota_like_slot_120",
+    archetype: "novo artilheiro pesado de zona, supressão e cerco",
+    primaryAttribute: "strength",
+    attackType: "ranged",
+    roles: ["offlane", "soft_support", "pusher", "disabler"],
+    complexity: 2,
+    preferredPositions: [3, 4],
+    designTags: ["siege_mode", "suppressive_fire", "shell_zone", "bunker"],
+    baseAttributes: {
+      strength: 23.8,
+      agility: 14.6,
+      intelligence: 16.4
+    },
+    attributeGrowth: {
+      strengthGain: 2.86,
+      agilityGain: 1.46,
+      intelligenceGain: 1.56
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.1,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 30,
+      baseDamageMax: 36,
+      baseArmor: 1.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 285,
+      turnRate: 0.55,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "heavy_artillery_commander_siege_mode",
+        kind: "toggle",
+        target: "self",
+        damageType: "magical",
+        tags: ["siege_mode", "offlane", "soft_support"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "W",
+        id: "heavy_artillery_commander_suppressive_fire",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["suppressive_fire", "offlane", "soft_support"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "heavy_artillery_commander_shell_zone",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["shell_zone", "offlane", "soft_support"],
+        values: {
+          damage: [125, 170, 215, 260],
+          cooldown: [16, 14, 12, 10],
+          radius: 325
+        }
+      },
+      {
+        key: "R",
+        id: "heavy_artillery_commander_bunker",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["bunker", "offlane", "soft_support"],
+        values: {
+          damage: [375, 500, 625],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h121_vengeance_captain",
+    referenceSlot: "dota_like_slot_121",
+    archetype: "suporte de vingança, troca de posição e aura ofensiva",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["hard_support", "soft_support", "disabler"],
+    complexity: 2,
+    preferredPositions: [4, 5],
+    designTags: ["swap", "vengeance_aura", "armor_break", "missile_stun"],
+    baseAttributes: {
+      strength: 22.0,
+      agility: 18.0,
+      intelligence: 23.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.5,
+      agilityGain: 2.22,
+      intelligenceGain: 2.54
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.22,
+      baseDamageMin: 27,
+      baseDamageMax: 34,
+      baseArmor: 1.4,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 290,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "vengeance_captain_swap",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["swap", "hard_support", "soft_support"],
+        values: {
+          damage: [130, 175, 220, 265],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "vengeance_captain_vengeance_aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["vengeance_aura", "hard_support", "soft_support"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        }
+      },
+      {
+        key: "E",
+        id: "vengeance_captain_armor_break",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["armor_break", "hard_support", "soft_support"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          armorChange: [2, 3, 4, 5]
+        }
+      },
+      {
+        key: "R",
+        id: "vengeance_captain_missile_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["missile_stun", "hard_support", "soft_support"],
+        values: {
+          damage: [390, 520, 650],
+          cooldown: [120, 100, 80],
+          stun: [0.8, 1.15, 1.5],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h122_crystal_channeler",
+    referenceSlot: "dota_like_slot_122",
+    archetype: "suporte glacial de mana, congelamento e ultimate canalizada",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "nuker"],
+    complexity: 1,
+    preferredPositions: [5],
+    designTags: ["mana_aura", "frostbite", "crystal_nova", "freezing_field"],
+    baseAttributes: {
+      strength: 18.0,
+      agility: 14.0,
+      intelligence: 30.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.24,
+      agilityGain: 1.48,
+      intelligenceGain: 3.42
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.35,
+      baseDamageMin: 24,
+      baseDamageMax: 32,
+      baseArmor: 1.1,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "crystal_channeler_mana_aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        tags: ["mana_aura", "hard_support", "disabler"],
+        values: {
+          cooldown: [16, 14, 12, 10]
+        },
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.5
+        }
+      },
+      {
+        key: "W",
+        id: "crystal_channeler_frostbite",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["frostbite", "hard_support", "disabler"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "crystal_channeler_crystal_nova",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["crystal_nova", "hard_support", "disabler"],
+        values: {
+          damage: [160, 205, 250, 295],
+          cooldown: [16, 14, 12, 10],
+          radius: 405
+        }
+      },
+      {
+        key: "R",
+        id: "crystal_channeler_freezing_field",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["freezing_field", "hard_support", "disabler"],
+        values: {
+          damage: [480, 640, 800],
+          cooldown: [120, 100, 80],
+          radius: 505
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h123_greatsword_knight",
+    referenceSlot: "dota_like_slot_123",
+    archetype: "guerreiro de espada pesada, cleave e força explosiva",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["carry", "initiator", "durable"],
+    complexity: 1,
+    preferredPositions: [1, 3],
+    designTags: ["cleave", "storm_hammer", "warcry", "god_strength"],
+    baseAttributes: {
+      strength: 29.0,
+      agility: 15.2,
+      intelligence: 15.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.98,
+      agilityGain: 1.94,
+      intelligenceGain: 1.8
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.7,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 33,
+      baseDamageMax: 42,
+      baseArmor: 2.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 105,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 305,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "greatsword_knight_cleave",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["cleave", "carry", "initiator"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "greatsword_knight_storm_hammer",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["storm_hammer", "carry", "initiator"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          radius: 445
+        }
+      },
+      {
+        key: "E",
+        id: "greatsword_knight_warcry",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        tags: ["warcry", "carry", "initiator"],
+        values: {
+          damage: [140, 185, 230, 275],
+          cooldown: [16, 14, 12, 10],
+          attackSpeed: [25, 45, 65, 85]
+        }
+      },
+      {
+        key: "R",
+        id: "greatsword_knight_god_strength",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["god_strength", "carry", "initiator"],
+        values: {
+          damage: [420, 560, 700],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h124_stone_giant",
+    referenceSlot: "dota_like_slot_124",
+    archetype: "colosso de pedra, arremesso e combo de burst",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["mid", "offlane", "nuker", "initiator"],
+    complexity: 2,
+    preferredPositions: [2, 3],
+    designTags: ["toss", "avalanche", "tree_grab", "grow"],
+    baseAttributes: {
+      strength: 27.0,
+      agility: 14.0,
+      intelligence: 19.4
+    },
+    attributeGrowth: {
+      strengthGain: 3.22,
+      agilityGain: 1.7,
+      intelligenceGain: 1.68
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.3,
+      baseMana: 75,
+      baseManaRegen: 0.05,
+      baseDamageMin: 33,
+      baseDamageMax: 39,
+      baseArmor: 2.7,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.8,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 315,
+      turnRate: 0.6,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "stone_giant_toss",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["toss", "mid", "offlane"],
+        values: {
+          damage: [170, 215, 260, 305],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "stone_giant_avalanche",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["avalanche", "mid", "offlane"],
+        values: {
+          damage: [170, 215, 260, 305],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "stone_giant_tree_grab",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["tree_grab", "mid", "offlane"],
+        values: {
+          damage: [170, 215, 260, 305],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "stone_giant_grow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["grow", "mid", "offlane"],
+        values: {
+          damage: [510, 680, 850],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h125_wind_archer",
+    referenceSlot: "dota_like_slot_125",
+    archetype: "arqueira do vento de stun em linha, foco e fuga",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["mid", "soft_support", "escape", "disabler"],
+    complexity: 2,
+    preferredPositions: [2, 4],
+    designTags: ["shackleshot", "powershot", "windrun", "focus_fire"],
+    baseAttributes: {
+      strength: 19.0,
+      agility: 18.6,
+      intelligence: 21.0
+    },
+    attributeGrowth: {
+      strengthGain: 2.26,
+      agilityGain: 1.86,
+      intelligenceGain: 2.06
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.6,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 29,
+      baseDamageMax: 36,
+      baseArmor: 1.2,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 450,
+      acquisitionRange: 800,
+      movementSpeed: 290,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "wind_archer_shackleshot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["shackleshot", "mid", "soft_support"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "W",
+        id: "wind_archer_powershot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["powershot", "mid", "soft_support"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "E",
+        id: "wind_archer_windrun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["windrun", "mid", "soft_support"],
+        values: {
+          damage: [175, 220, 265, 310],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "wind_archer_focus_fire",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["focus_fire", "mid", "soft_support"],
+        values: {
+          damage: [525, 700, 875],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h126_storm_edict_prophet",
+    referenceSlot: "dota_like_slot_126",
+    archetype: "mago de edictos elétricos, pulso e divisão de terra",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "pusher", "nuker", "disabler"],
+    complexity: 2,
+    preferredPositions: [2],
+    designTags: ["split_earth", "diabolic_edict", "lightning_storm", "pulse_nova"],
+    baseAttributes: {
+      strength: 20.0,
+      agility: 14.6,
+      intelligence: 28.6
+    },
+    attributeGrowth: {
+      strengthGain: 2.0,
+      agilityGain: 1.72,
+      intelligenceGain: 3.54
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.35,
+      baseMana: 75,
+      baseManaRegen: 0.25,
+      baseDamageMin: 27,
+      baseDamageMax: 35,
+      baseArmor: 0.9,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 550,
+      acquisitionRange: 800,
+      movementSpeed: 290,
+      turnRate: 0.75,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "storm_edict_prophet_split_earth",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["split_earth", "mid", "pusher"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "storm_edict_prophet_diabolic_edict",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["diabolic_edict", "mid", "pusher"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "storm_edict_prophet_lightning_storm",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["lightning_storm", "mid", "pusher"],
+        values: {
+          damage: [90, 135, 180, 225],
+          cooldown: [16, 14, 12, 10],
+          radius: 325
+        }
+      },
+      {
+        key: "R",
+        id: "storm_edict_prophet_pulse_nova",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        tags: ["pulse_nova", "mid", "pusher"],
+        values: {
+          damage: [270, 360, 450],
+          cooldown: [120, 100, 80],
+          radius: 425
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h127_goblin_clock_sniper",
+    referenceSlot: "dota_like_slot_127",
+    archetype: "atirador tecnológico de minas leves, mira e recuo",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "mid", "scout"],
+    complexity: 2,
+    preferredPositions: [1, 2],
+    designTags: ["aimed_shot", "recoil_jump", "spotter_drone", "calibrated_burst"],
+    baseAttributes: {
+      strength: 18.0,
+      agility: 24.8,
+      intelligence: 19.2
+    },
+    attributeGrowth: {
+      strengthGain: 2.44,
+      agilityGain: 3.08,
+      intelligenceGain: 1.82
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 0.45,
+      baseMana: 75,
+      baseManaRegen: 0.02,
+      baseDamageMin: 28,
+      baseDamageMax: 37,
+      baseArmor: 2.8,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 115,
+      baseAttackTime: 1.65,
+      attackRange: 650,
+      acquisitionRange: 800,
+      movementSpeed: 295,
+      turnRate: 0.7,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 1200
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "goblin_clock_sniper_aimed_shot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["aimed_shot", "carry", "mid"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [650, 770, 890, 1010]
+        }
+      },
+      {
+        key: "W",
+        id: "goblin_clock_sniper_recoil_jump",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        tags: ["recoil_jump", "carry", "mid"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          slowPct: [15, 22, 29, 36],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "E",
+        id: "goblin_clock_sniper_spotter_drone",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["spotter_drone", "carry", "mid"],
+        values: {
+          damage: [95, 140, 185, 230],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "goblin_clock_sniper_calibrated_burst",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["calibrated_burst", "carry", "mid"],
+        values: {
+          damage: [285, 380, 475],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  },
+
+  {
+    id: "h128_rune_blade_nomad",
+    referenceSlot: "dota_like_slot_128",
+    archetype: "lutador de runas, corte circular e bloqueio mágico",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "durable", "disabler"],
+    complexity: 2,
+    preferredPositions: [3, 4],
+    designTags: ["rune_slash", "warding_circle", "spell_parry", "runic_prison"],
+    baseAttributes: {
+      strength: 26.6,
+      agility: 18.0,
+      intelligence: 20.8
+    },
+    attributeGrowth: {
+      strengthGain: 2.38,
+      agilityGain: 2.34,
+      intelligenceGain: 2.3
+    },
+    baseStats: {
+      baseHealth: 120,
+      baseHealthRegen: 1.6,
+      baseMana: 75,
+      baseManaRegen: 0.12,
+      baseDamageMin: 25,
+      baseDamageMax: 31,
+      baseArmor: 2.6,
+      baseMagicResistance: 25,
+      baseStatusResistance: 0,
+      baseSlowResistance: 0,
+      baseAttackSpeed: 100,
+      baseAttackTime: 1.7,
+      attackRange: 150,
+      acquisitionRange: 600,
+      movementSpeed: 300,
+      turnRate: 0.65,
+      collisionSize: 24,
+      dayVision: 1800,
+      nightVision: 800
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "rune_blade_nomad_rune_slash",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        tags: ["rune_slash", "offlane", "soft_support"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "W",
+        id: "rune_blade_nomad_warding_circle",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["warding_circle", "offlane", "soft_support"],
+        values: {
+          damage: [75, 120, 165, 210],
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740],
+          summons: [1, 2, 3, 4],
+          summonDuration: [18, 24, 30, 36]
+        }
+      },
+      {
+        key: "E",
+        id: "rune_blade_nomad_spell_parry",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        tags: ["spell_parry", "offlane", "soft_support"],
+        values: {
+          cooldown: [16, 14, 12, 10],
+          range: [500, 580, 660, 740]
+        }
+      },
+      {
+        key: "R",
+        id: "rune_blade_nomad_runic_prison",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        tags: ["runic_prison", "offlane", "soft_support"],
+        values: {
+          damage: [225, 300, 375],
+          cooldown: [120, 100, 80],
+          range: [500, 580, 660]
+        }
+      }
+    ]
+  }
+];
+
+export const HERO_SEED_COUNT = HERO_SEEDS.length;
+
+// Sugestão de uso no Codex:
+// 1. Salvar este conteúdo como src/data/allHeroSeeds.ts.
+// 2. Não reescrever os seeds durante implementação de UI.
+// 3. Criar validação para garantir quatro skills por herói.
+// 4. Criar filtro por atributo, posição, role, complexidade, tipo de ataque e designTags.
+// 5. Criar balance pass separado para ajustar números depois da primeira simulação.

@@ -1,0 +1,331 @@
+// dota_like_aggro_lane_control_formulas.txt
+// Fórmulas para creep aggro, tower aggro, lane control, pull, drag, block e equilíbrio de lane.
+// Objetivo: transformar micro de lane em variáveis gerenciais e, se desejado, simulação semidetalhada.
+
+================================================================================
+1. MODELO DE LANE
+================================================================================
+
+lanePosition:
+  -1.0 = perto da torre/base aliada
+   0.0 = centro da lane
+   1.0 = perto da torre/base inimiga
+
+laneState:
+  alliedCreepPower
+  enemyCreepPower
+  alliedHeroWaveClear
+  enemyHeroWaveClear
+  alliedPullInfluence
+  enemyPullInfluence
+  towerInfluence
+  laneBlockInfluence
+
+================================================================================
+2. EQUILÍBRIO DE LANE
+================================================================================
+
+lanePushPowerAllied =
+  alliedCreepDps
+  + alliedHeroWaveClear
+  + alliedSummonPressure
+  + alliedCatapultPressure
+  + alliedAuraPushPower
+
+lanePushPowerEnemy =
+  enemyCreepDps
+  + enemyHeroWaveClear
+  + enemySummonPressure
+  + enemyCatapultPressure
+  + enemyAuraPushPower
+
+laneDelta =
+  (lanePushPowerAllied - lanePushPowerEnemy)
+  / laneResistance
+
+lanePosition =
+  clamp(lanePosition + laneDelta * deltaTime, -1, 1)
+
+laneResistance:
+  quanto maior, mais lenta a lane mexe.
+
+Sugestão:
+  laneResistance = 800
+
+================================================================================
+3. CREEP AGGRO
+================================================================================
+
+Creep aggro é acionado quando herói inimigo dá comando de ataque em herói aliado próximo.
+
+heroAttackCommandAggro =
+  enemyHeroIssuesAttackCommand
+  && distance(enemyHero, alliedCreep) <= creepAggroRadius
+
+creepAggroRadius = 500
+
+Aggro duration:
+
+creepAggroDuration = 2.3
+
+Aggro cooldown:
+
+creepAggroCooldown = 3.0
+
+Se acionado:
+
+for each alliedCreep in radius:
+  creep.target = enemyHero
+  creep.aggroRemaining = creepAggroDuration
+
+================================================================================
+4. SCORE DE ALVO DO CREEP
+================================================================================
+
+creepTargetScore =
+  proximityScore
+  + currentAggroTargetBonus
+  + attackingAllyHeroBonus
+  + lowHealthCreepPriority
+  + laneDefaultPriority
+
+Prioridade sugerida:
+
+1. Alvo de aggro forçado.
+2. Unidade atacando herói aliado.
+3. Creep inimigo mais próximo.
+4. Summon inimigo.
+5. Herói inimigo próximo.
+
+================================================================================
+5. TOWER AGGRO
+================================================================================
+
+Tower aggro por ataque em herói aliado:
+
+towerAggroTriggered =
+  enemyHeroAttacksAlliedHero
+  && enemyHeroWithinTowerRange
+
+towerAggroDuration = 2.5
+
+Tower target score:
+
+towerTargetScore =
+  forcedAggroBonus
+  + attackingTowerBonus
+  + attackingAlliedHeroBonus
+  + proximityBonus
+  + unitTypePriority
+  + currentTargetStickiness
+
+Unit type priority:
+  hero = 100
+  siegeCreep = 80
+  laneCreep = 60
+  summon = 50
+  illusion = 30
+
+Stickiness:
+
+currentTargetStickiness = 25
+
+Isso evita troca de alvo toda hora.
+
+================================================================================
+6. CREEP BLOCK
+================================================================================
+
+Creep block altera o tempo de chegada da wave.
+
+blockQuality =
+  playerMechanicalSkill
+  + heroCollisionAdvantage
+  + spawnExecution
+  - fatiguePenalty
+  - pressurePenalty
+
+blockDelaySeconds =
+  clamp(blockQuality * maxBlockDelay, 0, maxBlockDelay)
+
+maxBlockDelay = 5
+
+Impacto na lane:
+
+initialLanePosition =
+  baseLanePosition - blockDelaySeconds * blockLaneInfluence
+
+blockLaneInfluence = 0.03
+
+================================================================================
+7. PULL DE CREEPS
+================================================================================
+
+Pull success:
+
+pullSuccessChance =
+  supportExecution
+  + campAvailability
+  + lanePositionSuitability
+  + visionSafety
+  - enemyContestPressure
+
+pullSuccessChance = clamp(pullSuccessChance, 0, 1)
+
+Impacto do pull:
+
+if pullSuccess:
+  alliedCreepPower -= pulledCreepPower
+  lanePosition -= pullLaneShift
+
+pullLaneShift = 0.20 a 0.45
+
+Pull through / double pull:
+
+doublePullChance =
+  pullSuccessChance
+  * playerSupportSkill
+  * campChainAvailability
+
+================================================================================
+8. STACK + PULL
+================================================================================
+
+Stack pull value:
+
+stackPullValue =
+  deniedEnemyXpValue
+  + laneResetValue
+  + supportGoldXpValue
+  - carryLastHitLoss
+  - enemyContestRisk
+
+Decisão:
+
+doStackPull =
+  stackPullValue > threshold
+
+================================================================================
+9. DRAG / CUT WAVE
+================================================================================
+
+Wave drag success:
+
+waveDragSuccessChance =
+  offlanerMobility
+  + tankiness
+  + mapAwareness
+  + enemySupportAbsence
+  - enemyKillThreat
+  - creepDamageRisk
+
+Impacto:
+
+if waveDragSuccess:
+  lanePosition -= dragLaneShiftForOfflane
+  enemyCarryFarmSafety -= dragPressure
+  offlanerDeathRisk += dragRisk
+
+================================================================================
+10. HARASS E ZONEAMENTO
+================================================================================
+
+Harass pressure:
+
+harassPressure =
+  heroAttackRangeAdvantage
+  + spellHarassDamage
+  + manaSustain
+  + supportPositioning
+  - enemyRegen
+  - creepAggroPunishment
+
+Lane zone score:
+
+zoneScore =
+  harassPressure
+  + killThreat
+  + creepEquilibriumAdvantage
+  - overextensionRisk
+
+Farm penalty:
+
+enemyLastHitChance -= zoneScore * zoneToFarmPenalty
+
+================================================================================
+11. KILL THREAT NA LANE
+================================================================================
+
+killThreat =
+  alliedBurstDamage
+  + alliedControlDuration
+  + alliedChase
+  + creepDamageSupport
+  - enemyEffectiveHp
+  - enemyEscape
+  - enemySave
+  - towerSafety
+
+killChance =
+  sigmoid((killThreat - killThreshold) / variance)
+
+================================================================================
+12. LANE OUTCOME SCORE
+================================================================================
+
+laneOutcomeScore =
+  expectedGoldAdvantage
+  + expectedXpAdvantage
+  + towerPressureAdvantage
+  + killThreatAdvantage
+  + resourceTradeAdvantage
+  - deathRisk
+
+Lane win probability:
+
+laneWinChance =
+  sigmoid(laneOutcomeScore / laneVariance)
+
+================================================================================
+13. FUNÇÕES TYPESCRIPT
+================================================================================
+
+export function updateLanePosition(input: {
+  lanePosition: number;
+  alliedPushPower: number;
+  enemyPushPower: number;
+  laneResistance: number;
+  deltaTime: number;
+}): number {
+  const delta = (input.alliedPushPower - input.enemyPushPower)
+    / input.laneResistance
+    * input.deltaTime;
+
+  return Math.max(-1, Math.min(1, input.lanePosition + delta));
+}
+
+export function aggroTriggered(input: {
+  issuedAttackCommand: boolean;
+  distanceToCreep: number;
+  aggroRadius: number;
+  aggroCooldownRemaining: number;
+}): boolean {
+  return input.issuedAttackCommand
+    && input.distanceToCreep <= input.aggroRadius
+    && input.aggroCooldownRemaining <= 0;
+}
+
+export function laneWinChance(score: number, variance = 10): number {
+  return 1 / (1 + Math.exp(-(score / variance)));
+}
+
+================================================================================
+14. TESTES RECOMENDADOS
+================================================================================
+
+1. Mais push aliado move lanePosition para +1.
+2. Pull bem-sucedido puxa lanePosition para lado aliado.
+3. Creep aggro só aciona dentro do raio e fora do cooldown.
+4. Tower aggro prioriza herói atacando herói aliado.
+5. Creep block atrasa wave e altera posição inicial.
+6. Kill threat aumenta com controle e burst.

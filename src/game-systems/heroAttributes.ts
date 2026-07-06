@@ -1,5 +1,10 @@
+import { physicalDamageReduction } from './combatFormulas.ts'
+
 export type PrimaryAttribute = 'strength' | 'agility' | 'intelligence' | 'universal'
 export type AttackType = 'melee' | 'ranged'
+export type DamageType = 'physical' | 'magical' | 'pure' | 'none'
+export type SkillKind = 'active' | 'passive' | 'toggle'
+export type SkillTarget = 'self' | 'unit' | 'point' | 'area' | 'global' | 'passive'
 export type HeroRole =
   | 'carry'
   | 'support'
@@ -29,6 +34,7 @@ export interface HeroDefinition {
   attackType: AttackType
   roles: HeroRole[]
   complexity: 1 | 2 | 3
+  skills?: HeroSkillDefinition[]
   baseAttributes: AttributeBlock
   attributeGrowth: AttributeGrowthBlock
   baseStats: {
@@ -51,6 +57,21 @@ export interface HeroDefinition {
     collisionSize: number
     dayVision: number
     nightVision: number
+  }
+}
+
+export interface HeroSkillDefinition {
+  key: 'Q' | 'W' | 'E' | 'R'
+  id: string
+  name: string
+  kind: SkillKind
+  target: SkillTarget
+  damageType: DamageType
+  tags: string[]
+  values: Record<string, number | number[] | string | boolean>
+  scaling?: {
+    attribute?: PrimaryAttribute | 'highest' | 'total'
+    coefficient?: number
   }
 }
 
@@ -312,7 +333,7 @@ export function calculateHeroStats(
 }
 
 export function calculatePhysicalDamageReduction(armor: number): number {
-  return (0.06 * armor) / (1 + 0.06 * Math.abs(armor))
+  return physicalDamageReduction(armor)
 }
 
 function applyFlatAttributeModifiers(attributes: AttributeBlock, modifiers: StatModifier[]): AttributeBlock {

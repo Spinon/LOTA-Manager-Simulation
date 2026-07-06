@@ -1,0 +1,1724 @@
+// dota_like_non_combat_formulas.txt
+// Fórmulas fora do combate para um simulador de manager de MOBA inspirado em Dota-like.
+// Foco: economia, experiência, tempo, mapa, creeps, objetivos, draft, progressão de jogadores e simulação gerencial.
+// Observação: Dota real muda por patch e possui exceções. Use este arquivo como base configurável.
+
+================================================================================
+0. PRINCÍPIO DE DESIGN
+================================================================================
+
+Separar o jogo em 3 camadas:
+
+1. Regras de partida:
+   - tempo
+   - waves
+   - runas
+   - jungle
+   - objetivos
+   - economia
+   - experiência
+   - respawn
+   - buyback
+
+2. Simulação estratégica:
+   - farm
+   - rotação
+   - pressão de mapa
+   - visão
+   - controle de objetivos
+   - vantagem de ouro
+   - vantagem de experiência
+   - risco de morte
+   - timing de item
+
+3. Camada de manager:
+   - treino
+   - forma/fadiga
+   - moral
+   - sinergia
+   - hero pool
+   - draft
+   - scrims
+   - scouting
+   - adaptação ao meta
+   - performance em torneios
+
+================================================================================
+1. TEMPO DE PARTIDA
+================================================================================
+
+Representação:
+
+gameTimeSeconds = elapsedSeconds
+gameTimeMinutes = floor(gameTimeSeconds / 60)
+
+Formato:
+
+minutes = floor(gameTimeSeconds / 60)
+seconds = gameTimeSeconds % 60
+
+isPreGame = gameTimeSeconds < 0
+isGameStarted = gameTimeSeconds >= 0
+
+Ticks de simulação:
+
+simulationTickSeconds = 1
+
+ticksElapsed = floor(gameTimeSeconds / simulationTickSeconds)
+
+Para simulação rápida:
+
+simulationTickSeconds = 5 ou 10
+
+================================================================================
+2. OURO PASSIVO
+================================================================================
+
+Modelo Dota-like configurável:
+
+passiveGoldPerMinute = valueByGameTime(gameTimeMinutes)
+
+passiveGoldPerSecond = passiveGoldPerMinute / 60
+
+goldFromPassiveThisTick =
+  passiveGoldPerSecond * tickDurationSeconds
+
+Tabela sugerida para manager:
+
+0-4 min:    100 GPM
+5-19 min:   106 GPM
+20-39 min:  112 GPM
+40+ min:    120 GPM
+
+Implementação:
+
+function passiveGpmAtMinute(minute) {
+  if (minute >= 40) return 120;
+  if (minute >= 20) return 112;
+  if (minute >= 5) return 106;
+  return 100;
+}
+
+================================================================================
+3. OURO CONFIÁVEL E NÃO CONFIÁVEL
+================================================================================
+
+Dota-like usa duas categorias:
+
+reliableGold
+unreliableGold
+
+Total:
+
+totalGold = reliableGold + unreliableGold
+
+Ganho confiável, exemplos:
+- bounty rune
+- alguns objetivos
+- algumas fontes especiais
+
+Ganho não confiável, exemplos:
+- farm de creeps
+- farm de neutrals
+- passivo, se desejado para seu manager
+
+Compra de item:
+
+function spendGold(cost) {
+  reliableSpent = min(reliableGold, cost)
+  remainingCost = cost - reliableSpent
+  unreliableSpent = min(unreliableGold, remainingCost)
+
+  reliableGold -= reliableSpent
+  unreliableGold -= unreliableSpent
+}
+
+Morte:
+
+goldLossOnDeath = netWorth / 40
+
+unreliableGoldLost = min(unreliableGold, goldLossOnDeath)
+unreliableGold -= unreliableGoldLost
+
+================================================================================
+4. NET WORTH
+================================================================================
+
+Net worth do herói:
+
+heroNetWorth =
+  reliableGold
+  + unreliableGold
+  + sum(itemCurrentValue)
+  + sum(consumedPermanentItemValue)
+  + optionalStashValue
+
+Para manager, recomendo:
+
+heroNetWorth =
+  currentGold
+  + inventoryValue
+  + backpackValue * backpackValueWeight
+  + consumedPermanentValue
+
+backpackValueWeight = 1.0 se o item conta integralmente
+backpackValueWeight = 0.5 se quiser reduzir impacto em avaliação de força imediata
+
+Net worth do time:
+
+teamNetWorth = sum(heroNetWorth for hero in team)
+
+Diferença de net worth:
+
+netWorthDiff = teamA.netWorth - teamB.netWorth
+
+Vantagem percentual:
+
+netWorthLeadPct =
+  netWorthDiff / max(teamA.netWorth, teamB.netWorth)
+
+================================================================================
+5. KILL GOLD
+================================================================================
+
+Modelo Dota-like simples:
+
+killGold =
+  baseKillGold
+  + victimLevel * levelGoldCoefficient
+  + streakGold
+  + firstBloodGold
+
+Valores iniciais:
+
+baseKillGold = 125
+levelGoldCoefficient = 8
+firstBloodGold = 135
+
+Fórmula:
+
+killGold =
+  125
+  + victimLevel * 8
+  + streakGold
+  + firstBloodGoldIfApplicable
+
+Streak gold sugerido:
+
+streakGold =
+  if killStreak < 3: 0
+  if killStreak == 3: 60
+  if killStreak == 4: 120
+  if killStreak == 5: 180
+  if killStreak == 6: 240
+  if killStreak == 7: 300
+  if killStreak >= 8: 360
+
+================================================================================
+6. ASSIST GOLD
+================================================================================
+
+Modelo Dota-like para dividir recompensa:
+
+assistGoldTotal =
+  (assistBaseGold + victimNetWorth * victimNetWorthCoefficient)
+  * netWorthDifferenceFactor
+
+assistGoldPerHero =
+  assistGoldTotal / numberOfAssistingHeroes
+
+Valores sugeridos:
+
+assistBaseGold = 30
+victimNetWorthCoefficient = 0.038
+
+Fator de comeback:
+
+if killingTeamNetWorth < victimTeamNetWorth:
+  netWorthDifferenceFactor =
+    1 + (victimTeamNetWorth - killingTeamNetWorth) / victimTeamNetWorth
+
+else:
+  netWorthDifferenceFactor =
+    1 - (killingTeamNetWorth - victimTeamNetWorth) / killingTeamNetWorth
+
+Limitar para não quebrar o manager:
+
+netWorthDifferenceFactor =
+  clamp(netWorthDifferenceFactor, 0.6, 1.8)
+
+================================================================================
+7. BUYBACK
+================================================================================
+
+Custo de buyback:
+
+buybackCost = floor(200 + netWorth / 13)
+
+Cooldown de buyback:
+
+buybackCooldownSeconds = 480
+
+Penalidade de próximo respawn:
+
+nextRespawnTimeBonusAfterBuyback = 25
+
+Se morreu para neutro:
+
+neutralDeathMinimumRespawnTime = 26
+
+Lógica:
+
+if hero.usesBuyback:
+  hero.gold -= buybackCost
+  hero.buybackCooldown = 480
+  hero.nextRespawnBonus += 25
+
+================================================================================
+8. RESPAWN
+================================================================================
+
+Modelo configurável por nível:
+
+respawnTime = respawnTimeTable[level] + nextRespawnBonus
+
+Tabela sugerida:
+
+level 1: 6
+level 2: 8
+level 3: 10
+level 4: 12
+level 5: 14
+level 6: 16
+level 7: 20
+level 8: 24
+level 9: 28
+level 10: 32
+level 11: 36
+level 12: 40
+level 13: 44
+level 14: 48
+level 15: 52
+level 16: 56
+level 17: 60
+level 18: 64
+level 19: 68
+level 20: 72
+level 21: 76
+level 22: 80
+level 23: 84
+level 24: 88
+level 25: 92
+level 26: 96
+level 27: 100
+level 28: 104
+level 29: 108
+level 30: 112
+
+Implementação:
+
+respawnTime =
+  respawnTable[level]
+  + buybackPenalty
+  + specialPenalty
+  - respawnReduction
+
+respawnTime = max(respawnTime, minimumRespawnTime)
+
+================================================================================
+9. EXPERIÊNCIA E NÍVEL
+================================================================================
+
+XP total:
+
+currentXp += xpGain
+
+Level:
+
+level = getLevelFromXp(currentXp)
+
+Tabela sugerida de XP acumulado:
+
+XP_TO_REACH_LEVEL = {
+  1: 0,
+  2: 240,
+  3: 640,
+  4: 1160,
+  5: 1760,
+  6: 2440,
+  7: 3200,
+  8: 4000,
+  9: 4900,
+  10: 5900,
+  11: 7000,
+  12: 8200,
+  13: 9500,
+  14: 10900,
+  15: 12400,
+  16: 14000,
+  17: 15700,
+  18: 17500,
+  19: 19400,
+  20: 21400,
+  21: 23600,
+  22: 26000,
+  23: 28600,
+  24: 31400,
+  25: 34400,
+  26: 38400,
+  27: 43400,
+  28: 49400,
+  29: 56400,
+  30: 63900
+}
+
+Função:
+
+function getLevelFromXp(totalXp) {
+  level = 1
+
+  for each nextLevel from 2 to 30:
+    if totalXp >= XP_TO_REACH_LEVEL[nextLevel]:
+      level = nextLevel
+    else:
+      break
+
+  return level
+}
+
+Progresso no nível:
+
+xpIntoCurrentLevel =
+  totalXp - XP_TO_REACH_LEVEL[currentLevel]
+
+xpNeededForNextLevel =
+  XP_TO_REACH_LEVEL[currentLevel + 1] - XP_TO_REACH_LEVEL[currentLevel]
+
+levelProgress =
+  xpIntoCurrentLevel / xpNeededForNextLevel
+
+================================================================================
+10. XP POR KILL
+================================================================================
+
+Modelo simples:
+
+killXp =
+  baseKillXp
+  + victimLevel * levelXpCoefficient
+  + comebackXpBonus
+
+Valores iniciais:
+
+baseKillXp = 40
+levelXpCoefficient = 12
+
+killXp =
+  40 + victimLevel * 12 + comebackXpBonus
+
+Comeback XP:
+
+if killingTeamXp < victimTeamXp:
+  comebackXpBonus =
+    (victimTeamXp - killingTeamXp) * comebackXpCoefficient
+
+else:
+  comebackXpBonus = 0
+
+comebackXpCoefficient = 0.002
+
+Divisão entre heróis próximos:
+
+xpPerHero =
+  killXp / numberOfEligibleAlliedHeroes
+
+Raio de XP:
+
+xpRadius = 1500
+
+================================================================================
+11. XP DE CREEPS E NEGAÇÃO
+================================================================================
+
+XP de creep:
+
+xpGain =
+  creepXpValue / numberOfEligibleHeroes
+
+Se creep foi negado:
+
+deniedXpGain =
+  creepXpValue * deniedXpMultiplier / numberOfEligibleHeroes
+
+Valores sugeridos:
+
+deniedXpMultiplierMelee = 0.5
+deniedXpMultiplierRanged = 0.5
+
+Para manager, simplifique:
+
+deniedXpMultiplier = 0.5
+
+================================================================================
+12. LAST HIT E DENY
+================================================================================
+
+Chance de last hit no manager:
+
+lastHitChance =
+  basePlayerLaneSkill
+  + heroLastHitModifier
+  + matchupAdvantage
+  + supportPressure
+  + laneEquilibriumBonus
+  - enemyHarassPressure
+  - playerFatiguePenalty
+
+lastHitChance = clamp(lastHitChance, 0.05, 0.95)
+
+Gold esperado por wave:
+
+expectedWaveGold =
+  sum(creepGoldValue * lastHitChanceForCreep)
+
+Deny chance:
+
+denyChance =
+  basePlayerLaneSkill
+  + heroDenyModifier
+  + laneControl
+  - enemyPressure
+
+denyChance = clamp(denyChance, 0.00, 0.75)
+
+XP negado esperado:
+
+expectedDeniedXp =
+  sum(creepXpValue * denyChance * (1 - deniedXpMultiplier))
+
+================================================================================
+13. CREEP WAVES
+================================================================================
+
+Spawn de wave:
+
+waveSpawnIntervalSeconds = 30
+
+waveNumber =
+  floor(gameTimeSeconds / waveSpawnIntervalSeconds)
+
+Creeps por wave inicial:
+
+meleeCreeps = 3
+rangedCreeps = 1
+siegeCreeps = shouldSpawnSiegeCreep(gameTimeMinutes) ? 1 : 0
+flagbearerCreeps = shouldSpawnFlagbearer(gameTimeMinutes) ? 1 : 0
+
+Siege creep:
+
+shouldSpawnSiegeCreep =
+  gameTimeMinutes >= 5
+  && gameTimeMinutes % 5 == 0
+
+Modelo alternativo:
+- siege a cada 10 waves
+- ou a cada 5 minutos
+
+Escalonamento de creeps:
+
+creepUpgradeTier =
+  floor(gameTimeMinutes / 7.5)
+
+creepHealth =
+  baseCreepHealth * (1 + creepUpgradeTier * 0.08)
+
+creepDamage =
+  baseCreepDamage * (1 + creepUpgradeTier * 0.06)
+
+================================================================================
+14. EQUILÍBRIO DE LANE
+================================================================================
+
+Lane equilibrium é a posição média da wave em relação ao mapa.
+
+lanePosition:
+  -1.0 = perto da base aliada
+   0.0 = centro da lane
+   1.0 = perto da base inimiga
+
+Atualização:
+
+lanePushPowerAllied =
+  alliedCreepDps
+  + alliedHeroWaveClear
+  + alliedSummonPressure
+  + alliedCatapultPressure
+
+lanePushPowerEnemy =
+  enemyCreepDps
+  + enemyHeroWaveClear
+  + enemySummonPressure
+  + enemyCatapultPressure
+
+laneDelta =
+  (lanePushPowerAllied - lanePushPowerEnemy)
+  / laneResistance
+
+lanePosition =
+  clamp(lanePosition + laneDelta * tickDuration, -1, 1)
+
+Risco de gank:
+
+gankRisk =
+  baseGankRisk
+  + max(0, lanePosition) * overextensionRisk
+  - alliedVisionSafety
+  - nearbyAlliedSupport
+
+Farm safety:
+
+farmSafety =
+  1 - gankRisk
+
+================================================================================
+15. JUNGLE CAMPS
+================================================================================
+
+Respawn de neutrals:
+
+neutralCampRespawnIntervalSeconds = 60
+
+Camp pode respawnar se:
+
+canRespawnCamp =
+  currentTimeSeconds % 60 == 0
+  && campAreaIsEmpty
+  && campNotBlockedByWardOrUnit
+
+Farm esperado por minuto:
+
+expectedJungleGoldPerMinute =
+  sum(campGoldValue * clearProbability) / clearCycleMinutes
+
+Clear probability:
+
+clearProbability =
+  heroJungleClearScore
+  + playerEfficiency
+  + itemTimingModifier
+  - enemyInvasionRisk
+
+clearProbability = clamp(clearProbability, 0, 1)
+
+Stack:
+
+stackSuccessChance =
+  playerSupportSkill
+  + heroStackModifier
+  + visionSafety
+  - enemyContestRisk
+
+stackedCampValue =
+  baseCampValue * (1 + stackCount * stackValueMultiplier)
+
+stackValueMultiplier = 0.85
+
+================================================================================
+16. RUNAS
+================================================================================
+
+Power rune:
+
+powerRuneSpawnIntervalSeconds = 120
+powerRuneStartTimeSeconds = 360
+
+spawnPowerRune =
+  gameTimeSeconds >= 360
+  && gameTimeSeconds % 120 == 0
+
+Water rune:
+
+waterRuneSpawnTimes = [120, 240]
+
+spawnWaterRune =
+  gameTimeSeconds in waterRuneSpawnTimes
+
+Bounty rune:
+
+bountyRuneSpawnIntervalSeconds = 180
+
+spawnBountyRune =
+  gameTimeSeconds == 0
+  || gameTimeSeconds % 180 == 0
+
+Bounty rune gold:
+
+bountyRuneGoldPerHero =
+  40 + 6 * floor(gameTimeMinutes / 4)
+
+Wisdom rune:
+
+wisdomRuneSpawnIntervalSeconds = 420
+wisdomRuneStartTimeSeconds = 420
+
+spawnWisdomRune =
+  gameTimeSeconds >= 420
+  && gameTimeSeconds % 420 == 0
+
+Wisdom rune XP sugerida:
+
+wisdomRuneXp =
+  baseWisdomXp + wisdomXpPerSpawn * wisdomRuneSpawnIndex
+
+baseWisdomXp = 280
+wisdomXpPerSpawn = 280
+
+================================================================================
+17. LOTUS POOL
+================================================================================
+
+Healing Lotus spawn:
+
+lotusSpawnIntervalSeconds = 180
+
+lotusCount =
+  min(maxLotusStored, floor(gameTimeSeconds / lotusSpawnIntervalSeconds))
+
+maxLotusStored = 6
+
+Cura:
+
+healingLotusValue = 125 health and mana
+greatHealingLotusValue = 400 health and mana
+greaterHealingLotusValue = 900 health and mana
+
+Combinações:
+
+greatHealingLotus = 3 * healingLotus
+greaterHealingLotus = 2 * greatHealingLotus
+
+Manager score:
+
+lotusControlScore =
+  lanePriority
+  + supportRotation
+  + visionControl
+  - enemyContestPower
+
+================================================================================
+18. TORMENTOR
+================================================================================
+
+Spawn:
+
+tormentorFirstSpawnTimeSeconds = 1200
+tormentorRespawnAfterDeathSeconds = 600
+
+tormentorAvailable =
+  gameTimeSeconds >= 1200
+  && (tormentorDead == false || timeSinceTormentorDeath >= 600)
+
+Recompensa Dota-like:
+
+rewardTarget =
+  alliedHeroWithoutShardWithLowestNetWorthAmongBottomCandidates
+
+Para manager:
+
+tormentorExpectedValue =
+  shardValue
+  + teamXpValue
+  + mapPressureValue
+  - expectedDamageCost
+  - deathRiskCost
+
+Chance de fazer Tormentor:
+
+tormentorAttemptScore =
+  teamSustain
+  + physicalDamage
+  + summons
+  + visionControl
+  - enemyContestRisk
+
+tormentorAttemptChance =
+  sigmoid(tormentorAttemptScore - requiredTormentorScore)
+
+================================================================================
+19. ROSHAN / BOSS MAIOR
+================================================================================
+
+Modelo Dota-like configurável:
+
+roshanFirstAvailable = 0
+roshanRespawnMinSeconds = 480
+roshanRespawnMaxSeconds = 660
+
+Após morte:
+
+roshanRespawnTime =
+  deathTime + random(480, 660)
+
+roshanKnownToTeams = false até scoutar ou timer estimado
+
+Valor esperado:
+
+roshanExpectedValue =
+  aegisValue
+  + cheeseValue
+  + shardOrScepterValue
+  + mapControlValue
+  + highGroundThreatValue
+  - contestRisk
+  - timeCost
+
+Chance de Roshan:
+
+roshanAttemptScore =
+  teamDamageToBoss
+  + teamTankiness
+  + visionControlAroundPit
+  + lanePriority
+  + enemyDeadTimeValue
+  - enemyContestPower
+
+roshanSuccessChance =
+  sigmoid((roshanAttemptScore - roshanDifficulty) / roshanVariance)
+
+================================================================================
+20. TORRES E OBJETIVOS
+================================================================================
+
+Valor estratégico de torre:
+
+towerStrategicValue =
+  mapControlValue
+  + visionAreaValue
+  + lanePressureValue
+  + objectiveAccessValue
+  + goldRewardValue
+
+Pressão contra torre:
+
+towerPressure =
+  alliedCreepWaveStrength
+  + alliedHeroSiegeDamage
+  + summonDamage
+  + catapultPressure
+  - enemyWaveClear
+  - enemyDefensivePresence
+
+Chance de queda da torre no período:
+
+towerFallChance =
+  sigmoid((towerPressure - towerDefenseScore) / variance)
+
+Gold por torre:
+
+towerGold =
+  teamGoldReward + lastHitGoldReward
+
+Para manager:
+
+towerTakeDecisionScore =
+  towerFallChance * towerStrategicValue
+  - deathRisk
+  - opportunityCost
+  - enemyTradeValue
+
+================================================================================
+21. GLYPH / FORTIFICAÇÃO
+================================================================================
+
+Disponibilidade:
+
+glyphAvailable = cooldown <= 0
+
+Uso defensivo:
+
+glyphUseScore =
+  towerValueAtRisk
+  + creepWaveThreat
+  + enemySiegeCommitment
+  - chanceToDefendWithoutGlyph
+  - futureGlyphNeed
+
+Usar se:
+
+glyphUseScore > glyphUseThreshold
+
+Cooldown sugerido:
+
+glyphCooldownSeconds = 300
+
+Refresh por Tier:
+
+if firstTowerOfTierFalls:
+  glyphCooldown = 0
+
+================================================================================
+22. VISÃO E WARDS
+================================================================================
+
+Mapa dividido em células:
+
+mapCellVisionScore =
+  alliedObserverVision
+  + alliedSentryCoverage
+  + alliedHeroVision
+  + alliedSummonVision
+  - enemyVisionDenial
+
+Controle de visão:
+
+visionControlScore =
+  sum(importantCellWeight * hasVision(cell))
+
+Risco em área sem visão:
+
+darkAreaRisk =
+  enemyMissingHeroes
+  * enemyGankThreat
+  * areaStrategicImportance
+  * lackOfVisionMultiplier
+
+Valor de ward:
+
+wardExpectedValue =
+  probabilityOfSpottingRotation * rotationPunishValue
+  + objectiveSetupValue
+  + farmSafetyValue
+  - dewardRisk
+  - wardCost
+
+Chance de deward:
+
+dewardChance =
+  sentryCoverage
+  + playerMapRead
+  + enemyWardPredictability
+  - enemyProtection
+
+================================================================================
+23. SMOKE / ROTAÇÃO
+================================================================================
+
+Chance de gank funcionar:
+
+gankSuccessChance =
+  smokeStatusBonus
+  + heroCatchScore
+  + visionAdvantage
+  + targetOverextension
+  + numbersAdvantage
+  - enemySavePotential
+  - enemyVision
+  - targetEscapeScore
+
+gankExpectedValue =
+  gankSuccessChance * killValue
+  + objectiveFollowupValue
+  - timeCost
+  - failedGankPunishRisk
+
+Usar smoke se:
+
+gankExpectedValue > smokeThreshold
+
+================================================================================
+24. FARM PRIORITY
+================================================================================
+
+Prioridade de farm por herói:
+
+farmPriorityScore =
+  positionWeight
+  + itemTimingUrgency
+  + heroScaling
+  + currentPowerSpikeNeed
+  - deathRisk
+  - teamObjectiveUrgency
+
+Distribuição de recursos:
+
+heroFarmShare =
+  farmPriorityScore / sum(teamFarmPriorityScores)
+
+GPM esperado:
+
+expectedGpm =
+  laneFarmGpm * laneAccessShare
+  + jungleFarmGpm * jungleAccessShare
+  + passiveGpm
+  + objectiveGoldExpected
+  + killGoldExpected
+  - deathGoldLossExpected
+
+================================================================================
+25. TIMING DE ITEM
+================================================================================
+
+Tempo até item:
+
+goldNeeded =
+  itemCost - currentGold - sellableValue
+
+expectedTimeToItemSeconds =
+  goldNeeded / (expectedGpm / 60)
+
+Power spike score:
+
+itemPowerSpikeScore =
+  itemStatValue
+  + itemActiveValue
+  + heroSynergyValue
+  + timingWindowValue
+  - opportunityCost
+
+Timing window:
+
+timingWindowValue =
+  max(0, enemyKeyItemEta - ownKeyItemEta) * timingMultiplier
+
+================================================================================
+26. DRAFT
+================================================================================
+
+Pontuação de herói no draft:
+
+heroDraftScore =
+  playerComfort
+  + heroMetaStrength
+  + roleFit
+  + laneFit
+  + teamSynergy
+  + counterEnemyScore
+  + flexPickValue
+  - counteredByEnemyScore
+  - executionDifficultyPenalty
+  - overlapPenalty
+
+Player comfort:
+
+playerComfort =
+  heroMastery * 0.45
+  + recentPracticeScore * 0.25
+  + historicalWinrateOnHero * 0.20
+  + confidenceOnHero * 0.10
+
+Meta strength:
+
+heroMetaStrength =
+  globalWinrateWeight
+  + pickBanPresenceWeight
+  + patchBuffScore
+  - patchNerfScore
+
+Flex pick value:
+
+flexPickValue =
+  numberOfViableRoles * flexRoleWeight
+  + ambiguityValue
+
+================================================================================
+27. SINERGIA DE DRAFT
+================================================================================
+
+Team synergy:
+
+teamSynergy =
+  laneSynergy
+  + teamfightSynergy
+  + damageTypeBalance
+  + disableCoverage
+  + objectiveTaking
+  + saveCoverage
+  + scalingCurveBalance
+  + initiationReliability
+  + visionPlayCompatibility
+
+Damage type balance:
+
+damageTypeBalance =
+  1 - abs(physicalDamageShare - magicalDamageShare)
+
+Ideal:
+physicalDamageShare = 0.5
+magicalDamageShare = 0.5
+
+Disable coverage:
+
+disableCoverage =
+  stunScore
+  + silenceScore
+  + rootScore
+  + displacementScore
+  + savePunishScore
+
+Scaling curve:
+
+scalingCurveBalance =
+  earlyGameScore * 0.25
+  + midGameScore * 0.35
+  + lateGameScore * 0.40
+
+================================================================================
+28. COUNTERPICK
+================================================================================
+
+Counter score:
+
+counterEnemyScore =
+  sum(counterWeight(hero, enemyHero) for enemyHero in enemyDraft)
+
+Countered by enemy:
+
+counteredByEnemyScore =
+  sum(counterWeight(enemyHero, hero) for enemyHero in enemyDraft)
+
+Lane counter:
+
+laneCounterScore =
+  matchupWinProbability
+  + csAdvantageExpected
+  + killThreat
+  + towerPressure
+  - deathRisk
+
+Teamfight counter:
+
+teamfightCounterScore =
+  cancelsEnemyCombo
+  + punishesEnemyPositioning
+  + reducesEnemyCoreDamage
+  + bypassesEnemySaves
+
+================================================================================
+29. BAN PRIORITY
+================================================================================
+
+Ban score:
+
+banScore =
+  enemyComfortOnHero
+  + heroMetaStrength
+  + countersOurStrategy
+  + firstPhaseFlexValue
+  + cheeseRisk
+  - baitPickValue
+
+Cheese risk:
+
+cheeseRisk =
+  lowPreparationAgainstHero
+  * highSnowballPotential
+  * highSpecialistEnemySkill
+
+================================================================================
+30. PLAYER SKILL MODEL
+================================================================================
+
+Atributos de jogador:
+
+mechanics
+laning
+mapAwareness
+teamfight
+communication
+discipline
+heroPoolDepth
+adaptability
+tiltResistance
+shotcalling
+farmingEfficiency
+supportEfficiency
+draftUnderstanding
+
+Rating de jogador em herói:
+
+playerHeroRating =
+  mechanics * heroMechanicalDemandWeight
+  + laning * heroLaningDemandWeight
+  + mapAwareness * heroMapDemandWeight
+  + teamfight * heroTeamfightDemandWeight
+  + heroMastery * masteryWeight
+  - heroComplexity * difficultyPenalty
+
+================================================================================
+31. HERO MASTERY
+================================================================================
+
+Ganho de maestria:
+
+masteryGain =
+  baseMasteryGain
+  * practiceQuality
+  * coachBonus
+  * playerLearningRate
+  * diminishingReturns
+
+Diminishing returns:
+
+diminishingReturns =
+  1 - currentMastery / masteryCap
+
+Novo mastery:
+
+newMastery =
+  currentMastery + masteryGain
+
+masteryCap = 100
+
+Prática em scrim:
+
+scrimMasteryGain =
+  baseScrimGain
+  * matchRelevance
+  * opponentQuality
+  * reviewCompletedMultiplier
+
+================================================================================
+32. TREINO
+================================================================================
+
+Training result:
+
+trainingGain =
+  baseTrainingGain
+  * trainingIntensity
+  * coachQuality
+  * facilityQuality
+  * playerLearningRate
+  * focusMultiplier
+  * fatiguePenalty
+
+Fatigue penalty:
+
+fatiguePenalty =
+  clamp(1 - fatigue / 100, 0.25, 1.0)
+
+Focus multiplier:
+
+if trainingFocus matches playerWeakness:
+  focusMultiplier = 1.25
+else:
+  focusMultiplier = 1.0
+
+================================================================================
+33. FADIGA
+================================================================================
+
+Ganho de fadiga:
+
+fatigueGain =
+  scrimHours * scrimFatigueRate
+  + officialMatchStress
+  + travelFatigue
+  + poorSleepPenalty
+  - recoveryEffect
+
+Recuperação:
+
+fatigueRecovery =
+  restHours * restQuality
+  + physioBonus
+  + moraleBonus
+
+Atualização:
+
+fatigue =
+  clamp(fatigue + fatigueGain - fatigueRecovery, 0, 100)
+
+Impacto em performance:
+
+fatiguePerformanceMultiplier =
+  1 - fatigue * fatigueImpactPerPoint
+
+fatigueImpactPerPoint = 0.003
+
+Exemplo:
+fatigue = 30
+multiplier = 1 - 30 * 0.003 = 0.91
+
+================================================================================
+34. MORAL
+================================================================================
+
+Moral:
+
+morale =
+  clamp(
+    baseMorale
+    + recentWinsBonus
+    + teamChemistryBonus
+    + salarySatisfaction
+    + roleSatisfaction
+    - losingStreakPenalty
+    - conflictPenalty
+    - benchPenalty,
+    0,
+    100
+  )
+
+Multiplicador de moral:
+
+moraleMultiplier =
+  0.85 + morale / 200
+
+Exemplo:
+morale = 70
+moraleMultiplier = 0.85 + 70 / 200 = 1.20
+
+================================================================================
+35. SINERGIA DO TIME
+================================================================================
+
+Team chemistry:
+
+teamChemistry =
+  communicationCompatibility
+  + sharedExperience
+  + roleStability
+  + practiceVolume
+  + leadershipFit
+  - internalConflict
+  - languageBarrier
+  - roleOverlap
+
+Synergy gain per scrim:
+
+synergyGain =
+  baseSynergyGain
+  * scrimQuality
+  * reviewQuality
+  * rosterStabilityMultiplier
+
+Roster change penalty:
+
+teamChemistryAfterRosterChange =
+  teamChemistry * rosterRetentionFactor
+
+rosterRetentionFactor =
+  returningPlayers / totalPlayers
+
+================================================================================
+36. SCRIMS
+================================================================================
+
+Scrim quality:
+
+scrimQuality =
+  opponentStrength
+  + draftRelevance
+  + practiceFocusMatch
+  + seriousness
+  - stompPenalty
+  - experimentalNoise
+
+Learning from scrim:
+
+learningGain =
+  scrimQuality
+  * reviewCompletion
+  * coachingQuality
+  * playerAdaptability
+
+Scrim result expectation:
+
+scrimWinChance =
+  sigmoid((teamStrength - opponentStrength) / variance)
+
+================================================================================
+37. PARTIDA OFICIAL: CHANCE DE VITÓRIA
+================================================================================
+
+Team strength:
+
+teamStrength =
+  draftStrength
+  + playerForm
+  + teamChemistry
+  + patchPreparation
+  + strategicRead
+  + sideAdvantage
+  - fatiguePenalty
+  - moralePenalty
+
+Win probability:
+
+winProbability =
+  sigmoid((teamStrength - opponentStrength) / matchVariance)
+
+Sigmoid:
+
+sigmoid(x) = 1 / (1 + e^-x)
+
+Com variância:
+
+winProbability =
+  1 / (1 + exp(-(teamStrength - opponentStrength) / variance))
+
+================================================================================
+38. SIDE ADVANTAGE
+================================================================================
+
+sideAdvantage =
+  mapSideBaseValue
+  + teamComfortOnSide
+  + draftSideCompatibility
+  + objectiveAccessPreference
+
+Exemplo:
+
+radiantAdvantage = 1.5
+direAdvantage = 0.0
+
+sideAdvantage =
+  selectedSide == "radiant" ? radiantAdvantage : direAdvantage
+
+================================================================================
+39. META E PATCH
+================================================================================
+
+Hero patch score:
+
+heroPatchScore =
+  previousMetaScore
+  + directBuffScore
+  - directNerfScore
+  + itemSynergyChange
+  + counterMetaChange
+  + mapChangeImpact
+
+Team patch readiness:
+
+patchReadiness =
+  patchStudyHours
+  + analystQuality
+  + scrimVolumeOnPatch
+  + heroPoolOverlapWithMeta
+  - patchComplexity
+
+================================================================================
+40. SCOUTING
+================================================================================
+
+Opponent prediction:
+
+opponentPickProbability(hero) =
+  enemyComfort(hero)
+  * heroMetaStrength
+  * recentPickFrequency
+  * roleNeed
+  * phaseLikelihood
+
+Normalize:
+
+normalizedProbability(hero) =
+  rawProbability(hero) / sum(rawProbability(allHeroes))
+
+Strategy read:
+
+strategyReadScore =
+  analystSkill
+  + dataQuality
+  + recentMatchesAvailable
+  + opponentPredictability
+  - hiddenStratRisk
+
+================================================================================
+41. TORNEIO
+================================================================================
+
+Match fatigue in series:
+
+seriesFatigue =
+  gamesPlayedToday * gameFatigue
+  + seriesLength * mentalLoad
+  - breakRecovery
+
+Momentum:
+
+momentum =
+  previousGameResult
+  + comebackWinBonus
+  - stompLossPenalty
+  + moraleStability
+
+Best-of win probability:
+
+BO1:
+  pSeries = p
+
+BO3:
+  pSeries = p^2 * (3 - 2p)
+
+BO5:
+  pSeries =
+    p^3
+    + 3 * p^3 * (1 - p)
+    + 6 * p^3 * (1 - p)^2
+
+Forma geral:
+probability of winning at least ceil(n/2) games in n games.
+
+================================================================================
+42. CONTRATOS E ELENCO
+================================================================================
+
+Player market value:
+
+marketValue =
+  baseValue
+  + mechanicalRating * mechanicsWeight
+  + roleScarcity
+  + recentPerformance
+  + brandValue
+  + potential
+  - ageDeclineRisk
+  - contractRisk
+
+Salary expectation:
+
+expectedSalary =
+  marketValue * salaryCoefficient
+  + demandPremium
+  - loyaltyDiscount
+
+Transfer value:
+
+transferValue =
+  marketValue
+  * contractRemainingMultiplier
+  * buyoutClauseMultiplier
+
+================================================================================
+43. DESENVOLVIMENTO DE JOVEM TALENTO
+================================================================================
+
+Potential growth:
+
+potentialGrowth =
+  trainingQuality
+  * learningRate
+  * ageMultiplier
+  * playtimeMultiplier
+  * mentorMultiplier
+  - burnoutRisk
+
+Age multiplier:
+
+if age <= 18: 1.25
+if age 19-22: 1.15
+if age 23-26: 1.00
+if age 27-30: 0.75
+if age > 30: 0.50
+
+================================================================================
+44. FORMA RECENTE
+================================================================================
+
+Recent form:
+
+recentForm =
+  weightedAverage(lastNMatchRatings)
+
+Peso:
+
+mostRecentWeight > olderWeight
+
+Exemplo:
+
+recentForm =
+  match1 * 0.35
+  + match2 * 0.25
+  + match3 * 0.18
+  + match4 * 0.12
+  + match5 * 0.10
+
+================================================================================
+45. AVALIAÇÃO PÓS-JOGO
+================================================================================
+
+Player match rating:
+
+matchRating =
+  laneScore * 0.20
+  + farmEfficiency * 0.15
+  + teamfightImpact * 0.20
+  + objectiveContribution * 0.15
+  + visionContribution * supportWeight
+  + deathAvoidance * 0.10
+  + roleSpecificImpact * 0.20
+
+Para carry:
+
+roleSpecificImpact =
+  damageToHeroes * 0.25
+  + damageToBuildings * 0.25
+  + netWorthTiming * 0.25
+  + lateGameDecision * 0.25
+
+Para support:
+
+roleSpecificImpact =
+  visionScore * 0.25
+  + saveImpact * 0.25
+  + initiationSetup * 0.20
+  + deathTradeEfficiency * 0.15
+  + resourceSacrifice * 0.15
+
+================================================================================
+46. FUNÇÕES TYPESCRIPT SUGERIDAS
+================================================================================
+
+export function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+export function sigmoid(x: number): number {
+  return 1 / (1 + Math.exp(-x));
+}
+
+export function passiveGpmAtMinute(minute: number): number {
+  if (minute >= 40) return 120;
+  if (minute >= 20) return 112;
+  if (minute >= 5) return 106;
+  return 100;
+}
+
+export function bountyRuneGold(gameTimeMinutes: number): number {
+  return 40 + 6 * Math.floor(gameTimeMinutes / 4);
+}
+
+export function buybackCost(netWorth: number): number {
+  return Math.floor(200 + netWorth / 13);
+}
+
+export function deathGoldLoss(netWorth: number): number {
+  return netWorth / 40;
+}
+
+export function killGold(
+  victimLevel: number,
+  streakGold = 0,
+  isFirstBlood = false
+): number {
+  return 125 + victimLevel * 8 + streakGold + (isFirstBlood ? 135 : 0);
+}
+
+export function assistGoldPerHero(
+  victimNetWorth: number,
+  killingTeamNetWorth: number,
+  victimTeamNetWorth: number,
+  numberOfAssistingHeroes: number
+): number {
+  const assistBaseGold = 30;
+  const coefficient = 0.038;
+
+  let factor: number;
+
+  if (killingTeamNetWorth < victimTeamNetWorth) {
+    factor = 1 + (victimTeamNetWorth - killingTeamNetWorth) / victimTeamNetWorth;
+  } else {
+    factor = 1 - (killingTeamNetWorth - victimTeamNetWorth) / killingTeamNetWorth;
+  }
+
+  factor = clamp(factor, 0.6, 1.8);
+
+  return ((assistBaseGold + victimNetWorth * coefficient) * factor) / numberOfAssistingHeroes;
+}
+
+export function expectedTimeToItemSeconds(
+  itemCost: number,
+  currentGold: number,
+  expectedGpm: number
+): number {
+  const goldNeeded = Math.max(0, itemCost - currentGold);
+  return goldNeeded / (expectedGpm / 60);
+}
+
+export function getLevelFromXp(totalXp: number, xpTable: Record<number, number>): number {
+  let level = 1;
+
+  for (let nextLevel = 2; nextLevel <= 30; nextLevel++) {
+    if (totalXp >= xpTable[nextLevel]) {
+      level = nextLevel;
+    } else {
+      break;
+    }
+  }
+
+  return level;
+}
+
+export function bestOfThreeWinProbability(singleGameWinProbability: number): number {
+  const p = singleGameWinProbability;
+  return p * p * (3 - 2 * p);
+}
+
+export function bestOfFiveWinProbability(singleGameWinProbability: number): number {
+  const p = singleGameWinProbability;
+  return Math.pow(p, 3) + 3 * Math.pow(p, 3) * (1 - p) + 6 * Math.pow(p, 3) * Math.pow(1 - p, 2);
+}
+
+================================================================================
+47. ORDEM RECOMENDADA PARA O CODEX
+================================================================================
+
+1. Criar src/systems/timeSystem.ts
+2. Criar src/systems/economySystem.ts
+3. Criar src/systems/xpSystem.ts
+4. Criar src/systems/mapObjectiveSystem.ts
+5. Criar src/systems/draftScoringSystem.ts
+6. Criar src/systems/trainingSystem.ts
+7. Criar src/systems/teamChemistrySystem.ts
+8. Criar src/systems/tournamentSimulationSystem.ts
+9. Criar testes unitários para cada fórmula
+10. Só depois integrar com UI
+
+================================================================================
+48. CONSTANTES CONFIGURÁVEIS
+================================================================================
+
+export const NON_COMBAT_RULES = {
+  passiveGold: {
+    earlyGpm: 100,
+    midGpm: 106,
+    lateGpm: 112,
+    ultraLateGpm: 120,
+  },
+
+  economy: {
+    killBaseGold: 125,
+    killLevelGold: 8,
+    firstBloodGold: 135,
+    assistBaseGold: 30,
+    assistNetWorthCoefficient: 0.038,
+    deathGoldLossDivisor: 40,
+    buybackBaseCost: 200,
+    buybackNetWorthDivisor: 13,
+    buybackCooldownSeconds: 480,
+    buybackRespawnPenaltySeconds: 25,
+  },
+
+  map: {
+    waveIntervalSeconds: 30,
+    jungleRespawnIntervalSeconds: 60,
+    powerRuneIntervalSeconds: 120,
+    bountyRuneIntervalSeconds: 180,
+    wisdomRuneIntervalSeconds: 420,
+    lotusIntervalSeconds: 180,
+    tormentorFirstSpawnSeconds: 1200,
+    tormentorRespawnSeconds: 600,
+    roshanRespawnMinSeconds: 480,
+    roshanRespawnMaxSeconds: 660,
+  },
+
+  manager: {
+    masteryCap: 100,
+    fatigueCap: 100,
+    moraleCap: 100,
+    defaultMatchVariance: 10,
+  },
+};

@@ -1,0 +1,1702 @@
+// dota_like_positive_negative_effect_formulas.txt
+// Fórmulas para efeitos positivos e negativos em um manager de MOBA inspirado em Dota-like.
+// Foco: buffs, debuffs, auras, dispels, imunidades, resistência a status, slows, stacks,
+// escudos, curas, DoTs, HoTs, silêncios, roots, stuns, breaks e modificadores de atributos.
+//
+// Este arquivo foi pensado para o Codex consumir como especificação de sistemas.
+// Não é uma cópia rígida de Dota: é um modelo Dota-like configurável.
+
+================================================================================
+0. DEFINIÇÕES
+================================================================================
+
+Effect:
+  Qualquer efeito temporário, permanente, passivo ou condicional aplicado a uma unidade.
+
+Buff:
+  Efeito positivo.
+
+Debuff:
+  Efeito negativo.
+
+Aura:
+  Efeito que aplica buffs/debuffs em unidades dentro de uma área.
+
+Modifier:
+  Unidade matemática do efeito. Um effect pode ter vários modifiers.
+
+Exemplo:
+  "frost_slow" é um debuff.
+  Ele pode aplicar:
+    - movementSpeedPct: -30%
+    - attackSpeedFlat: -30
+    - duration: 4s
+    - dispellable: true
+
+================================================================================
+1. MODELO DE DADOS SUGERIDO
+================================================================================
+
+export type EffectPolarity = "positive" | "negative" | "neutral";
+export type EffectDurationType = "instant" | "timed" | "permanent" | "aura" | "toggle";
+export type DispelType = "none" | "basic" | "strong" | "death";
+export type StackMode =
+  | "refresh"
+  | "independent"
+  | "stack_intensity"
+  | "stack_duration"
+  | "max_value_only"
+  | "unique_source"
+  | "replace_weaker"
+  | "replace_older";
+
+export type ModifierBucket =
+  | "attribute"
+  | "damage"
+  | "armor"
+  | "magic_resistance"
+  | "status_resistance"
+  | "slow_resistance"
+  | "movement"
+  | "attack_speed"
+  | "cast"
+  | "cooldown"
+  | "mana"
+  | "health"
+  | "healing"
+  | "vision"
+  | "barrier"
+  | "control"
+  | "immunity"
+  | "economy";
+
+export interface TimedEffect {
+  id: string;
+  sourceId: string;
+  sourceTeamId: string;
+  targetId: string;
+
+  polarity: EffectPolarity;
+  durationType: EffectDurationType;
+
+  baseDuration: number;
+  remainingDuration: number;
+
+  dispelType: DispelType;
+  stackMode: StackMode;
+  currentStacks: number;
+  maxStacks: number;
+
+  piercesDebuffImmunity: boolean;
+  isHidden: boolean;
+  isPurgable: boolean;
+
+  modifiers: StatModifier[];
+}
+
+export interface StatModifier {
+  bucket: ModifierBucket;
+  stat: string;
+  operation: "flat" | "percent_add" | "percent_multiply" | "override" | "max_only" | "min_only";
+  value: number;
+}
+
+================================================================================
+2. DURAÇÃO DE EFEITOS
+================================================================================
+
+Duração base:
+
+baseDuration = effectDefinition.duration[level]
+
+Duração final de debuffs negativos com resistência a status:
+
+finalDebuffDuration =
+  baseDuration * (1 - totalStatusResistance)
+
+Efeitos positivos normalmente não são reduzidos por status resistance:
+
+finalBuffDuration =
+  baseDuration
+
+Exceções configuráveis:
+
+if effect.ignoresStatusResistance:
+  finalDuration = baseDuration
+
+if effect.isPositive:
+  finalDuration = baseDuration * (1 + buffDurationAmplification)
+
+if effect.isNegative:
+  finalDuration = baseDuration * (1 - totalStatusResistance)
+
+Limite mínimo:
+
+finalDuration = max(finalDuration, minimumEffectDuration)
+
+Sugestão:
+
+minimumEffectDuration = 0.1
+
+================================================================================
+3. STATUS RESISTANCE
+================================================================================
+
+Combinação multiplicativa:
+
+totalStatusResistance =
+  1 - PRODUCT(1 - statusResistanceSource_i)
+
+Exemplo:
+
+sources = [0.25, 0.20]
+
+totalStatusResistance =
+  1 - (1 - 0.25) * (1 - 0.20)
+  = 1 - 0.75 * 0.80
+  = 0.40
+
+Ou seja, 40%.
+
+Duração final:
+
+finalDebuffDuration =
+  baseDuration * (1 - totalStatusResistance)
+
+Exemplo:
+
+baseStun = 2.5
+statusResistance = 0.40
+
+finalStun = 2.5 * 0.60 = 1.5
+
+================================================================================
+4. SLOW RESISTANCE
+================================================================================
+
+Slow resistance deve afetar apenas lentidões de movimento, não necessariamente stun/silence/root.
+
+totalSlowResistance =
+  1 - PRODUCT(1 - slowResistanceSource_i)
+
+Slow efetivo:
+
+effectiveSlow =
+  rawSlow * (1 - totalSlowResistance)
+
+Velocidade após slow:
+
+movementSpeedAfterSlow =
+  movementSpeedBeforeSlow * (1 - effectiveSlow)
+
+Exemplo:
+
+rawSlow = 0.40
+slowResistance = 0.25
+
+effectiveSlow = 0.40 * (1 - 0.25) = 0.30
+
+================================================================================
+5. BUFF DURATION AMPLIFICATION
+================================================================================
+
+Amplificação de duração de buff:
+
+totalBuffDurationAmp =
+  sum(buffDurationAmpAdditiveSources)
+
+finalBuffDuration =
+  baseDuration * (1 + totalBuffDurationAmp)
+
+Exemplo:
+
+baseDuration = 10
+buffDurationAmp = 0.20
+
+finalBuffDuration = 10 * 1.20 = 12
+
+================================================================================
+6. DISPEL / PURGE / CLEANSE
+================================================================================
+
+Cada efeito deve definir o tipo de dispel necessário para removê-lo:
+
+dispelType:
+  none   = não removível
+  basic  = removível por dispel básico
+  strong = removível por dispel forte
+  death  = removido apenas na morte ou reset completo
+
+Regra:
+
+function canDispel(effect, dispelPower) {
+  if effect.dispelType === "none": return false
+  if dispelPower === "strong": return effect.dispelType in ["basic", "strong"]
+  if dispelPower === "basic": return effect.dispelType === "basic"
+  return false
+}
+
+Dispel positivo:
+
+remove buffs do alvo inimigo.
+
+Dispel negativo:
+
+remove debuffs do aliado.
+
+Strong dispel:
+
+pode remover controles mais fortes, se configurado.
+
+================================================================================
+7. DEBUFF IMMUNITY
+================================================================================
+
+Debuff immunity impede ou reduz aplicação de efeitos negativos, dependendo da regra do jogo.
+
+Modelo simples:
+
+if target.hasDebuffImmunity and !effect.piercesDebuffImmunity:
+  do not apply debuff
+
+Modelo intermediário:
+
+if target.hasDebuffImmunity:
+  if effect.piercesDebuffImmunity:
+    apply effect
+  else if effect.damageType != "none":
+    apply damage only
+    do not apply control/debuff
+  else:
+    do not apply effect
+
+Modelo com resistência:
+
+if target.hasDebuffImmunity and effect.partiallyPiercesDebuffImmunity:
+  finalDuration = baseDuration * debuffImmunityDurationMultiplier
+
+debuffImmunityDurationMultiplier = 0.5
+
+================================================================================
+8. STACKING: MODOS DE EMPILHAMENTO
+================================================================================
+
+1. refresh:
+   Nova aplicação renova duração, mas não aumenta intensidade.
+
+currentStacks = 1
+remainingDuration = max(remainingDuration, newDuration)
+
+2. independent:
+   Cada aplicação cria uma instância separada.
+
+activeInstances.push(newEffect)
+
+totalValue =
+  sum(instance.value for instance in activeInstances)
+
+3. stack_intensity:
+   Aumenta stacks até um máximo e renova ou não a duração.
+
+currentStacks =
+  min(currentStacks + stacksToAdd, maxStacks)
+
+totalValue =
+  valuePerStack * currentStacks
+
+4. stack_duration:
+   Aumenta duração, mas não intensidade.
+
+remainingDuration =
+  min(remainingDuration + addedDuration, maxDuration)
+
+5. max_value_only:
+   Só o maior valor entre fontes semelhantes vale.
+
+finalValue =
+  max(sourceValues)
+
+6. unique_source:
+   Uma instância por sourceId.
+
+if effect from same source exists:
+  refresh or replace
+else:
+  add new effect
+
+7. replace_weaker:
+   Efeito novo substitui o antigo se for mais forte.
+
+if newValue > oldValue:
+  replace
+else:
+  keep old
+
+8. replace_older:
+   Efeito novo sempre substitui o antigo.
+
+replace oldEffect with newEffect
+
+================================================================================
+9. MODIFICADORES FLAT, PERCENTUAIS E MULTIPLICATIVOS
+================================================================================
+
+Ordem recomendada para um stat:
+
+baseValue
++ flatBonuses
+- flatPenalties
+= flatAdjustedValue
+
+percentAdditiveMultiplier =
+  1 + sum(percentAdditiveModifiers)
+
+percentAdjustedValue =
+  flatAdjustedValue * percentAdditiveMultiplier
+
+finalValue =
+  percentAdjustedValue * PRODUCT(percentMultiplicativeModifiers)
+
+Overrides:
+
+if override exists:
+  finalValue = overrideValue
+
+max_only:
+
+finalValue = max(finalValue, maxOnlyValue)
+
+min_only:
+
+finalValue = min(finalValue, minOnlyValue)
+
+Fórmula geral:
+
+finalStat =
+  (
+    (baseStat + sum(flatModifiers))
+    * (1 + sum(percentAdditiveModifiers))
+    * PRODUCT(1 + percentMultiplicativeModifier_i)
+  )
+
+================================================================================
+10. ATRIBUTOS POSITIVOS E NEGATIVOS
+================================================================================
+
+Força modificada:
+
+finalStrength =
+  baseStrength
+  + levelStrength
+  + sum(flatStrengthModifiers)
+
+Se houver bônus percentual de atributo:
+
+finalStrength =
+  finalStrength * (1 + sum(percentStrengthModifiers))
+
+Agilidade:
+
+finalAgility =
+  (baseAgility + levelAgility + sum(flatAgilityModifiers))
+  * (1 + sum(percentAgilityModifiers))
+
+Inteligência:
+
+finalIntelligence =
+  (baseIntelligence + levelIntelligence + sum(flatIntelligenceModifiers))
+  * (1 + sum(percentIntelligenceModifiers))
+
+Todos os atributos:
+
+allAttributesBonus aplica em strength, agility e intelligence.
+
+allAttributes =
+  strength + agility + intelligence
+
+================================================================================
+11. BUFFS DE DANO
+================================================================================
+
+Dano flat:
+
+finalDamage =
+  baseDamage + sum(flatDamageModifiers)
+
+Dano percentual aditivo:
+
+finalDamage =
+  (baseDamage + flatDamageModifiers)
+  * (1 + sum(percentDamageModifiers))
+
+Dano base aumentado:
+
+baseDamageModified =
+  baseDamage * (1 + baseDamagePctModifier)
+
+Dano total aumentado:
+
+totalDamageModified =
+  totalDamage * (1 + totalDamagePctModifier)
+
+Separar buckets:
+
+baseAttackDamage
+bonusAttackDamage
+totalAttackDamage
+outgoingDamageAmp
+incomingDamageAmp
+
+Recomendação:
+
+attackDamageBeforeCrit =
+  baseAttackDamage
+  + attributeDamage
+  + flatBonusDamage
+
+attackDamageBeforeCrit *= 1 + percentAttackDamageBonus
+
+attackDamageAfterCrit =
+  attackDamageBeforeCrit * critMultiplierIfProc
+
+finalAttackDamage =
+  attackDamageAfterCrit
+  * outgoingDamageMultiplier
+  * incomingDamageMultiplier
+
+================================================================================
+12. DEBUFFS DE DANO
+================================================================================
+
+Redução de dano causada pelo atacante:
+
+outgoingDamageMultiplier =
+  1 - outgoingDamageReduction
+
+Dano reduzido:
+
+damageAfterOutgoingReduction =
+  rawDamage * outgoingDamageMultiplier
+
+Redução de dano recebido pelo alvo:
+
+incomingDamageMultiplier =
+  1 - incomingDamageReduction
+
+damageAfterIncomingReduction =
+  damage * incomingDamageMultiplier
+
+Se houver várias fontes no mesmo bucket:
+
+totalReduction =
+  1 - PRODUCT(1 - reduction_i)
+
+Exemplo:
+
+reductions = [0.30, 0.20]
+
+totalReduction =
+  1 - 0.70 * 0.80
+  = 0.44
+
+================================================================================
+13. ARMOR BUFFS E ARMOR DEBUFFS
+================================================================================
+
+Armadura final:
+
+finalArmor =
+  baseArmor
+  + agility / 6
+  + sum(flatArmorModifiers)
+
+Se houver percentual:
+
+finalArmor =
+  finalArmor * (1 + sum(percentArmorModifiers))
+
+Redução de armadura:
+
+armorReduction é um flat negativo.
+
+finalArmor =
+  currentArmor - armorReduction
+
+Multiplicador físico:
+
+armorDamageMultiplier =
+  1 - (0.06 * finalArmor) / (1 + 0.06 * abs(finalArmor))
+
+Dano físico recebido:
+
+physicalDamageTaken =
+  physicalDamage * armorDamageMultiplier
+
+================================================================================
+14. MAGIC RESIST BUFFS E DEBUFFS
+================================================================================
+
+Resistência mágica base:
+
+baseMagicResistance =
+  0.25 + intelligence * 0.001
+
+Combinação de resistências:
+
+magicDamageMultiplier =
+  PRODUCT(1 - resistanceSource_i)
+
+displayedMagicResistance =
+  1 - magicDamageMultiplier
+
+Exemplo:
+
+baseMagicResistance = 0.25
+bonusMagicResistance = 0.20
+
+magicDamageMultiplier =
+  (1 - 0.25) * (1 - 0.20)
+  = 0.75 * 0.80
+  = 0.60
+
+displayedMagicResistance = 1 - 0.60 = 0.40
+
+Ou seja, 40%.
+
+Debuff de resistência mágica:
+
+Se for uma fonte negativa:
+
+magicDamageMultiplier *= (1 - negativeResistance)
+
+Exemplo:
+negativeResistance = -0.15
+
+magicDamageMultiplier *= (1 - (-0.15))
+magicDamageMultiplier *= 1.15
+
+================================================================================
+15. ATTACK SPEED BUFFS E DEBUFFS
+================================================================================
+
+Attack speed:
+
+totalAttackSpeed =
+  baseAttackSpeed
+  + agility
+  + sum(flatAttackSpeedModifiers)
+
+Se usar modificadores percentuais:
+
+totalAttackSpeed =
+  totalAttackSpeed * (1 + sum(percentAttackSpeedModifiers))
+
+Limites:
+
+totalAttackSpeed =
+  clamp(totalAttackSpeed, minAttackSpeed, maxAttackSpeed)
+
+Padrão:
+
+minAttackSpeed = 20
+maxAttackSpeed = 700
+
+Ataques por segundo:
+
+attacksPerSecond =
+  totalAttackSpeed / (100 * baseAttackTime)
+
+================================================================================
+16. MOVEMENT SPEED BUFFS E DEBUFFS
+================================================================================
+
+Movimento final:
+
+movementSpeed =
+  (
+    baseMovementSpeed
+    + max(bootsFlatMovementBonus)
+    + sum(otherFlatMovementModifiers)
+  )
+  * (1 + sum(percentMovementModifiers))
+
+Aplicar slow resistance nos slows:
+
+effectiveSlow =
+  rawSlow * (1 - totalSlowResistance)
+
+movementAfterSlow =
+  movementBeforeSlow * (1 - effectiveSlow)
+
+Limites:
+
+movementSpeed =
+  clamp(movementSpeed, 100, 550)
+
+Haste:
+
+if hasHaste:
+  movementSpeed = hasteSpeed
+
+hasteSpeed = 550 ou valor configurável
+
+================================================================================
+17. HEALING BUFFS E DEBUFFS
+================================================================================
+
+Cura final:
+
+finalHeal =
+  baseHeal
+  * (1 + outgoingHealAmp)
+  * (1 + incomingHealAmp)
+  * (1 - healReduction)
+
+Cura por segundo:
+
+healPerSecond =
+  baseHealPerSecond
+  * (1 + healingAmplification)
+  * (1 - healReduction)
+
+Redução de cura:
+
+totalHealReduction =
+  1 - PRODUCT(1 - healReduction_i)
+
+Exemplo:
+
+healReduction sources = [0.30, 0.25]
+
+totalHealReduction =
+  1 - 0.70 * 0.75
+  = 0.475
+
+Cura final:
+
+finalHeal =
+  baseHeal * (1 - 0.475)
+
+================================================================================
+18. REGEN BUFFS E DEBUFFS
+================================================================================
+
+Regeneração de vida:
+
+healthRegen =
+  baseHealthRegen
+  + strength * 0.09
+  + sum(flatHealthRegenModifiers)
+
+healthRegen *= 1 + sum(percentHealthRegenModifiers)
+
+Redução de regen:
+
+healthRegen *= 1 - totalRegenReduction
+
+Regeneração de mana:
+
+manaRegen =
+  baseManaRegen
+  + intelligence * 0.05
+  + sum(flatManaRegenModifiers)
+
+manaRegen *= 1 + sum(percentManaRegenModifiers)
+
+================================================================================
+19. DAMAGE OVER TIME
+================================================================================
+
+Dano por tempo:
+
+damagePerTick =
+  dps * tickInterval
+
+Número de ticks:
+
+numberOfTicks =
+  floor(duration / tickInterval)
+
+Dano total bruto:
+
+totalRawDamage =
+  dps * duration
+
+Dano por tick após resistência:
+
+tickDamage =
+  dps
+  * tickInterval
+  * outgoingSpellMultiplier
+  * resistanceMultiplier
+  * incomingDamageMultiplier
+
+Dano total:
+
+totalDamage =
+  tickDamage * numberOfTicks
+
+Com status resistance:
+
+finalDuration =
+  baseDuration * (1 - statusResistance)
+
+totalDamage =
+  dps * finalDuration
+
+Escolha de design:
+  A. Status resistance reduz duração e, portanto, dano total.
+  B. Status resistance reduz duração, mas aumenta dps para manter dano total.
+  C. Status resistance não afeta DoTs marcados como ignoresStatusResistance.
+
+Recomendação:
+  Para manager, usar A por simplicidade.
+
+================================================================================
+20. HEAL OVER TIME
+================================================================================
+
+Cura por tick:
+
+healPerTick =
+  hps * tickInterval
+
+Cura total:
+
+totalHeal =
+  hps * duration
+
+Com amplificação:
+
+healPerTick =
+  hps
+  * tickInterval
+  * (1 + outgoingHealAmp)
+  * (1 + incomingHealAmp)
+  * (1 - healReduction)
+
+================================================================================
+21. ESCUDOS E BARREIRAS
+================================================================================
+
+Barreira temporária:
+
+barrierRemaining =
+  barrierValue
+
+Quando recebe dano:
+
+absorbedDamage =
+  min(incomingDamage, barrierRemaining)
+
+barrierRemaining -= absorbedDamage
+
+damageAfterBarrier =
+  incomingDamage - absorbedDamage
+
+Tipos:
+
+physicalBarrier
+magicalBarrier
+pureBarrier
+universalBarrier
+
+Ordem:
+
+if damageType == physical:
+  consume physicalBarrier
+  consume universalBarrier
+
+if damageType == magical:
+  consume magicalBarrier
+  consume universalBarrier
+
+if damageType == pure:
+  consume pureBarrier
+  consume universalBarrier
+
+Barreira com duração:
+
+if remainingDuration <= 0:
+  remove barrier
+
+================================================================================
+22. REFLECT E RETURN DAMAGE
+================================================================================
+
+Reflect:
+
+reflectedDamage =
+  damageTakenAfterReductions * reflectPct
+
+Return damage:
+
+returnedDamage =
+  incomingAttackDamageBeforeReductions * returnPct
+
+Diferença prática:
+
+reflect geralmente usa dano realmente sofrido.
+return damage pode usar dano original antes de reduções.
+
+Limite:
+
+reflectedDamage =
+  min(reflectedDamage, maxReflectDamage)
+
+================================================================================
+23. LIFESTEAL E SPELL LIFESTEAL COMO BUFF
+================================================================================
+
+Lifesteal:
+
+lifestealHeal =
+  attackDamageDealt
+  * totalLifesteal
+  * lifestealAmplification
+
+Contra creeps:
+
+lifestealHealVsCreep =
+  lifestealHeal * creepLifestealMultiplier
+
+Spell lifesteal:
+
+spellLifestealHeal =
+  min(spellDamageDealt, targetHealthBeforeDamage)
+  * totalSpellLifesteal
+  * spellLifestealAmplification
+
+================================================================================
+24. SILENCE
+================================================================================
+
+Silence impede habilidades.
+
+if target.hasDebuff("silence"):
+  canCastSpells = false
+
+Silence não impede:
+  movement
+  basic attacks
+  item usage, salvo se combinado com mute
+
+Duração:
+
+silenceDuration =
+  baseDuration * (1 - statusResistance)
+
+================================================================================
+25. MUTE
+================================================================================
+
+Mute impede uso de itens.
+
+if target.hasDebuff("mute"):
+  canUseItems = false
+
+Mute pode ou não impedir neutral items, conforme design.
+
+Duração:
+
+muteDuration =
+  baseDuration * (1 - statusResistance)
+
+================================================================================
+26. DISARM
+================================================================================
+
+Disarm impede ataques básicos.
+
+if target.hasDebuff("disarm"):
+  canAttack = false
+
+Exceções:
+  instant attacks podem ignorar disarm se flag permitir.
+
+Duração:
+
+disarmDuration =
+  baseDuration * (1 - statusResistance)
+
+================================================================================
+27. ROOT
+================================================================================
+
+Root impede movimento baseado em deslocamento.
+
+if target.hasDebuff("root"):
+  canMove = false
+  canUseMovementSkills = false se rootDisablesMobility = true
+
+Root pode permitir:
+  ataques
+  spells
+  itens
+
+Duração:
+
+rootDuration =
+  baseDuration * (1 - statusResistance)
+
+================================================================================
+28. LEASH
+================================================================================
+
+Leash impede fuga por mobilidade, mas pode permitir movimento normal dentro da área.
+
+if target.hasDebuff("leash"):
+  canUseBlink = false
+  canUseDash = false
+  canTeleport = false
+
+Se leash tiver raio:
+
+if distanceFromLeashCenter > leashRadius:
+  blockMovementBeyondRadius
+
+================================================================================
+29. STUN
+================================================================================
+
+Stun impede quase tudo.
+
+if target.hasDebuff("stun"):
+  canMove = false
+  canAttack = false
+  canCastSpells = false
+  canUseItems = false
+  canChannel = false
+
+Duração:
+
+stunDuration =
+  baseDuration * (1 - statusResistance)
+
+================================================================================
+30. HEX
+================================================================================
+
+Hex transforma a unidade e aplica forte restrição.
+
+if target.hasDebuff("hex"):
+  canMove = true ou limitedMove
+  movementSpeed = hexMoveSpeed
+  canAttack = false
+  canCastSpells = false
+  canUseItems = false
+  canUsePassives = false se hexBreaksPassives = true
+
+hexMoveSpeed = 140 ou valor configurável
+
+Duração:
+
+hexDuration =
+  baseDuration * (1 - statusResistance)
+
+================================================================================
+31. BREAK
+================================================================================
+
+Break desativa passivas.
+
+if target.hasDebuff("break"):
+  passiveAbilitiesEnabled = false
+
+Break não precisa impedir itens, ataques ou movimento.
+
+Duração:
+
+breakDuration =
+  baseDuration * (1 - statusResistance)
+
+================================================================================
+32. FEAR
+================================================================================
+
+Fear força movimento para longe de uma origem.
+
+if target.hasDebuff("fear"):
+  controlLocked = true
+  movementDirection = awayFrom(fearSource)
+
+Duração:
+
+fearDuration =
+  baseDuration * (1 - statusResistance)
+
+================================================================================
+33. TAUNT
+================================================================================
+
+Taunt força ataque ou movimento contra uma unidade.
+
+if target.hasDebuff("taunt"):
+  forcedTarget = tauntSource
+  canIssueCommands = false
+  targetAttemptsToAttack(forcedTarget)
+
+Duração:
+
+tauntDuration =
+  baseDuration * (1 - statusResistance)
+
+================================================================================
+34. SLEEP
+================================================================================
+
+Sleep impede ações até terminar ou até a unidade receber dano, se configurado.
+
+if target.hasDebuff("sleep"):
+  canMove = false
+  canAttack = false
+  canCastSpells = false
+  canUseItems = false
+
+if sleepBreaksOnDamage and targetTakesDamage:
+  removeSleep
+
+Duração:
+
+sleepDuration =
+  baseDuration * (1 - statusResistance)
+
+================================================================================
+35. BANISH / HIDDEN / INVULNERABLE
+================================================================================
+
+Banish:
+
+if target.hasDebuff("banish"):
+  targetIsHidden = true
+  targetCanAct = false
+  targetCanBeTargeted = false ou true conforme design
+  targetCanTakeDamage = false ou true conforme design
+
+Invulnerable:
+
+if target.hasState("invulnerable"):
+  incomingDamage = 0
+
+Hidden:
+
+if target.hasState("hidden"):
+  cannotBeSelected = true
+  removedFromMapInteractions = true
+
+================================================================================
+36. ETHEREAL / PHYSICAL IMMUNITY
+================================================================================
+
+Ethereal:
+
+if target.hasState("ethereal"):
+  cannotAttack = true
+  cannotBeAttacked = true
+  physicalDamageTaken = 0
+  magicalDamageTaken *= etherealMagicDamageMultiplier
+
+Exemplo:
+
+etherealMagicDamageMultiplier = 1.4
+
+Physical immunity:
+
+if target.hasState("physical_immunity"):
+  physicalDamageTaken = 0
+
+================================================================================
+37. SPELL IMMUNITY / MAGIC IMMUNITY
+================================================================================
+
+Modelo simples:
+
+if target.hasState("spell_immunity"):
+  if spell.piercesSpellImmunity:
+    apply spell
+  else:
+    block spell
+
+Modelo Dota-like moderno pode separar:
+  debuff immunity
+  magic resistance
+  spell immunity
+  targeting immunity
+
+Para manager, recomendo:
+
+debuffImmune:
+  impede debuffs que não furam imunidade
+
+magicImmune:
+  impede dano mágico que não fura imunidade
+
+untargetable:
+  impede ser alvo direto
+
+================================================================================
+38. INVISIBILIDADE E TRUE SIGHT
+================================================================================
+
+Invisibilidade:
+
+if unit.hasBuff("invisible"):
+  visibleToEnemy = false
+
+Revelação:
+
+if enemyHasTrueSightInRange:
+  visibleToEnemy = true
+
+Ataque quebrando invisibilidade:
+
+if invisibleUnitAttacks and invisBreaksOnAttack:
+  removeInvisibility
+
+Delay de fade:
+
+invisibilityStartsAfter =
+  fadeTime
+
+================================================================================
+39. VISION BUFFS E DEBUFFS
+================================================================================
+
+Visão diurna:
+
+finalDayVision =
+  baseDayVision
+  + sum(flatDayVisionModifiers)
+
+Visão noturna:
+
+finalNightVision =
+  baseNightVision
+  + sum(flatNightVisionModifiers)
+
+Redução de visão:
+
+finalVision =
+  max(minVision, baseVision - visionReduction)
+
+Blind de visão:
+
+if target.hasDebuff("vision_blind"):
+  finalVision *= 1 - blindVisionPct
+
+================================================================================
+40. AURAS
+================================================================================
+
+Aura aplica efeitos enquanto o alvo está dentro do raio.
+
+if distance(auraSource, target) <= auraRadius:
+  applyAuraModifier(target)
+
+else:
+  removeAuraModifier(target)
+  or startAuraLinger(target)
+
+Linger:
+
+if targetLeavesAura:
+  auraRemainingDuration = auraLingerDuration
+
+Aura positiva:
+
+aplica em aliados.
+
+Aura negativa:
+
+aplica em inimigos.
+
+Aura universal:
+
+aplica em todos, se configurado.
+
+Stack de aura:
+
+if sameAuraMultipleSources:
+  use stackMode:
+    max_value_only
+    unique_source
+    stack_intensity
+
+================================================================================
+41. BUFFS CONDICIONAIS
+================================================================================
+
+Exemplo: bônus se vida abaixo de 40%.
+
+if target.healthPct <= threshold:
+  apply modifier
+
+else:
+  remove modifier
+
+Exemplo: bônus se inimigo isolado.
+
+if countEnemiesNearTarget(radius) == 0:
+  apply isolatedDamageBonus
+
+Exemplo: bônus noturno.
+
+if gameTime.isNight:
+  apply nightBonus
+
+================================================================================
+42. EFEITOS POR STACK
+================================================================================
+
+Stack positivo:
+
+totalBonus =
+  valuePerStack * currentStacks
+
+Stack negativo:
+
+totalPenalty =
+  penaltyPerStack * currentStacks
+
+Stack com decaimento:
+
+if timeSinceLastStack > stackDecayDelay:
+  currentStacks -= decayRate * deltaTime
+
+Stack com duração independente:
+
+totalStacks =
+  count(activeStackInstances where remainingDuration > 0)
+
+================================================================================
+43. EFEITOS DE CHARGES
+================================================================================
+
+Charges:
+
+currentCharges =
+  min(maxCharges, currentCharges + regeneratedCharges)
+
+Regeneração:
+
+chargeRegenProgress += deltaTime
+
+if chargeRegenProgress >= chargeRestoreTime:
+  currentCharges += 1
+  chargeRegenProgress -= chargeRestoreTime
+
+Uso:
+
+if currentCharges > 0:
+  currentCharges -= 1
+  cast effect
+
+================================================================================
+44. COOLDOWN BUFFS E DEBUFFS
+================================================================================
+
+Cooldown reduction:
+
+finalCooldown =
+  baseCooldown * (1 - totalCooldownReduction)
+
+Se empilhar multiplicativo:
+
+finalCooldown =
+  baseCooldown * PRODUCT(1 - cooldownReduction_i)
+
+Cooldown increase:
+
+finalCooldown =
+  baseCooldown * (1 + cooldownIncrease)
+
+Cooldown rate:
+
+cooldownRemaining -= deltaTime * cooldownRateMultiplier
+
+================================================================================
+45. MANA COST BUFFS E DEBUFFS
+================================================================================
+
+Mana cost reduction:
+
+finalManaCost =
+  baseManaCost * (1 - manaCostReduction)
+
+Mana cost increase:
+
+finalManaCost =
+  baseManaCost * (1 + manaCostIncrease)
+
+Mana loss over time:
+
+manaLossPerTick =
+  manaLossPerSecond * tickInterval
+
+================================================================================
+46. OUTGOING E INCOMING EFFECT AMPLIFICATION
+================================================================================
+
+Amplificar efeitos causados:
+
+outgoingDebuffDurationAmp:
+  debuffDurationApplied =
+    baseDuration * (1 + outgoingDebuffDurationAmp)
+
+Amplificar efeitos recebidos:
+
+incomingDebuffDurationAmp:
+  debuffDurationReceived =
+    baseDuration * (1 + incomingDebuffDurationAmp)
+
+Combinação com status resistance:
+
+finalDebuffDuration =
+  baseDuration
+  * (1 + outgoingDebuffDurationAmp)
+  * (1 + incomingDebuffDurationAmp)
+  * (1 - statusResistance)
+
+================================================================================
+47. PRIORIDADE DE ESTADOS DE CONTROLE
+================================================================================
+
+Na simulação, múltiplos controles podem coexistir.
+
+Sugestão de prioridade de ação:
+
+if stunned:
+  actionState = "stunned"
+
+else if hexed:
+  actionState = "hexed"
+
+else if slept:
+  actionState = "sleeping"
+
+else if feared:
+  actionState = "feared"
+
+else if taunted:
+  actionState = "taunted"
+
+else if rooted:
+  actionState = "rooted"
+
+else:
+  actionState = "normal"
+
+Permissões derivadas:
+
+canMove = !stunned && !hexedHard && !sleeping && !rooted
+canAttack = !stunned && !hexed && !sleeping && !disarmed
+canCast = !stunned && !hexed && !sleeping && !silenced
+canUseItems = !stunned && !hexed && !sleeping && !muted
+
+================================================================================
+48. MODELO DE TICK PARA EFEITOS
+================================================================================
+
+A cada tick:
+
+for each unit:
+  for each effect in unit.effects:
+    if effect.durationType == "timed":
+      effect.remainingDuration -= deltaTime
+
+    applyContinuousEffect(effect, deltaTime)
+
+    if effect.remainingDuration <= 0:
+      removeEffect(effect)
+
+Continuous effect:
+
+if effect has dps:
+  applyDamage(dps * deltaTime)
+
+if effect has hps:
+  applyHeal(hps * deltaTime)
+
+if effect has manaLossPerSecond:
+  reduceMana(manaLossPerSecond * deltaTime)
+
+================================================================================
+49. SCORE GERENCIAL DE BUFFS E DEBUFFS
+================================================================================
+
+Para simulação abstrata de manager, calcular valor esperado.
+
+Valor de buff:
+
+buffExpectedValue =
+  affectedHeroPower
+  * buffMagnitude
+  * buffDuration
+  * uptime
+  * fightParticipationProbability
+
+Valor de debuff:
+
+debuffExpectedValue =
+  targetHeroPower
+  * debuffMagnitude
+  * debuffDuration
+  * applicationReliability
+  * punishWindow
+
+Valor de stun:
+
+stunValue =
+  targetDps
+  * stunDuration
+  + setupKillProbability
+  * killValue
+
+Valor de silence:
+
+silenceValue =
+  targetSpellImpact
+  * silenceDuration
+  * fightImportance
+
+Valor de slow:
+
+slowValue =
+  chaseValue
+  + kiteValue
+  + positioningAdvantage
+
+================================================================================
+50. TYPESCRIPT: FUNÇÕES SUGERIDAS
+================================================================================
+
+export function combineMultiplicative(values: number[]): number {
+  return 1 - values.reduce((acc, value) => acc * (1 - value), 1);
+}
+
+export function finalDebuffDuration(
+  baseDuration: number,
+  statusResistances: number[],
+  outgoingDebuffAmp = 0,
+  incomingDebuffAmp = 0,
+  ignoresStatusResistance = false
+): number {
+  if (ignoresStatusResistance) {
+    return baseDuration * (1 + outgoingDebuffAmp) * (1 + incomingDebuffAmp);
+  }
+
+  const totalStatusResistance = combineMultiplicative(statusResistances);
+
+  return (
+    baseDuration
+    * (1 + outgoingDebuffAmp)
+    * (1 + incomingDebuffAmp)
+    * (1 - totalStatusResistance)
+  );
+}
+
+export function finalBuffDuration(
+  baseDuration: number,
+  buffDurationAmp = 0
+): number {
+  return baseDuration * (1 + buffDurationAmp);
+}
+
+export function finalSlowValue(
+  rawSlow: number,
+  slowResistances: number[]
+): number {
+  const totalSlowResistance = combineMultiplicative(slowResistances);
+  return rawSlow * (1 - totalSlowResistance);
+}
+
+export function applyFlatAndPercentModifiers(
+  baseValue: number,
+  flatModifiers: number[],
+  percentAdditiveModifiers: number[],
+  percentMultiplicativeModifiers: number[]
+): number {
+  const flatAdjusted = baseValue + flatModifiers.reduce((sum, value) => sum + value, 0);
+  const additiveMultiplier =
+    1 + percentAdditiveModifiers.reduce((sum, value) => sum + value, 0);
+  const multiplicativeMultiplier =
+    percentMultiplicativeModifiers.reduce((product, value) => product * (1 + value), 1);
+
+  return flatAdjusted * additiveMultiplier * multiplicativeMultiplier;
+}
+
+export function applyBarrier(
+  incomingDamage: number,
+  barrierRemaining: number
+): { damageAfterBarrier: number; barrierRemaining: number; absorbedDamage: number } {
+  const absorbedDamage = Math.min(incomingDamage, barrierRemaining);
+
+  return {
+    damageAfterBarrier: incomingDamage - absorbedDamage,
+    barrierRemaining: barrierRemaining - absorbedDamage,
+    absorbedDamage,
+  };
+}
+
+export function calculateDotTotalDamage(
+  dps: number,
+  duration: number,
+  tickInterval: number,
+  damageMultiplier = 1
+): number {
+  const ticks = Math.floor(duration / tickInterval);
+  return dps * tickInterval * ticks * damageMultiplier;
+}
+
+export function calculateHotTotalHeal(
+  hps: number,
+  duration: number,
+  tickInterval: number,
+  healMultiplier = 1
+): number {
+  const ticks = Math.floor(duration / tickInterval);
+  return hps * tickInterval * ticks * healMultiplier;
+}
+
+export function canDispelEffect(
+  effectDispelType: "none" | "basic" | "strong" | "death",
+  dispelPower: "basic" | "strong"
+): boolean {
+  if (effectDispelType === "none" || effectDispelType === "death") {
+    return false;
+  }
+
+  if (dispelPower === "strong") {
+    return effectDispelType === "basic" || effectDispelType === "strong";
+  }
+
+  return effectDispelType === "basic";
+}
+
+export function updateStackCount(
+  currentStacks: number,
+  stacksToAdd: number,
+  maxStacks: number
+): number {
+  return Math.min(currentStacks + stacksToAdd, maxStacks);
+}
+
+================================================================================
+51. CONSTANTES CONFIGURÁVEIS
+================================================================================
+
+export const EFFECT_RULES = {
+  duration: {
+    minimumEffectDuration: 0.1,
+    defaultAuraLingerDuration: 0.5,
+  },
+
+  movement: {
+    minimumMovementSpeed: 100,
+    maximumMovementSpeed: 550,
+    hasteMovementSpeed: 550,
+    defaultHexMoveSpeed: 140,
+  },
+
+  attackSpeed: {
+    minimumAttackSpeed: 20,
+    maximumAttackSpeed: 700,
+  },
+
+  dispel: {
+    basicRemovesBasic: true,
+    strongRemovesBasic: true,
+    strongRemovesStrong: true,
+  },
+
+  stacking: {
+    defaultMaxStacks: 10,
+    defaultStackDecayDelay: 5,
+  },
+
+  ticks: {
+    defaultDotTickInterval: 1.0,
+    defaultHotTickInterval: 1.0,
+    simulationTickInterval: 1.0,
+  },
+};
+
+================================================================================
+52. ORDEM RECOMENDADA PARA O CODEX
+================================================================================
+
+1. Criar types/effectTypes.ts
+2. Criar systems/effectDurationSystem.ts
+3. Criar systems/effectStackingSystem.ts
+4. Criar systems/dispelSystem.ts
+5. Criar systems/statusResistanceSystem.ts
+6. Criar systems/slowResistanceSystem.ts
+7. Criar systems/statModifierSystem.ts
+8. Criar systems/controlStateSystem.ts
+9. Criar systems/auraSystem.ts
+10. Criar systems/dotHotSystem.ts
+11. Integrar com calculateHeroStats.ts
+12. Integrar com calculateDamageInstance.ts
+13. Criar testes unitários para:
+    - duração de stun com status resistance
+    - slow com slow resistance
+    - buff com buff duration amp
+    - dispel básico
+    - dispel forte
+    - stacking refresh
+    - stacking intensity
+    - max value only
+    - armor buff/debuff
+    - magic resistance buff/debuff
+    - DoT
+    - HoT
+    - barreira
+    - silence
+    - disarm
+    - root
+    - stun
+    - hex
+    - break
+
+================================================================================
+53. RESUMO
+================================================================================
+
+Efeitos positivos:
+  - buffs de atributo
+  - buffs de dano
+  - buffs de ataque
+  - buffs de movimento
+  - buffs de defesa
+  - cura
+  - regeneração
+  - barreiras
+  - imunidades
+  - invisibilidade
+  - auras positivas
+  - redução de cooldown
+  - redução de custo de mana
+
+Efeitos negativos:
+  - dano por tempo
+  - slow
+  - redução de armadura
+  - redução de resistência mágica
+  - redução de dano
+  - redução de cura
+  - silence
+  - mute
+  - disarm
+  - root
+  - leash
+  - stun
+  - hex
+  - break
+  - fear
+  - taunt
+  - sleep
+  - banish
+  - visão reduzida
+
+Regra central:
+  Todos os efeitos devem ser modificadores configuráveis, não exceções hardcoded.
