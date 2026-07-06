@@ -4,10 +4,6 @@ export function decisionChance(score: number, threshold: number, variance = 10):
   return sigmoid((score - threshold) / Math.max(0.001, variance))
 }
 
-export function shouldTakeDecision(score: number, threshold: number): boolean {
-  return score >= threshold
-}
-
 export function objectiveConversionValue(input: {
   objectiveValue: number
   successChance: number

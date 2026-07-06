@@ -45,7 +45,6 @@ export type AiMemoryEventType =
   | 'lost_objective'
   | 'won_fight'
   | 'lost_fight'
-  | 'danger_spike'
 
 export interface AiMemoryEvent {
   id: string
@@ -63,11 +62,9 @@ export interface TeamPlan {
   targetId?: string
   targetPosition?: { x: number; y: number }
   urgency: number
-  confidence: number
   risk: number
   expectedValue: number
   decisionChance?: number
-  expiresAtGameTime: number
   reasonTags: string[]
 }
 
@@ -78,7 +75,6 @@ export interface TeamAiProfile {
   discipline: number
   greed: number
   objectiveFocus: number
-  visionDiscipline: number
   coordination: number
   tempoAwareness: number
   comebackPatience: number
@@ -93,13 +89,11 @@ export interface PlayerAiProfile {
   farmPriority: number
   farmingEfficiency: number
   gpmDecisionBias: number
-  mapAwareness: number
   teamfight: number
   positioning: number
   communication: number
   discipline: number
   aggression: number
-  heroMastery: number
   personality: {
     riskTolerance: number
     greed: number
@@ -137,6 +131,7 @@ export interface ExecutionOutcome {
 
 export interface PlayerContext {
   gameTime: AnalyzedGameState['gameTime']
+  matchSeed: string
   teamPlan?: TeamPlan
   team: AnalyzedTeamState
   profile: PlayerAiProfile
@@ -145,7 +140,6 @@ export interface PlayerContext {
     manaPct: number
     currentMode?: PlayerModeType
     danger: number
-    nearBase: boolean
     itemTimingUrgency: number
   }
   local: {
@@ -153,7 +147,6 @@ export interface PlayerContext {
     allySaveNeed: number
     nearbyFightValue: number
     finishEnemyValue: number
-    towerPressure: number
     objectivePressure: number
   }
   map: {
@@ -201,7 +194,6 @@ export interface RawAiGameSnapshot {
 
 export interface AnalyzedTeamState extends RawTeamSnapshot {
   netWorthLead: number
-  xpLead: number
   numbersAdvantage: number
   fightReadiness: number
   lowResourcePressure: number

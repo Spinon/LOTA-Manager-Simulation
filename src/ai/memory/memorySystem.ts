@@ -5,7 +5,6 @@ const DANGER_EVENT_TYPES = new Set<AiMemoryEvent['type']>([
   'failed_gank',
   'lost_objective',
   'lost_fight',
-  'danger_spike',
 ])
 
 export function pruneAiMemory(events: AiMemoryEvent[], gameTime: number) {

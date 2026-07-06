@@ -1,17 +1,16 @@
 import assert from 'node:assert/strict'
-import { selectPlayerMode } from './playerAgent.ts'
+import { getDeterministicDecisionNoise, scorePlayerModes, selectPlayerMode } from './playerAgent.ts'
 import type { PlayerContext } from '../types/aiTypes.ts'
 
 function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
   return {
     gameTime: { seconds: 12 * 60, minutes: 12, phase: 'early_mid' },
+    matchSeed: 'test-seed',
     teamPlan: {
       type: 'farm_map',
       urgency: 64,
-      confidence: 70,
       risk: 24,
       expectedValue: 88,
-      expiresAtGameTime: 760,
       reasonTags: ['farm'],
     },
     team: {
@@ -31,7 +30,6 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
       baseThreat: 0,
       visionControl: 52,
       netWorthLead: 800,
-      xpLead: 400,
       numbersAdvantage: 0,
       fightReadiness: 66,
       lowResourcePressure: 18,
@@ -43,13 +41,11 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
       farmPriority: 100,
       farmingEfficiency: 82,
       gpmDecisionBias: 86,
-      mapAwareness: 58,
       teamfight: 55,
       positioning: 62,
       communication: 50,
       discipline: 70,
       aggression: 42,
-      heroMastery: 75,
       personality: {
         riskTolerance: 42,
         greed: 74,
@@ -65,7 +61,6 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
       healthPct: 0.82,
       manaPct: 0.7,
       danger: 18,
-      nearBase: false,
       itemTimingUrgency: 78,
     },
     local: {
@@ -73,7 +68,6 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
       allySaveNeed: 0,
       nearbyFightValue: 22,
       finishEnemyValue: 12,
-      towerPressure: 20,
       objectivePressure: 18,
     },
     map: {
@@ -157,8 +151,8 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
     },
     map: {
       ...makeContext().map,
-      safeLaneFarmValue: 72,
-      jungleFarmValue: 74,
+      safeLaneFarmValue: 56,
+      jungleFarmValue: 86,
       laneFarmGpm: 310,
       jungleFarmGpm: 640,
       lanePushGpm: 250,
@@ -221,6 +215,62 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
   }))
   assert.notEqual(selected.mode, 'farm_lane')
   assert.notEqual(selected.mode, 'farm_jungle')
+}
+
+{
+  const amateurNoise = Math.abs(getDeterministicDecisionNoise('noise-check', 'farm_lane', 12, 35, 0))
+  const professionalNoise = Math.abs(getDeterministicDecisionNoise('noise-check', 'farm_lane', 12, 95, 0))
+  assert.ok(amateurNoise > professionalNoise)
+}
+
+{
+  const riskyFarmContext = makeContext({
+    profile: {
+      ...makeContext().profile,
+      playerId: 'negative-farm-weight',
+      role: 'dedicated_support',
+      farmPriority: 0,
+      farmingEfficiency: 0,
+      gpmDecisionBias: 0,
+      discipline: 100,
+      personality: {
+        ...makeContext().profile.personality,
+        greed: 0,
+        farmBias: 0,
+        tiltLevel: 0,
+      },
+    },
+    self: {
+      ...makeContext().self,
+      healthPct: 0.12,
+      danger: 96,
+      itemTimingUrgency: 0,
+    },
+    local: {
+      ...makeContext().local,
+      objectivePressure: 80,
+      nearbyFightValue: 70,
+    },
+    map: {
+      safeLaneFarmValue: 0,
+      jungleFarmValue: 0,
+      lanePushValue: 0,
+      laneFarmGpm: 1,
+      jungleFarmGpm: 1,
+      lanePushGpm: 1,
+      gankRisk: 98,
+    },
+  })
+  const supportFarmScore = scorePlayerModes(riskyFarmContext).find((score) => score.mode === 'farm_jungle')?.score
+  const safeLaneFarmScore = scorePlayerModes({
+    ...riskyFarmContext,
+    profile: {
+      ...riskyFarmContext.profile,
+      role: 'safe_lane',
+    },
+  }).find((score) => score.mode === 'farm_jungle')?.score
+  assert.ok(supportFarmScore !== undefined && supportFarmScore < 0)
+  assert.equal(supportFarmScore, safeLaneFarmScore)
 }
 
 console.log('playerAgent tests passed')

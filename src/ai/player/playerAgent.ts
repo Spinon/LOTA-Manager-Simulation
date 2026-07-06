@@ -172,12 +172,13 @@ function applyRoleAndPersonality(context: PlayerContext, score: PlayerModeScore)
   )
     ? context.profile.personality.obedienceToCalls * 0.18
     : 0
+  const weightedScore = score.score > 0 ? score.score * roleWeight : score.score
   const decisionWindow = Math.floor(context.gameTime.seconds / AI_RULES.noise.decisionWindowSeconds)
-  const tiltNoise = deterministicNoise(context.profile.playerId, score.mode, decisionWindow, context.profile.discipline, context.profile.personality.tiltLevel)
+  const tiltNoise = getDeterministicDecisionNoise(context.profile.playerId, score.mode, decisionWindow, context.profile.discipline, context.profile.personality.tiltLevel, context.matchSeed)
 
   return {
     ...score,
-    score: score.score * roleWeight + obedienceBonus + tiltNoise,
+    score: weightedScore + obedienceBonus + tiltNoise,
   }
 }
 
@@ -200,19 +201,22 @@ function getTeamFightUrgency(context: PlayerContext) {
   return context.teamPlan.urgency * 0.35
 }
 
-function deterministicNoise(playerId: string, mode: PlayerModeType, decisionWindow: number, discipline: number, tiltLevel: number) {
+export function getDeterministicDecisionNoise(playerId: string, mode: PlayerModeType, decisionWindow: number, discipline: number, tiltLevel: number, matchSeed = 'default') {
   let hash = 0
-  const key = `${playerId}:${mode}:${decisionWindow}`
+  const key = `${matchSeed}:${playerId}:${mode}:${decisionWindow}`
   for (let index = 0; index < key.length; index += 1) {
     hash = (hash * 31 + key.charCodeAt(index)) % 9973
   }
   const normalized = hash / 9973 - 0.5
+  const disciplineRatio = clamp(discipline, 0, 100) / 100
+  const baseNoise = AI_RULES.noise.amateurBaseNoise +
+    (AI_RULES.noise.professionalBaseNoise - AI_RULES.noise.amateurBaseNoise) * disciplineRatio
   const amplitude = clamp(
-    AI_RULES.noise.professionalBaseNoise * (1 - clamp(discipline, 0, 100) / 100) * (1 + tiltLevel / 100),
+    baseNoise * (1 + clamp(tiltLevel, 0, 100) / 100),
     0,
     AI_RULES.noise.maxNoise,
   )
-  return normalized * amplitude
+  return normalized * amplitude * 2
 }
 
 function makeScore(mode: PlayerModeType, score: number, urgency: number, risk: number, reasonTags: string[]): PlayerModeScore {

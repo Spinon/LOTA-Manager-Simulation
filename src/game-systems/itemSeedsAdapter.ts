@@ -1,4 +1,4 @@
-import { ITEM_SEEDS, type ItemSeed, type ItemStats } from '../data/itemSeeds.ts'
+import { ITEM_SEEDS, type ItemEffectKind, type ItemSeed, type ItemStats } from '../data/itemSeeds.ts'
 import { HERO_BUILD_EXAMPLES, ITEM_AI_GUIDES, type HeroBuildExample, type ItemAiGuide } from '../data/itemAiBuildGuides.ts'
 import type { DispelPower } from './effectFormulas.ts'
 import { ATTRIBUTE_RULES, type StatModifier } from './heroAttributes.ts'
@@ -8,6 +8,7 @@ export type ShopItem = {
   name: string
   cost: number
   modifier: StatModifier
+  effects: RuntimeItemEffect[]
   active?: {
     effectId: string
     target: string
@@ -27,6 +28,16 @@ export type ShopItem = {
     slowResistance: number
     moveSpeed: number
   }
+}
+
+export type RuntimeItemEffect = {
+  effectId: string
+  kind: ItemEffectKind
+  target: string
+  tags: string[]
+  values: Record<string, number | string | boolean>
+  cooldown?: number
+  duration?: number
 }
 
 export type ConsumableItem = {
@@ -115,20 +126,34 @@ export function estimateItemSummary(stats: ItemStats = {}) {
 }
 
 export function toShopItem(seed: ItemSeed): ShopItem {
+  const effects = toRuntimeItemEffects(seed)
   return {
     id: seed.id,
     name: toDisplayName(seed.id),
     cost: seed.cost,
     modifier: toItemModifier(seed),
-    active: toActiveItem(seed),
+    effects,
+    active: toActiveItem(seed, effects),
     summary: estimateItemSummary(seed.stats),
   }
 }
 
-function toActiveItem(seed: ItemSeed): ShopItem['active'] {
-  const active = seed.effects?.find((effect) => effect.kind === 'active')
+function toRuntimeItemEffects(seed: ItemSeed): RuntimeItemEffect[] {
+  return (seed.effects ?? []).map((effect) => ({
+    effectId: effect.id,
+    kind: effect.kind,
+    target: effect.target,
+    tags: [...new Set([...seed.tags, ...effect.tags])],
+    values: effect.values ?? {},
+    cooldown: readNumber(effect.values?.cooldown),
+    duration: readNumber(effect.values?.duration),
+  }))
+}
+
+function toActiveItem(seed: ItemSeed, effects = toRuntimeItemEffects(seed)): ShopItem['active'] {
+  const active = effects.find((effect) => effect.kind === 'active')
   if (!active) return undefined
-  const tags = new Set([...seed.tags, ...active.tags])
+  const tags = new Set(active.tags)
   const dispelPower = tags.has('strong_dispel') || tags.has('debuff_immunity')
     ? 'strong'
     : tags.has('basic_dispel') || tags.has('dispel')
@@ -136,13 +161,13 @@ function toActiveItem(seed: ItemSeed): ShopItem['active'] {
       : undefined
 
   return {
-    effectId: active.id,
+    effectId: active.effectId,
     target: active.target,
     tags: [...tags],
-    values: active.values ?? {},
+    values: active.values,
     dispelPower,
-    cooldown: readNumber(active.values?.cooldown) ?? 20,
-    duration: readNumber(active.values?.duration),
+    cooldown: active.cooldown ?? 20,
+    duration: active.duration,
   }
 }
 
@@ -166,8 +191,12 @@ export function toConsumableItem(seed: ItemSeed): ConsumableItem | undefined {
   }
 }
 
+function hasRuntimeShopValue(seed: ItemSeed) {
+  return hasStats(seed) || (seed.effects ?? []).some((effect) => effect.kind === 'active' || effect.kind === 'passive' || effect.kind === 'aura' || effect.kind === 'toggle')
+}
+
 const inventoryShopSeeds = ITEM_SEEDS
-  .filter((seed) => seed.cost > 0 && hasStats(seed) && seed.slot === 'inventory' && !isComponentOnlyItem(seed.id))
+  .filter((seed) => seed.cost > 0 && hasRuntimeShopValue(seed) && seed.slot === 'inventory' && !isComponentOnlyItem(seed.id))
   .sort((a, b) => a.cost - b.cost)
 
 export const itemShopCatalog = [

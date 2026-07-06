@@ -25,7 +25,6 @@ export function analyzeGameState(snapshot: RawAiGameSnapshot): AnalyzedGameState
 
 function analyzeTeam(team: RawTeamSnapshot, opponent?: RawTeamSnapshot): AnalyzedTeamState {
   const netWorthLead = opponent ? team.netWorth - opponent.netWorth : 0
-  const xpLead = opponent ? team.xp - opponent.xp : 0
   const numbersAdvantage = opponent ? team.aliveHeroes - opponent.aliveHeroes : team.aliveHeroes
   const fightReadiness = clamp(
     team.averageHealthPct * 45 +
@@ -49,7 +48,6 @@ function analyzeTeam(team: RawTeamSnapshot, opponent?: RawTeamSnapshot): Analyze
   return {
     ...team,
     netWorthLead,
-    xpLead,
     numbersAdvantage,
     fightReadiness,
     lowResourcePressure,

@@ -2,7 +2,6 @@ import type { PlayerModeType, PlayerRole, TeamAiProfile } from '../types/aiTypes
 
 export const AI_RULES = {
   modeSelection: {
-    switchThreshold: 8,
     defaultModeStickiness: 10,
     retreatStickiness: 20,
     objectiveStickiness: 15,
@@ -16,7 +15,6 @@ export const AI_RULES = {
   teamPlans: {
     planStickinessBonus: 15,
     minimumCallExpectedValue: 58,
-    bossVisionMinimum: 38,
     highGroundRiskMultiplier: 1.4,
   },
 } as const
@@ -29,7 +27,6 @@ export const DEFAULT_TEAM_AI_PROFILES: Record<string, TeamAiProfile> = {
     discipline: 68,
     greed: 48,
     objectiveFocus: 76,
-    visionDiscipline: 64,
     coordination: 68,
     tempoAwareness: 62,
     comebackPatience: 56,
@@ -44,7 +41,6 @@ export const DEFAULT_TEAM_AI_PROFILES: Record<string, TeamAiProfile> = {
     discipline: 54,
     greed: 52,
     objectiveFocus: 60,
-    visionDiscipline: 52,
     coordination: 58,
     tempoAwareness: 66,
     comebackPatience: 44,

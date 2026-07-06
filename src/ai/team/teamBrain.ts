@@ -15,7 +15,6 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
       expectedValue: team.safeFarm + input.teamProfile.greed * 0.4 + team.lowResourcePressure * 0.35 - team.structureAtRisk * 0.35 - team.baseThreat * 0.4,
       urgency: team.lowResourcePressure,
       risk: 24 + team.baseThreat * 0.25,
-      confidence: team.safeFarm + input.teamProfile.discipline * 0.25,
       reasonTags: ['farm', 'resources'],
     }),
     makePlan(input, 'group_push', {
@@ -28,7 +27,6 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
       }),
       urgency: highValueObjectiveAvailable ? 72 : 48,
       risk: team.throwRisk,
-      confidence: team.fightReadiness + input.teamProfile.coordination * 0.25,
       reasonTags: ['push', 'objective', 'tempo'],
     }),
     makePlan(input, 'defend_tower', {
@@ -41,7 +39,6 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
       }),
       urgency: team.structureAtRisk,
       risk: Math.max(15, 55 - team.defensivePower * 0.35),
-      confidence: team.defensivePower + input.teamProfile.coordination * 0.2,
       reasonTags: ['defense', 'structure'],
     }),
     makePlan(input, 'take_boss', {
@@ -58,7 +55,6 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
         : -100,
       urgency: phase === 'late_game' || phase === 'ultra_late' ? 76 : 48,
       risk: Math.max(10, 65 - team.visionControl * 0.45 - team.numbersAdvantage * 8),
-      confidence: team.visionControl + input.teamProfile.coordination * 0.25,
       reasonTags: ['boss', 'objective', 'vision'],
     }),
     makePlan(input, 'pickoff', {
@@ -71,14 +67,12 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
       }),
       urgency: Math.max(35, team.numbersAdvantage * 18 + team.visionControl * 0.35),
       risk: Math.max(16, 54 - team.visionControl * 0.28 - team.numbersAdvantage * 8),
-      confidence: team.visionControl + input.teamProfile.coordination * 0.25 + Math.max(0, team.numbersAdvantage) * 10,
       reasonTags: ['pickoff', 'vision', 'numbers'],
     }),
     makePlan(input, 'avoid_fight', {
       expectedValue: team.lowResourcePressure + Math.max(0, -team.numbersAdvantage) * 18 + Math.max(0, -team.netWorthLead / 600) + input.teamProfile.discipline * 0.2 - team.baseThreat * 0.9,
       urgency: team.lowResourcePressure + Math.max(0, -team.numbersAdvantage) * 15,
       risk: 18,
-      confidence: input.teamProfile.discipline + input.teamProfile.comebackPatience * 0.35,
       reasonTags: ['risk', 'resources'],
     }),
     makePlan(input, 'defend_high_ground', {
@@ -91,7 +85,6 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
       }),
       urgency: team.baseThreat,
       risk: Math.max(20, 70 - input.teamProfile.highGroundDiscipline * 0.3),
-      confidence: input.teamProfile.highGroundDiscipline + team.defensivePower * 0.25,
       reasonTags: ['base', 'high_ground', 'defense'],
     }),
     makePlan(input, 'end_game', {
@@ -106,7 +99,6 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
         : -80,
       urgency: enemyBaseOpen ? 82 : 0,
       risk: team.throwRisk * AI_RULES.teamPlans.highGroundRiskMultiplier,
-      confidence: team.fightReadiness + input.teamProfile.discipline * 0.2,
       reasonTags: ['base', 'end_game'],
     }),
   ]
@@ -130,18 +122,16 @@ export function selectTeamPlan(input: TeamBrainInput): TeamPlan | undefined {
 }
 
 function makePlan(
-  input: TeamBrainInput,
+  _input: TeamBrainInput,
   type: TeamPlanType,
-  values: Omit<TeamPlan, 'type' | 'expiresAtGameTime'>,
+  values: Omit<TeamPlan, 'type'>,
 ): TeamPlan {
   return {
     ...values,
     type,
     expectedValue: Math.round(values.expectedValue),
     urgency: clamp(Math.round(values.urgency), 0, 100),
-    confidence: clamp(Math.round(values.confidence), 0, 100),
     risk: clamp(Math.round(values.risk), 0, 100),
-    expiresAtGameTime: input.analyzed.gameTime.seconds + 24,
   }
 }
 

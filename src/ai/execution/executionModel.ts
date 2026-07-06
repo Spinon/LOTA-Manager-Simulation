@@ -4,7 +4,7 @@ const MICRO_DECISION_WINDOW_SECONDS = 6
 
 export function resolvePlayerExecution(context: PlayerContext, selected: PlayerModeScore): ExecutionOutcome {
   const successChance = getExecutionSuccessChance(context, selected)
-  const roll = deterministicRoll(context.profile.playerId, selected.mode, Math.floor(context.gameTime.seconds / MICRO_DECISION_WINDOW_SECONDS))
+  const roll = deterministicRoll(context.profile.playerId, selected.mode, Math.floor(context.gameTime.seconds / MICRO_DECISION_WINDOW_SECONDS), context.matchSeed)
 
   if (roll <= successChance) {
     return {
@@ -73,9 +73,9 @@ function getExecutionDelay(context: PlayerContext, selected: PlayerModeScore, fa
   return Number(clamp(0.15 + disciplineDelay * 1.25 - urgencyReduction + failurePenalty, 0, 2.4).toFixed(2))
 }
 
-function deterministicRoll(playerId: string, mode: PlayerModeType, window: number) {
+function deterministicRoll(playerId: string, mode: PlayerModeType, window: number, matchSeed: string) {
   let hash = 0
-  const key = `${playerId}:${mode}:${window}`
+  const key = `${matchSeed}:${playerId}:${mode}:${window}`
   for (let index = 0; index < key.length; index += 1) {
     hash = (hash * 33 + key.charCodeAt(index)) % 10007
   }

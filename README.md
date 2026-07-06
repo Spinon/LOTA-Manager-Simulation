@@ -20,7 +20,18 @@ npm install
 npm run dev
 npm run build
 npm run lint
+npm run check:sync
 ```
+
+## Codex startup sync check
+
+Before starting work in a new Codex session, run:
+
+```bash
+npm run check:sync
+```
+
+The command fetches `origin`, compares the current branch with its upstream, and reports whether the local branch is up to date, behind, ahead, or diverged.
 
 ## Repositorio remoto
 
@@ -34,4 +45,4 @@ origin https://github.com/Spinon/LOTA-Manager-Simulation.git
 
 A primeira tela ja nasce preparada para login/senha futuro, mas o desenvolvimento deve priorizar o **modo local com save/load** antes de qualquer autenticacao real.
 
-Veja o planejamento detalhado em [ROADMAP.md](./ROADMAP.md).
+Veja o planejamento detalhado em [ROADMAP.md](./tasks/ROADMAP.md).

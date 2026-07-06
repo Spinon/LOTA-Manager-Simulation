@@ -1,0 +1,24163 @@
+// moba_complete_hero_skill_kits.txt
+// Rework completo da camada de skills para os 128 heróis do manager de MOBA.
+// Este arquivo é um complemento para all_hero_seeds_moba_manager.txt.
+// Objetivo: substituir a lista rasa de skills por kits mais ricos, com comportamento, valores,
+// flags, uso de IA, sinergias e counters.
+//
+// Importante:
+// - Não usa nomes oficiais de Dota.
+// - Mantém os heroId já exportados.
+// - Os números são balanceáveis e servem como base inicial.
+// - A IA deve usar aiUsage, synergyTags, counterTags e flags para tomar decisões.
+// - O combate deve usar values, damageType, mechanics, flags e scaling.
+
+export type SkillKey = "Q" | "W" | "E" | "R";
+export type SkillKind = "active" | "passive" | "toggle";
+export type SkillTarget = "self" | "unit" | "point" | "area" | "global" | "passive";
+export type DamageType = "physical" | "magical" | "pure" | "none";
+
+export interface CompleteSkillSeed {
+  key: SkillKey;
+  id: string;
+  name: string;
+  sourceTag: string;
+  kind: SkillKind;
+  target: SkillTarget;
+  damageType: DamageType;
+  mechanics: string[];
+  description: string;
+  values: Record<string, number | number[] | string | boolean>;
+  flags: {
+    dispellable: boolean;
+    piercesDebuffImmunity: boolean;
+    canBeDisjointed: boolean;
+    usesProjectile: boolean;
+    canCrit: boolean;
+    canLifesteal: boolean;
+    canSpellLifesteal: boolean;
+    affectsBuildings: boolean;
+    affectsIllusions: boolean;
+    breaksInvisibility: boolean;
+    breakable: boolean;
+  };
+  aiUsage: {
+    laning: number;
+    farming: number;
+    gank: number;
+    teamfight: number;
+    retreat: number;
+    push: number;
+    save: number;
+    objective: number;
+  };
+  synergyTags: string[];
+  counterTags: string[];
+  scaling?: {
+    attribute: string;
+    coefficient: number;
+  };
+}
+
+export interface CompleteHeroSkillKit {
+  heroId: string;
+  archetype: string;
+  primaryAttribute: string;
+  attackType: string;
+  roles: string[];
+  preferredPositions: number[];
+  designTags: string[];
+  kitIdentity: {
+    primaryGamePlan: string;
+    executionComplexity: number;
+    microDemand: number;
+    teamfightReliability: number;
+  };
+  skills: CompleteSkillSeed[];
+}
+
+export const SKILL_SYSTEM_RULES = {
+  usage: [
+    "aiUsage deve guiar quando a IA usa a skill, não apenas o dano bruto.",
+    "skills de save devem reservar cooldown para aliados valiosos em risco.",
+    "skills globais devem avaliar mapa, visão, objetivo e tempo de resposta.",
+    "skills de summons/ilusões aumentam microDemand e pressão de mapa.",
+    "skills passivas devem entrar no cálculo contínuo de stats e DPS.",
+    "skills com piercesDebuffImmunity devem ser tratadas como recursos críticos."
+  ],
+
+  balance: [
+    "Q e W tendem a impactar lane e ganks curtos.",
+    "E tende a ser passiva, scaling ou utilidade persistente quando o sourceTag sugere isso.",
+    "R deve criar spike de luta, mapa, execução ou objetivo.",
+    "Valores são iniciais e devem passar por balance pass com simulação."
+  ],
+
+  integration: [
+    "Adicionar este arquivo como src/data/completeHeroSkillKits.ts.",
+    "Criar getSkillKit(heroId).",
+    "Criar validateSkillKit para garantir 4 skills por herói.",
+    "Integrar mechanics com effect system e combat formulas.",
+    "Integrar aiUsage com PlayerAgent e ActionSelector.",
+    "Usar counterTags para itemização situacional e draft."
+  ]
+};
+
+export const COMPLETE_HERO_SKILL_KITS: CompleteHeroSkillKit[] = [
+  {
+    heroId: "h001_anti_magic_mobile_carry",
+    archetype: "carry anti-magia de mobilidade",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "escape"],
+    preferredPositions: [1],
+    designTags: ["anti_magic", "mobility", "mana_burn", "late_game"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h001_anti_magic_mobile_carry_q_anti_magic",
+        name: "Anti Magia",
+        sourceTag: "anti_magic",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Anti Magia. Define uma função tática específica dentro do kit de carry anti-magia de mobilidade.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "W",
+        id: "h001_anti_magic_mobile_carry_w_mobility",
+        name: "Mobility",
+        sourceTag: "mobility",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Mobility. Define uma função tática específica dentro do kit de carry anti-magia de mobilidade.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h001_anti_magic_mobile_carry_e_mana_burn",
+        name: "Mana Queima",
+        sourceTag: "mana_burn",
+        kind: "active",
+        target: "unit",
+        damageType: "pure",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Mana Queima. Define uma função tática específica dentro do kit de carry anti-magia de mobilidade.",
+        values: {
+          damage: [85, 140, 195, 250],
+          manaValue: [40, 75, 110, 145],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: [],
+        scaling: {
+          attribute: "agility",
+          coefficient: 0.55
+        }
+      },
+      {
+        key: "R",
+        id: "h001_anti_magic_mobile_carry_r_late_game",
+        name: "Late Game",
+        sourceTag: "late_game",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Late Game. Define uma função tática específica dentro do kit de carry anti-magia de mobilidade.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h002_taunt_berserker_tank",
+    archetype: "tanque berserker de provocação e execução",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    preferredPositions: [3],
+    designTags: ["taunt", "counterattack", "execute", "armor"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h002_taunt_berserker_tank_q_taunt",
+        name: "Provocação",
+        sourceTag: "taunt",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade de controle para o arquétipo de tanque berserker de provocação e execução. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 35,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h002_taunt_berserker_tank_w_counterattack",
+        name: "Counterattack",
+        sourceTag: "counterattack",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Counterattack. Define uma função tática específica dentro do kit de tanque berserker de provocação e execução.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: ["armor_reduction", "attack_speed", "lifesteal"],
+        counterTags: ["armor", "disarm", "evasion", "kiting"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "E",
+        id: "h002_taunt_berserker_tank_e_execute",
+        name: "Execute",
+        sourceTag: "execute",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Execute. Define uma função tática específica dentro do kit de tanque berserker de provocação e execução.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h002_taunt_berserker_tank_r_armor",
+        name: "Armadura",
+        sourceTag: "armor",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Ultimate defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          barrierOrArmorValue: [80, 140, 200],
+          range: [500, 580, 660],
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 65,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h003_nightmare_controller",
+    archetype: "controlador de pesadelo, sono e drenagem",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "nuker"],
+    preferredPositions: [5],
+    designTags: ["sleep", "drain", "enfeeble", "channel"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h003_nightmare_controller_q_sleep",
+        name: "Sleep",
+        sourceTag: "sleep",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade de controle para o arquétipo de controlador de pesadelo, sono e drenagem. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h003_nightmare_controller_w_drain",
+        name: "Drain",
+        sourceTag: "drain",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Drain. Define uma função tática específica dentro do kit de controlador de pesadelo, sono e drenagem.",
+        values: {
+          damage: [120, 175, 230, 285],
+          radius: 445,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h003_nightmare_controller_e_enfeeble",
+        name: "Enfeeble",
+        sourceTag: "enfeeble",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Enfeeble. Define uma função tática específica dentro do kit de controlador de pesadelo, sono e drenagem.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h003_nightmare_controller_r_channel",
+        name: "Channel",
+        sourceTag: "channel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Channel. Define uma função tática específica dentro do kit de controlador de pesadelo, sono e drenagem.",
+        values: {
+          damage: [280, 400, 520],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h004_blood_duelist",
+    archetype: "lutador de caça e execução por vida baixa",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "mid", "escape"],
+    preferredPositions: [1, 2],
+    designTags: ["execute", "silence", "speed", "anti_mobility"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h004_blood_duelist_q_execute",
+        name: "Execute",
+        sourceTag: "execute",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Execute. Define uma função tática específica dentro do kit de lutador de caça e execução por vida baixa.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h004_blood_duelist_w_silence",
+        name: "Silêncio",
+        sourceTag: "silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["spell_lockout"],
+        description: "Segunda habilidade baseada em Silêncio. Define uma função tática específica dentro do kit de lutador de caça e execução por vida baixa.",
+        values: {
+          damage: [110, 165, 220, 275],
+          silence: [2.0, 2.6, 3.2, 3.8],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 35,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "E",
+        id: "h004_blood_duelist_e_speed",
+        name: "Velocidade",
+        sourceTag: "speed",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Velocidade. Define uma função tática específica dentro do kit de lutador de caça e execução por vida baixa.",
+        values: {
+          damage: [110, 165, 220, 275],
+          moveSpeedBonusPct: [10, 16, 22, 28],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h004_blood_duelist_r_anti_mobility",
+        name: "Anti Mobility",
+        sourceTag: "anti_mobility",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Anti Mobility. Define uma função tática específica dentro do kit de lutador de caça e execução por vida baixa.",
+        values: {
+          range: [500, 580, 660],
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h005_frost_marksman",
+    archetype: "atirador de lentidão e aura de precisão",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "pusher"],
+    preferredPositions: [1],
+    designTags: ["slow", "ranged_scaling", "aura", "armor_pierce"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h005_frost_marksman_q_slow",
+        name: "Lentidão",
+        sourceTag: "slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Primeira habilidade baseada em Lentidão. Define uma função tática específica dentro do kit de atirador de lentidão e aura de precisão.",
+        values: {
+          damage: [75, 130, 185, 240],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "W",
+        id: "h005_frost_marksman_w_ranged_scaling",
+        name: "Ranged Scaling",
+        sourceTag: "ranged_scaling",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Ranged Scaling. Define uma função tática específica dentro do kit de atirador de lentidão e aura de precisão.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h005_frost_marksman_e_aura",
+        name: "Aura",
+        sourceTag: "aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["teamfight_modifier"],
+        description: "Terceira habilidade baseada em Aura. Define uma função tática específica dentro do kit de atirador de lentidão e aura de precisão.",
+        values: {
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h005_frost_marksman_r_armor_pierce",
+        name: "Armadura Pierce",
+        sourceTag: "armor_pierce",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Ultimate defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          barrierOrArmorValue: [80, 140, 200],
+          range: [500, 580, 660],
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 65,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h006_quake_initiator",
+    archetype: "iniciador sísmico de controle em área",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler"],
+    preferredPositions: [3, 4],
+    designTags: ["stun", "terrain", "aftershock", "teamfight"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 79
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h006_quake_initiator_q_stun",
+        name: "Atordoamento",
+        sourceTag: "stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Primeira habilidade de controle para o arquétipo de iniciador sísmico de controle em área. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [85, 140, 195, 250],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "W",
+        id: "h006_quake_initiator_w_terrain",
+        name: "Terrain",
+        sourceTag: "terrain",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Terrain. Define uma função tática específica dentro do kit de iniciador sísmico de controle em área.",
+        values: {
+          damage: [85, 140, 195, 250],
+          radius: 405,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h006_quake_initiator_e_aftershock",
+        name: "Aftershock",
+        sourceTag: "aftershock",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Aftershock. Define uma função tática específica dentro do kit de iniciador sísmico de controle em área.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h006_quake_initiator_r_teamfight",
+        name: "Luta",
+        sourceTag: "teamfight",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["teamfight_modifier"],
+        description: "Ultimate baseada em Luta. Define uma função tática específica dentro do kit de iniciador sísmico de controle em área.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h007_sword_tempest",
+    archetype: "carry de giro, cura posicionada e acertos críticos",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "pusher"],
+    preferredPositions: [1],
+    designTags: ["spin", "heal", "critical", "untargetable"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h007_sword_tempest_q_spin",
+        name: "Spin",
+        sourceTag: "spin",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Spin. Define uma função tática específica dentro do kit de carry de giro, cura posicionada e acertos críticos.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h007_sword_tempest_w_heal",
+        name: "Cura",
+        sourceTag: "heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Segunda habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 10
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "agility",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "E",
+        id: "h007_sword_tempest_e_critical",
+        name: "Crítico",
+        sourceTag: "critical",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        mechanics: ["attack_scaling"],
+        description: "Terceira habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [95, 150, 205, 260],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [160, 195, 230, 265],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 35,
+          gank: 0,
+          teamfight: 20,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 35
+        },
+        synergyTags: ["armor_reduction", "attack_speed", "lifesteal"],
+        counterTags: ["armor", "disarm", "evasion", "kiting"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "R",
+        id: "h007_sword_tempest_r_untargetable",
+        name: "Untargetable",
+        sourceTag: "untargetable",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Untargetable. Define uma função tática específica dentro do kit de carry de giro, cura posicionada e acertos críticos.",
+        values: {
+          damage: [235, 355, 475],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h008_moon_huntress",
+    archetype: "caçadora lunar de salto, flecha e aura noturna",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["carry", "soft_support", "nuker", "escape"],
+    preferredPositions: [1, 4],
+    designTags: ["leap", "long_stun", "vision", "global_stealth"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 79
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h008_moon_huntress_q_leap",
+        name: "Leap",
+        sourceTag: "leap",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Primeira habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 30,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 10,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h008_moon_huntress_w_long_stun",
+        name: "Long Atordoamento",
+        sourceTag: "long_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Segunda habilidade de controle para o arquétipo de caçadora lunar de salto, flecha e aura noturna. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [110, 165, 220, 275],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 10
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "E",
+        id: "h008_moon_huntress_e_vision",
+        name: "Visão",
+        sourceTag: "vision",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["information"],
+        description: "Terceira habilidade baseada em Visão. Define uma função tática específica dentro do kit de caçadora lunar de salto, flecha e aura noturna.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h008_moon_huntress_r_global_stealth",
+        name: "Global Stealth",
+        sourceTag: "global_stealth",
+        kind: "active",
+        target: "global",
+        damageType: "none",
+        mechanics: ["global_pressure"],
+        description: "Ultimate global ou semi-global. Serve para punir mapa aberto, conectar lutas, defender objetivo ou transformar pickoff em objetivo.",
+        values: {
+          global: true,
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 40,
+          teamfight: 70,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 45
+        },
+        synergyTags: ["deep_vision", "pickoff", "split_push"],
+        counterTags: ["dust", "grouping", "sentry", "true_sight"]
+      }
+    ]
+  },
+  {
+    heroId: "h009_fluid_shifter",
+    archetype: "carry flexível que converte força e agilidade",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "mid", "escape"],
+    preferredPositions: [1, 2],
+    designTags: ["attribute_shift", "wave_dash", "copy", "burst"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h009_fluid_shifter_q_attribute_shift",
+        name: "Attribute Shift",
+        sourceTag: "attribute_shift",
+        kind: "toggle",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Attribute Shift. Define uma função tática específica dentro do kit de carry flexível que converte força e agilidade.",
+        values: {
+          damage: [120, 175, 230, 285],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: [],
+        scaling: {
+          attribute: "agility",
+          coefficient: 0.55
+        }
+      },
+      {
+        key: "W",
+        id: "h009_fluid_shifter_w_wave_dash",
+        name: "Onda Avanço",
+        sourceTag: "wave_dash",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Segunda habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 20,
+          gank: 40,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h009_fluid_shifter_e_copy",
+        name: "Copy",
+        sourceTag: "copy",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Copy. Define uma função tática específica dentro do kit de carry flexível que converte força e agilidade.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h009_fluid_shifter_r_burst",
+        name: "Explosão",
+        sourceTag: "burst",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [280, 400, 520],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 20,
+          farming: 20,
+          gank: 20,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      }
+    ]
+  },
+  {
+    heroId: "h010_shadow_bomber",
+    archetype: "mago de almas, dano crescente e presença de mapa",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "carry"],
+    preferredPositions: [2],
+    designTags: ["souls", "triple_nuke", "aura", "fear"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h010_shadow_bomber_q_souls",
+        name: "Souls",
+        sourceTag: "souls",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Souls. Define uma função tática específica dentro do kit de mago de almas, dano crescente e presença de mapa.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h010_shadow_bomber_w_triple_nuke",
+        name: "Triple Nuke",
+        sourceTag: "triple_nuke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 20,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h010_shadow_bomber_e_aura",
+        name: "Aura",
+        sourceTag: "aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["teamfight_modifier"],
+        description: "Terceira habilidade baseada em Aura. Define uma função tática específica dentro do kit de mago de almas, dano crescente e presença de mapa.",
+        values: {
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h010_shadow_bomber_r_fear",
+        name: "Medo",
+        sourceTag: "fear",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate de controle para o arquétipo de mago de almas, dano crescente e presença de mapa. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 35,
+          teamfight: 70,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 25
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h011_illusion_lancer",
+    archetype: "carry de ilusões e perseguição prolongada",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "pusher", "escape"],
+    preferredPositions: [1],
+    designTags: ["illusion", "dispel", "chase", "swarm"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 3,
+      microDemand: 65,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h011_illusion_lancer_q_illusion",
+        name: "Ilusão",
+        sourceTag: "illusion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Primeira habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [95, 150, 205, 260],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 35,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 30
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "W",
+        id: "h011_illusion_lancer_w_dispel",
+        name: "Dispel",
+        sourceTag: "dispel",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Dispel. Define uma função tática específica dentro do kit de carry de ilusões e perseguição prolongada.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h011_illusion_lancer_e_chase",
+        name: "Chase",
+        sourceTag: "chase",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Chase. Define uma função tática específica dentro do kit de carry de ilusões e perseguição prolongada.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h011_illusion_lancer_r_swarm",
+        name: "Swarm",
+        sourceTag: "swarm",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Swarm. Define uma função tática específica dentro do kit de carry de ilusões e perseguição prolongada.",
+        values: {
+          damage: [255, 375, 495],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      }
+    ]
+  },
+  {
+    heroId: "h012_fae_trickster",
+    archetype: "mago evasivo de silêncio, jaula e controle em área",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "disabler", "escape"],
+    preferredPositions: [2],
+    designTags: ["phase_shift", "silence", "orb", "leash"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 77
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h012_fae_trickster_q_phase_shift",
+        name: "Phase Shift",
+        sourceTag: "phase_shift",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Phase Shift. Define uma função tática específica dentro do kit de mago evasivo de silêncio, jaula e controle em área.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h012_fae_trickster_w_silence",
+        name: "Silêncio",
+        sourceTag: "silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["spell_lockout"],
+        description: "Segunda habilidade baseada em Silêncio. Define uma função tática específica dentro do kit de mago evasivo de silêncio, jaula e controle em área.",
+        values: {
+          damage: [120, 175, 230, 285],
+          silence: [2.0, 2.6, 3.2, 3.8],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 35,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "E",
+        id: "h012_fae_trickster_e_orb",
+        name: "Orb",
+        sourceTag: "orb",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Orb. Define uma função tática específica dentro do kit de mago evasivo de silêncio, jaula e controle em área.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h012_fae_trickster_r_leash",
+        name: "Vínculo",
+        sourceTag: "leash",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["mobility_lockout"],
+        description: "Ultimate de controle para o arquétipo de mago evasivo de silêncio, jaula e controle em área. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [280, 400, 520],
+          root: [1.2, 1.6, 2.0],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 35,
+          teamfight: 70,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h013_chain_vanguard",
+    archetype: "tanque de gancho, podridão e isolamento",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "durable", "disabler"],
+    preferredPositions: [3, 4],
+    designTags: ["hook", "aura_dot", "regen_stacks", "channel_disable"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h013_chain_vanguard_q_hook",
+        name: "Hook",
+        sourceTag: "hook",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Hook. Define uma função tática específica dentro do kit de tanque de gancho, podridão e isolamento.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h013_chain_vanguard_w_aura_dot",
+        name: "Aura Dot",
+        sourceTag: "aura_dot",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["teamfight_modifier"],
+        description: "Segunda habilidade baseada em Aura Dot. Define uma função tática específica dentro do kit de tanque de gancho, podridão e isolamento.",
+        values: {
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h013_chain_vanguard_e_regen_stacks",
+        name: "Regeneração Stacks",
+        sourceTag: "regen_stacks",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Regeneração Stacks. Define uma função tática específica dentro do kit de tanque de gancho, podridão e isolamento.",
+        values: {
+          damage: [85, 140, 195, 250],
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["anti_heal", "burst_damage", "silence"]
+      },
+      {
+        key: "R",
+        id: "h013_chain_vanguard_r_channel_disable",
+        name: "Channel Disable",
+        sourceTag: "channel_disable",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Channel Disable. Define uma função tática específica dentro do kit de tanque de gancho, podridão e isolamento.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h014_storm_channeler",
+    archetype: "mago móvel de mana, remanescentes e pickoff",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "escape", "nuker"],
+    preferredPositions: [2],
+    designTags: ["mana_scaling", "mobility", "pull", "overload"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h014_storm_channeler_q_mana_scaling",
+        name: "Mana Scaling",
+        sourceTag: "mana_scaling",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Mana Scaling. Define uma função tática específica dentro do kit de mago móvel de mana, remanescentes e pickoff.",
+        values: {
+          damage: [120, 175, 230, 285],
+          manaValue: [40, 75, 110, 145],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: [],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.55
+        }
+      },
+      {
+        key: "W",
+        id: "h014_storm_channeler_w_mobility",
+        name: "Mobility",
+        sourceTag: "mobility",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Mobility. Define uma função tática específica dentro do kit de mago móvel de mana, remanescentes e pickoff.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h014_storm_channeler_e_pull",
+        name: "Pull",
+        sourceTag: "pull",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Pull. Define uma função tática específica dentro do kit de mago móvel de mana, remanescentes e pickoff.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h014_storm_channeler_r_overload",
+        name: "Overload",
+        sourceTag: "overload",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Overload. Define uma função tática específica dentro do kit de mago móvel de mana, remanescentes e pickoff.",
+        values: {
+          damage: [280, 400, 520],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h015_burrow_sentinel",
+    archetype: "iniciador de areia, stun em linha e dano persistente",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler", "escape"],
+    preferredPositions: [3, 4],
+    designTags: ["burrow", "sandstorm", "death_explosion", "aoe_channel"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h015_burrow_sentinel_q_burrow",
+        name: "Burrow",
+        sourceTag: "burrow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Burrow. Define uma função tática específica dentro do kit de iniciador de areia, stun em linha e dano persistente.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h015_burrow_sentinel_w_sandstorm",
+        name: "Sandstorm",
+        sourceTag: "sandstorm",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          radius: 405,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h015_burrow_sentinel_e_death_explosion",
+        name: "Death Explosion",
+        sourceTag: "death_explosion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Death Explosion. Define uma função tática específica dentro do kit de iniciador de areia, stun em linha e dano persistente.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h015_burrow_sentinel_r_aoe_channel",
+        name: "Aoe Channel",
+        sourceTag: "aoe_channel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Aoe Channel. Define uma função tática específica dentro do kit de iniciador de areia, stun em linha e dano persistente.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h016_lightning_archmage",
+    archetype: "mago de raio, dano em cadeia e pressão global",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "pusher"],
+    preferredPositions: [2, 4],
+    designTags: ["chain_lightning", "global_nuke", "percent_damage", "vision"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h016_lightning_archmage_q_chain_lightning",
+        name: "Chain Lightning",
+        sourceTag: "chain_lightning",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Chain Lightning. Define uma função tática específica dentro do kit de mago de raio, dano em cadeia e pressão global.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h016_lightning_archmage_w_global_nuke",
+        name: "Global Nuke",
+        sourceTag: "global_nuke",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["global_pressure"],
+        description: "Segunda habilidade global ou semi-global. Serve para punir mapa aberto, conectar lutas, defender objetivo ou transformar pickoff em objetivo.",
+        values: {
+          damage: [110, 165, 220, 275],
+          global: true,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 50,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 20
+        },
+        synergyTags: ["cooldown_reduction", "deep_vision", "magic_resistance_reduction", "pickoff", "spell_amp", "split_push"],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h016_lightning_archmage_e_percent_damage",
+        name: "Percent Damage",
+        sourceTag: "percent_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Percent Damage. Define uma função tática específica dentro do kit de mago de raio, dano em cadeia e pressão global.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h016_lightning_archmage_r_vision",
+        name: "Visão",
+        sourceTag: "vision",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["information"],
+        description: "Ultimate baseada em Visão. Define uma função tática específica dentro do kit de mago de raio, dano em cadeia e pressão global.",
+        values: {
+          range: [500, 580, 660],
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h017_sea_captain",
+    archetype: "iniciador naval de controle, maré e reposicionamento",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "mid", "initiator", "durable", "disabler"],
+    preferredPositions: [2, 3],
+    designTags: ["torrent", "cleave", "mark_return", "ship_buff"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h017_sea_captain_q_torrent",
+        name: "Torrent",
+        sourceTag: "torrent",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Torrent. Define uma função tática específica dentro do kit de iniciador naval de controle, maré e reposicionamento.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h017_sea_captain_w_cleave",
+        name: "Corte",
+        sourceTag: "cleave",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["attack_scaling"],
+        description: "Segunda habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 25,
+          gank: 0,
+          teamfight: 20,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: ["armor_reduction", "attack_speed", "lifesteal"],
+        counterTags: ["armor", "disarm", "evasion", "kiting"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "E",
+        id: "h017_sea_captain_e_mark_return",
+        name: "Mark Return",
+        sourceTag: "mark_return",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Mark Return. Define uma função tática específica dentro do kit de iniciador naval de controle, maré e reposicionamento.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h017_sea_captain_r_ship_buff",
+        name: "Ship Buff",
+        sourceTag: "ship_buff",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Ship Buff. Define uma função tática específica dentro do kit de iniciador naval de controle, maré e reposicionamento.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h018_fire_invoker",
+    archetype: "mago explosivo de stun, área e burst direto",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "disabler"],
+    preferredPositions: [2],
+    designTags: ["stun", "aoe_nuke", "mana_regen", "burst"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 57
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h018_fire_invoker_q_stun",
+        name: "Atordoamento",
+        sourceTag: "stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Primeira habilidade de controle para o arquétipo de mago explosivo de stun, área e burst direto. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [100, 155, 210, 265],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 35,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "W",
+        id: "h018_fire_invoker_w_aoe_nuke",
+        name: "Aoe Nuke",
+        sourceTag: "aoe_nuke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [100, 155, 210, 265],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h018_fire_invoker_e_mana_regen",
+        name: "Mana Regeneração",
+        sourceTag: "mana_regen",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Mana Regeneração. Define uma função tática específica dentro do kit de mago explosivo de stun, área e burst direto.",
+        values: {
+          damage: [100, 155, 210, 265],
+          heal: [75, 120, 165, 210],
+          manaValue: [40, 75, 110, 145],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.55
+        }
+      },
+      {
+        key: "R",
+        id: "h018_fire_invoker_r_burst",
+        name: "Explosão",
+        sourceTag: "burst",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [260, 380, 500],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 20,
+          farming: 10,
+          gank: 20,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      }
+    ]
+  },
+  {
+    heroId: "h019_ice_lich",
+    archetype: "suporte de armadura gelada e ultimate ricocheteante",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "nuker", "disabler"],
+    preferredPositions: [5],
+    designTags: ["frost_armor", "slow", "chain_ultimate", "sacrifice"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h019_ice_lich_q_frost_armor",
+        name: "Gelo Armadura",
+        sourceTag: "frost_armor",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility", "movement_control"],
+        description: "Primeira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          slowPct: [16, 24, 32, 40],
+          barrierOrArmorValue: [80, 140, 200, 260],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h019_ice_lich_w_slow",
+        name: "Lentidão",
+        sourceTag: "slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Segunda habilidade baseada em Lentidão. Define uma função tática específica dentro do kit de suporte de armadura gelada e ultimate ricocheteante.",
+        values: {
+          damage: [110, 165, 220, 275],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "E",
+        id: "h019_ice_lich_e_chain_ultimate",
+        name: "Chain Ultimate",
+        sourceTag: "chain_ultimate",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Chain Ultimate. Define uma função tática específica dentro do kit de suporte de armadura gelada e ultimate ricocheteante.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h019_ice_lich_r_sacrifice",
+        name: "Sacrifice",
+        sourceTag: "sacrifice",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [270, 390, 510],
+          slowPct: [16, 24, 32],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      }
+    ]
+  },
+  {
+    heroId: "h020_hex_warden",
+    archetype: "suporte de hex, raio encadeado e amarras",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "soft_support", "disabler", "pusher"],
+    preferredPositions: [4, 5],
+    designTags: ["hex", "chain_nuke", "shackle", "summon_wards"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 55,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h020_hex_warden_q_hex",
+        name: "Hex",
+        sourceTag: "hex",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade de controle para o arquétipo de suporte de hex, raio encadeado e amarras. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: true,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "W",
+        id: "h020_hex_warden_w_chain_nuke",
+        name: "Chain Nuke",
+        sourceTag: "chain_nuke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 30,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h020_hex_warden_e_shackle",
+        name: "Shackle",
+        sourceTag: "shackle",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Terceira habilidade de controle para o arquétipo de suporte de hex, raio encadeado e amarras. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [85, 140, 195, 250],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h020_hex_warden_r_summon_wards",
+        name: "Invocação Wards",
+        sourceTag: "summon_wards",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units", "information"],
+        description: "Ultimate de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [245, 365, 485],
+          summons: [1, 2, 3],
+          summonDuration: [20, 28, 36],
+          range: [500, 580, 660],
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 25,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 35,
+          save: 10,
+          objective: 35
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      }
+    ]
+  },
+  {
+    heroId: "h021_serpent_crusher",
+    archetype: "frontliner anfíbio de sprint, bash e corrosão",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    preferredPositions: [3],
+    designTags: ["bash", "sprint", "armor_reduction", "single_target_stun"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h021_serpent_crusher_q_bash",
+        name: "Bash",
+        sourceTag: "bash",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["hard_control"],
+        description: "Primeira habilidade baseada em Bash. Define uma função tática específica dentro do kit de frontliner anfíbio de sprint, bash e corrosão.",
+        values: {
+          damage: [85, 140, 195, 250],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h021_serpent_crusher_w_sprint",
+        name: "Sprint",
+        sourceTag: "sprint",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Sprint. Define uma função tática específica dentro do kit de frontliner anfíbio de sprint, bash e corrosão.",
+        values: {
+          damage: [85, 140, 195, 250],
+          moveSpeedBonusPct: [10, 16, 22, 28],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h021_serpent_crusher_e_armor_reduction",
+        name: "Armadura Reduction",
+        sourceTag: "armor_reduction",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Terceira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          armorReduction: [2.0, 3.5, 5.0, 6.5],
+          barrierOrArmorValue: [80, 140, 200, 260],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h021_serpent_crusher_r_single_target_stun",
+        name: "Single Target Atordoamento",
+        sourceTag: "single_target_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Ultimate de controle para o arquétipo de frontliner anfíbio de sprint, bash e corrosão. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [245, 365, 485],
+          stun: [1.2, 1.55, 1.9],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 35,
+          teamfight: 70,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      }
+    ]
+  },
+  {
+    heroId: "h022_tide_colossus",
+    archetype: "tanque de maré, redução de dano e stun massivo",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    preferredPositions: [3],
+    designTags: ["aoe_stun", "damage_block", "armor_reduction", "damage_reduction"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 57
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h022_tide_colossus_q_aoe_stun",
+        name: "Aoe Atordoamento",
+        sourceTag: "aoe_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Primeira habilidade de controle para o arquétipo de tanque de maré, redução de dano e stun massivo. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [75, 130, 185, 240],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 35,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "W",
+        id: "h022_tide_colossus_w_damage_block",
+        name: "Damage Block",
+        sourceTag: "damage_block",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Damage Block. Define uma função tática específica dentro do kit de tanque de maré, redução de dano e stun massivo.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h022_tide_colossus_e_armor_reduction",
+        name: "Armadura Reduction",
+        sourceTag: "armor_reduction",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Terceira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          armorReduction: [2.0, 3.5, 5.0, 6.5],
+          barrierOrArmorValue: [80, 140, 200, 260],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h022_tide_colossus_r_damage_reduction",
+        name: "Damage Reduction",
+        sourceTag: "damage_reduction",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Damage Reduction. Define uma função tática específica dentro do kit de tanque de maré, redução de dano e stun massivo.",
+        values: {
+          damage: [235, 355, 475],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h023_witch_shaman",
+    archetype: "suporte vodu de maldição, cura e dano em cadeia",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "healer", "nuker"],
+    preferredPositions: [5],
+    designTags: ["heal", "curse", "bounce", "death_ward"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h023_witch_shaman_q_heal",
+        name: "Cura",
+        sourceTag: "heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Primeira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "W",
+        id: "h023_witch_shaman_w_curse",
+        name: "Curse",
+        sourceTag: "curse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Curse. Define uma função tática específica dentro do kit de suporte vodu de maldição, cura e dano em cadeia.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h023_witch_shaman_e_bounce",
+        name: "Bounce",
+        sourceTag: "bounce",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Bounce. Define uma função tática específica dentro do kit de suporte vodu de maldição, cura e dano em cadeia.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h023_witch_shaman_r_death_ward",
+        name: "Death Sentinela",
+        sourceTag: "death_ward",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units", "information"],
+        description: "Ultimate de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [270, 390, 510],
+          summons: [1, 2, 3],
+          summonDuration: [20, 28, 36],
+          range: [500, 580, 660],
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 25,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 35,
+          save: 10,
+          objective: 35
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      }
+    ]
+  },
+  {
+    heroId: "h024_stealth_assassin",
+    archetype: "assassino invisível de fumaça e explosão pelas costas",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "escape", "scout"],
+    preferredPositions: [1, 2],
+    designTags: ["stealth", "backstab", "smoke", "blink_strike"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h024_stealth_assassin_q_stealth",
+        name: "Stealth",
+        sourceTag: "stealth",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Stealth. Define uma função tática específica dentro do kit de assassino invisível de fumaça e explosão pelas costas.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: ["dust", "grouping", "sentry", "true_sight"]
+      },
+      {
+        key: "W",
+        id: "h024_stealth_assassin_w_backstab",
+        name: "Backstab",
+        sourceTag: "backstab",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Backstab. Define uma função tática específica dentro do kit de assassino invisível de fumaça e explosão pelas costas.",
+        values: {
+          damage: [85, 140, 195, 250],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h024_stealth_assassin_e_smoke",
+        name: "Smoke",
+        sourceTag: "smoke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Smoke. Define uma função tática específica dentro do kit de assassino invisível de fumaça e explosão pelas costas.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h024_stealth_assassin_r_blink_strike",
+        name: "Salto Strike",
+        sourceTag: "blink_strike",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Ultimate de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 20,
+          teamfight: 45,
+          retreat: 25,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h025_gravity_summoner",
+    archetype: "mago gravitacional de buraco negro e conversão",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["offlane", "soft_support", "initiator", "disabler", "pusher"],
+    preferredPositions: [3, 4],
+    designTags: ["black_hole", "conversion", "pulse", "dispel"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 77
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h025_gravity_summoner_q_black_hole",
+        name: "Black Hole",
+        sourceTag: "black_hole",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Black Hole. Define uma função tática específica dentro do kit de mago gravitacional de buraco negro e conversão.",
+        values: {
+          damage: [95, 150, 205, 260],
+          radius: 445,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: true,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h025_gravity_summoner_w_conversion",
+        name: "Conversion",
+        sourceTag: "conversion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Conversion. Define uma função tática específica dentro do kit de mago gravitacional de buraco negro e conversão.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h025_gravity_summoner_e_pulse",
+        name: "Pulse",
+        sourceTag: "pulse",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Pulse. Define uma função tática específica dentro do kit de mago gravitacional de buraco negro e conversão.",
+        values: {
+          damage: [95, 150, 205, 260],
+          radius: 445,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h025_gravity_summoner_r_dispel",
+        name: "Dispel",
+        sourceTag: "dispel",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Dispel. Define uma função tática específica dentro do kit de mago gravitacional de buraco negro e conversão.",
+        values: {
+          range: [500, 580, 660],
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h026_gadget_mage",
+    archetype: "engenheiro arcano de lasers, máquinas e reposicionamento",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "pusher"],
+    preferredPositions: [2],
+    designTags: ["laser", "machines", "teleport", "rearm"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h026_gadget_mage_q_laser",
+        name: "Laser",
+        sourceTag: "laser",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h026_gadget_mage_w_machines",
+        name: "Machines",
+        sourceTag: "machines",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Machines. Define uma função tática específica dentro do kit de engenheiro arcano de lasers, máquinas e reposicionamento.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h026_gadget_mage_e_teleport",
+        name: "Teleport",
+        sourceTag: "teleport",
+        kind: "active",
+        target: "point",
+        damageType: "none",
+        mechanics: ["mobility"],
+        description: "Terceira habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          global: true,
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 20,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: ["deep_vision", "pickoff", "split_push"],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h026_gadget_mage_r_rearm",
+        name: "Rearm",
+        sourceTag: "rearm",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Rearm. Define uma função tática específica dentro do kit de engenheiro arcano de lasers, máquinas e reposicionamento.",
+        values: {
+          damage: [280, 400, 520],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h027_longshot_artillerist",
+    archetype: "atirador de alcance extremo e execução à distância",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "mid"],
+    preferredPositions: [1, 2],
+    designTags: ["range", "headshot", "shrapnel", "execute"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h027_longshot_artillerist_q_range",
+        name: "Alcance",
+        sourceTag: "range",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Alcance. Define uma função tática específica dentro do kit de atirador de alcance extremo e execução à distância.",
+        values: {
+          damage: [100, 155, 210, 265],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h027_longshot_artillerist_w_headshot",
+        name: "Headshot",
+        sourceTag: "headshot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Headshot. Define uma função tática específica dentro do kit de atirador de alcance extremo e execução à distância.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 20,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h027_longshot_artillerist_e_shrapnel",
+        name: "Shrapnel",
+        sourceTag: "shrapnel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Shrapnel. Define uma função tática específica dentro do kit de atirador de alcance extremo e execução à distância.",
+        values: {
+          damage: [100, 155, 210, 265],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h027_longshot_artillerist_r_execute",
+        name: "Execute",
+        sourceTag: "execute",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Execute. Define uma função tática específica dentro do kit de atirador de alcance extremo e execução à distância.",
+        values: {
+          damage: [260, 380, 500],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h028_plague_saint",
+    archetype: "mago resistente de cura, decomposição e sentença",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["offlane", "mid", "durable", "healer"],
+    preferredPositions: [2, 3],
+    designTags: ["heal_nuke", "aura_dot", "ethereal", "execute"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h028_plague_saint_q_heal_nuke",
+        name: "Cura Nuke",
+        sourceTag: "heal_nuke",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Primeira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 20,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 0
+        },
+        synergyTags: ["cooldown_reduction", "frontliners", "high_value_core", "long_fights", "magic_resistance_reduction", "spell_amp"],
+        counterTags: ["anti_heal", "barrier", "burst_damage", "magic_resistance", "silence", "spell_immunity"],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "W",
+        id: "h028_plague_saint_w_aura_dot",
+        name: "Aura Dot",
+        sourceTag: "aura_dot",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["teamfight_modifier"],
+        description: "Segunda habilidade baseada em Aura Dot. Define uma função tática específica dentro do kit de mago resistente de cura, decomposição e sentença.",
+        values: {
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h028_plague_saint_e_ethereal",
+        name: "Ethereal",
+        sourceTag: "ethereal",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Ethereal. Define uma função tática específica dentro do kit de mago resistente de cura, decomposição e sentença.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h028_plague_saint_r_execute",
+        name: "Execute",
+        sourceTag: "execute",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Execute. Define uma função tática específica dentro do kit de mago resistente de cura, decomposição e sentença.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h029_soul_warlock",
+    archetype: "suporte de laços, cura em área e invocação infernal",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "healer", "disabler", "initiator"],
+    preferredPositions: [5],
+    designTags: ["heal", "fatal_bonds", "summon_golem", "slow_zone"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 55,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h029_soul_warlock_q_heal",
+        name: "Cura",
+        sourceTag: "heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Primeira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "W",
+        id: "h029_soul_warlock_w_fatal_bonds",
+        name: "Fatal Bonds",
+        sourceTag: "fatal_bonds",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Fatal Bonds. Define uma função tática específica dentro do kit de suporte de laços, cura em área e invocação infernal.",
+        values: {
+          damage: [85, 140, 195, 250],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [160, 195, 230, 265],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h029_soul_warlock_e_summon_golem",
+        name: "Invocação Golem",
+        sourceTag: "summon_golem",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Terceira habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [85, 140, 195, 250],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 25,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 10,
+          objective: 20
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "R",
+        id: "h029_soul_warlock_r_slow_zone",
+        name: "Lentidão Zone",
+        sourceTag: "slow_zone",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Ultimate baseada em Lentidão Zone. Define uma função tática específica dentro do kit de suporte de laços, cura em área e invocação infernal.",
+        values: {
+          damage: [245, 365, 485],
+          slowPct: [16, 24, 32],
+          radius: 525,
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      }
+    ]
+  },
+  {
+    heroId: "h030_beast_commander",
+    archetype: "offlaner de aura, animais e rugido de iniciação",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "pusher", "scout"],
+    preferredPositions: [3],
+    designTags: ["summon", "aura", "roar", "scout"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 2,
+      microDemand: 55,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h030_beast_commander_q_summon",
+        name: "Invocação",
+        sourceTag: "summon",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Primeira habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [85, 140, 195, 250],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 25,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 20
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "W",
+        id: "h030_beast_commander_w_aura",
+        name: "Aura",
+        sourceTag: "aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["teamfight_modifier"],
+        description: "Segunda habilidade baseada em Aura. Define uma função tática específica dentro do kit de offlaner de aura, animais e rugido de iniciação.",
+        values: {
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h030_beast_commander_e_roar",
+        name: "Roar",
+        sourceTag: "roar",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Roar. Define uma função tática específica dentro do kit de offlaner de aura, animais e rugido de iniciação.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h030_beast_commander_r_scout",
+        name: "Scout",
+        sourceTag: "scout",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["information"],
+        description: "Ultimate baseada em Scout. Define uma função tática específica dentro do kit de offlaner de aura, animais e rugido de iniciação.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h031_blink_assassin",
+    archetype: "assassina de salto, grito e burst mágico",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "escape"],
+    preferredPositions: [2],
+    designTags: ["blink", "scream", "dagger_dot", "sonic_wave"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h031_blink_assassin_q_blink",
+        name: "Salto",
+        sourceTag: "blink",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Primeira habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 20,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h031_blink_assassin_w_scream",
+        name: "Scream",
+        sourceTag: "scream",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Scream. Define uma função tática específica dentro do kit de assassina de salto, grito e burst mágico.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h031_blink_assassin_e_dagger_dot",
+        name: "Dagger Dot",
+        sourceTag: "dagger_dot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Dagger Dot. Define uma função tática específica dentro do kit de assassina de salto, grito e burst mágico.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 20,
+          farming: 10,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h031_blink_assassin_r_sonic_wave",
+        name: "Sonic Onda",
+        sourceTag: "sonic_wave",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 20,
+          farming: 10,
+          gank: 20,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h032_poison_alchemist",
+    archetype: "zoner venenoso de wards, veneno e ultimate infecciosa",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "offlane", "nuker", "pusher"],
+    preferredPositions: [3, 4],
+    designTags: ["poison", "wards", "slow", "plague"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h032_poison_alchemist_q_poison",
+        name: "Veneno",
+        sourceTag: "poison",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Primeira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [110, 165, 220, 275],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "W",
+        id: "h032_poison_alchemist_w_wards",
+        name: "Wards",
+        sourceTag: "wards",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units", "information"],
+        description: "Segunda habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [110, 165, 220, 275],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 25,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 10,
+          objective: 20
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "E",
+        id: "h032_poison_alchemist_e_slow",
+        name: "Lentidão",
+        sourceTag: "slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Terceira habilidade baseada em Lentidão. Define uma função tática específica dentro do kit de zoner venenoso de wards, veneno e ultimate infecciosa.",
+        values: {
+          damage: [110, 165, 220, 275],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "R",
+        id: "h032_poison_alchemist_r_plague",
+        name: "Plague",
+        sourceTag: "plague",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Plague. Define uma função tática específica dentro do kit de zoner venenoso de wards, veneno e ultimate infecciosa.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h033_chrono_duelist",
+    archetype: "carry temporal de esquiva, salto e prisão em área",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "initiator", "escape"],
+    preferredPositions: [1],
+    designTags: ["time_walk", "bash", "cooldown_slow", "time_dome"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h033_chrono_duelist_q_time_walk",
+        name: "Time Walk",
+        sourceTag: "time_walk",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Time Walk. Define uma função tática específica dentro do kit de carry temporal de esquiva, salto e prisão em área.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h033_chrono_duelist_w_bash",
+        name: "Bash",
+        sourceTag: "bash",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["hard_control"],
+        description: "Segunda habilidade baseada em Bash. Define uma função tática específica dentro do kit de carry temporal de esquiva, salto e prisão em área.",
+        values: {
+          damage: [85, 140, 195, 250],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h033_chrono_duelist_e_cooldown_slow",
+        name: "Cooldown Lentidão",
+        sourceTag: "cooldown_slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Terceira habilidade baseada em Cooldown Lentidão. Define uma função tática específica dentro do kit de carry temporal de esquiva, salto e prisão em área.",
+        values: {
+          damage: [85, 140, 195, 250],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "R",
+        id: "h033_chrono_duelist_r_time_dome",
+        name: "Time Dome",
+        sourceTag: "time_dome",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Time Dome. Define uma função tática específica dentro do kit de carry temporal de esquiva, salto e prisão em área.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h034_skeleton_monarch",
+    archetype: "carry resiliente de crítico, esqueletos e segunda vida",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["carry", "durable", "pusher"],
+    preferredPositions: [1],
+    designTags: ["lifesteal", "crit", "summon_skeletons", "reincarnation"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 1,
+      microDemand: 45,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h034_skeleton_monarch_q_lifesteal",
+        name: "Roubo de Vida",
+        sourceTag: "lifesteal",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        mechanics: ["attack_scaling"],
+        description: "Primeira habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [75, 130, 185, 240],
+          lifestealPct: [15, 25, 35, 45],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 35,
+          gank: 0,
+          teamfight: 20,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 35
+        },
+        synergyTags: [],
+        counterTags: ["anti_heal", "armor", "burst_damage", "disarm", "evasion", "kiting", "silence"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "W",
+        id: "h034_skeleton_monarch_w_crit",
+        name: "Crit",
+        sourceTag: "crit",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Crit. Define uma função tática específica dentro do kit de carry resiliente de crítico, esqueletos e segunda vida.",
+        values: {
+          damage: [95, 150, 205, 260],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [160, 195, 230, 265],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h034_skeleton_monarch_e_summon_skeletons",
+        name: "Invocação Skeletons",
+        sourceTag: "summon_skeletons",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Terceira habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [75, 130, 185, 240],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 35,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 30
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "R",
+        id: "h034_skeleton_monarch_r_reincarnation",
+        name: "Reincarnation",
+        sourceTag: "reincarnation",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Reincarnation. Define uma função tática específica dentro do kit de carry resiliente de crítico, esqueletos e segunda vida.",
+        values: {
+          damage: [235, 355, 475],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h035_death_singer",
+    archetype: "mago de silêncio, espírito e pressão de torres",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "pusher", "nuker", "durable"],
+    preferredPositions: [2],
+    designTags: ["silence", "spirit_swarm", "siphon", "exorcism"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h035_death_singer_q_silence",
+        name: "Silêncio",
+        sourceTag: "silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["spell_lockout"],
+        description: "Primeira habilidade baseada em Silêncio. Define uma função tática específica dentro do kit de mago de silêncio, espírito e pressão de torres.",
+        values: {
+          damage: [110, 165, 220, 275],
+          silence: [2.0, 2.6, 3.2, 3.8],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 35,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "W",
+        id: "h035_death_singer_w_spirit_swarm",
+        name: "Espírito Swarm",
+        sourceTag: "spirit_swarm",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Espírito Swarm. Define uma função tática específica dentro do kit de mago de silêncio, espírito e pressão de torres.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "E",
+        id: "h035_death_singer_e_siphon",
+        name: "Siphon",
+        sourceTag: "siphon",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Siphon. Define uma função tática específica dentro do kit de mago de silêncio, espírito e pressão de torres.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h035_death_singer_r_exorcism",
+        name: "Exorcism",
+        sourceTag: "exorcism",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Exorcism. Define uma função tática específica dentro do kit de mago de silêncio, espírito e pressão de torres.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h036_blade_assassin",
+    archetype: "assassina física de adaga, evasão e crítico extremo",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "escape"],
+    preferredPositions: [1],
+    designTags: ["dagger", "blink", "evasion", "critical"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h036_blade_assassin_q_dagger",
+        name: "Dagger",
+        sourceTag: "dagger",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Dagger. Define uma função tática específica dentro do kit de assassina física de adaga, evasão e crítico extremo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 20,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h036_blade_assassin_w_blink",
+        name: "Salto",
+        sourceTag: "blink",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Segunda habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 20,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h036_blade_assassin_e_evasion",
+        name: "Evasion",
+        sourceTag: "evasion",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Evasion. Define uma função tática específica dentro do kit de assassina física de adaga, evasão e crítico extremo.",
+        values: {
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h036_blade_assassin_r_critical",
+        name: "Crítico",
+        sourceTag: "critical",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        mechanics: ["attack_scaling"],
+        description: "Ultimate de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [265, 385, 505],
+          critChance: [12, 16, 20],
+          critMultiplier: [160, 195, 230],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 35,
+          gank: 0,
+          teamfight: 65,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 50
+        },
+        synergyTags: ["armor_reduction", "attack_speed", "lifesteal"],
+        counterTags: ["armor", "disarm", "evasion", "kiting"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      }
+    ]
+  },
+  {
+    heroId: "h037_nether_pusher",
+    archetype: "mago de drenagem, explosão e antimagia estrutural",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "pusher", "nuker"],
+    preferredPositions: [2],
+    designTags: ["life_drain", "nether_blast", "decrepify", "ward"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h037_nether_pusher_q_life_drain",
+        name: "Life Drain",
+        sourceTag: "life_drain",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Life Drain. Define uma função tática específica dentro do kit de mago de drenagem, explosão e antimagia estrutural.",
+        values: {
+          damage: [110, 165, 220, 275],
+          radius: 405,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h037_nether_pusher_w_nether_blast",
+        name: "Nether Blast",
+        sourceTag: "nether_blast",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["mobility_lockout"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [110, 165, 220, 275],
+          root: [1.2, 1.6, 2.0, 2.4],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h037_nether_pusher_e_decrepify",
+        name: "Decrepify",
+        sourceTag: "decrepify",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Decrepify. Define uma função tática específica dentro do kit de mago de drenagem, explosão e antimagia estrutural.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h037_nether_pusher_r_ward",
+        name: "Sentinela",
+        sourceTag: "ward",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units", "information"],
+        description: "Ultimate de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [270, 390, 510],
+          summons: [1, 2, 3],
+          summonDuration: [20, 28, 36],
+          range: [500, 580, 660],
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 25,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 35
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      }
+    ]
+  },
+  {
+    heroId: "h038_psychic_assassin",
+    archetype: "carry psíquica de refração, armadilhas e burst",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["mid", "carry"],
+    preferredPositions: [1, 2],
+    designTags: ["shield_charges", "psi_blades", "traps", "meld"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h038_psychic_assassin_q_shield_charges",
+        name: "Escudo Charges",
+        sourceTag: "shield_charges",
+        kind: "active",
+        target: "point",
+        damageType: "none",
+        mechanics: ["defensive_utility", "mobility"],
+        description: "Primeira habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          barrierOrArmorValue: [80, 140, 200, 260],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 20,
+          teamfight: 20,
+          retreat: 40,
+          push: 0,
+          save: 45,
+          objective: 10
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: [],
+        scaling: {
+          attribute: "agility",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "W",
+        id: "h038_psychic_assassin_w_psi_blades",
+        name: "Psi Blades",
+        sourceTag: "psi_blades",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Psi Blades. Define uma função tática específica dentro do kit de carry psíquica de refração, armadilhas e burst.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h038_psychic_assassin_e_traps",
+        name: "Traps",
+        sourceTag: "traps",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Traps. Define uma função tática específica dentro do kit de carry psíquica de refração, armadilhas e burst.",
+        values: {
+          damage: [120, 175, 230, 285],
+          radius: 445,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h038_psychic_assassin_r_meld",
+        name: "Meld",
+        sourceTag: "meld",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Meld. Define uma função tática específica dentro do kit de carry psíquica de refração, armadilhas e burst.",
+        values: {
+          damage: [280, 400, 520],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h039_venom_dragon",
+    archetype: "dragão venenoso de corrosão, lentidão e break",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["mid", "offlane", "nuker", "durable"],
+    preferredPositions: [2, 3],
+    designTags: ["poison_attack", "break", "slow", "corrosive_skin"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h039_venom_dragon_q_poison_attack",
+        name: "Veneno Attack",
+        sourceTag: "poison_attack",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["movement_control"],
+        description: "Primeira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [100, 155, 210, 265],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: ["armor_reduction", "attack_speed", "lifesteal"],
+        counterTags: ["armor", "basic_or_strong_dispel", "debuff_immunity", "disarm", "evasion", "kiting", "status_resistance"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "W",
+        id: "h039_venom_dragon_w_break",
+        name: "Break",
+        sourceTag: "break",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Break. Define uma função tática específica dentro do kit de dragão venenoso de corrosão, lentidão e break.",
+        values: {
+          damage: [100, 155, 210, 265],
+          armorReduction: [2.0, 3.5, 5.0, 6.5],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h039_venom_dragon_e_slow",
+        name: "Lentidão",
+        sourceTag: "slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Terceira habilidade baseada em Lentidão. Define uma função tática específica dentro do kit de dragão venenoso de corrosão, lentidão e break.",
+        values: {
+          damage: [100, 155, 210, 265],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "R",
+        id: "h039_venom_dragon_r_corrosive_skin",
+        name: "Corrosive Skin",
+        sourceTag: "corrosive_skin",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Corrosive Skin. Define uma função tática específica dentro do kit de dragão venenoso de corrosão, lentidão e break.",
+        values: {
+          damage: [260, 380, 500],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h040_lunar_raider",
+    archetype: "carry lunar de ricochete, aura e bombardeio mágico",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "pusher", "nuker"],
+    preferredPositions: [1],
+    designTags: ["bounce", "aura", "beam", "eclipse"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h040_lunar_raider_q_bounce",
+        name: "Bounce",
+        sourceTag: "bounce",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Bounce. Define uma função tática específica dentro do kit de carry lunar de ricochete, aura e bombardeio mágico.",
+        values: {
+          damage: [100, 155, 210, 265],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h040_lunar_raider_w_aura",
+        name: "Aura",
+        sourceTag: "aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["teamfight_modifier"],
+        description: "Segunda habilidade baseada em Aura. Define uma função tática específica dentro do kit de carry lunar de ricochete, aura e bombardeio mágico.",
+        values: {
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h040_lunar_raider_e_beam",
+        name: "Beam",
+        sourceTag: "beam",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Beam. Define uma função tática específica dentro do kit de carry lunar de ricochete, aura e bombardeio mágico.",
+        values: {
+          damage: [100, 155, 210, 265],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h040_lunar_raider_r_eclipse",
+        name: "Eclipse",
+        sourceTag: "eclipse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Eclipse. Define uma função tática específica dentro do kit de carry lunar de ricochete, aura e bombardeio mágico.",
+        values: {
+          damage: [260, 380, 500],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h041_dragon_knight",
+    archetype: "tanque de linha, stun e forma dracônica",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["mid", "offlane", "durable", "pusher", "disabler"],
+    preferredPositions: [2, 3],
+    designTags: ["dragon_form", "stun", "armor_regen", "breath"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 57
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h041_dragon_knight_q_dragon_form",
+        name: "Dragão Form",
+        sourceTag: "dragon_form",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Dragão Form. Define uma função tática específica dentro do kit de tanque de linha, stun e forma dracônica.",
+        values: {
+          damage: [100, 155, 210, 265],
+          duration: [5, 7, 9, 11],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h041_dragon_knight_w_stun",
+        name: "Atordoamento",
+        sourceTag: "stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Segunda habilidade de controle para o arquétipo de tanque de linha, stun e forma dracônica. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [100, 155, 210, 265],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 35,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "E",
+        id: "h041_dragon_knight_e_armor_regen",
+        name: "Armadura Regeneração",
+        sourceTag: "armor_regen",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Terceira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          barrierOrArmorValue: [80, 140, 200, 260],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["anti_heal", "burst_damage", "silence"]
+      },
+      {
+        key: "R",
+        id: "h041_dragon_knight_r_breath",
+        name: "Breath",
+        sourceTag: "breath",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Breath. Define uma função tática específica dentro do kit de tanque de linha, stun e forma dracônica.",
+        values: {
+          damage: [260, 380, 500],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h042_grave_savior",
+    archetype: "suporte de cura, veneno e negação de morte",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["hard_support", "healer", "disabler"],
+    preferredPositions: [5],
+    designTags: ["save", "heal", "armor_shift", "poison"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h042_grave_savior_q_save",
+        name: "Salvamento",
+        sourceTag: "save",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Primeira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h042_grave_savior_w_heal",
+        name: "Cura",
+        sourceTag: "heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Segunda habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "highest",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "E",
+        id: "h042_grave_savior_e_armor_shift",
+        name: "Armadura Shift",
+        sourceTag: "armor_shift",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Terceira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          barrierOrArmorValue: [80, 140, 200, 260],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h042_grave_savior_r_poison",
+        name: "Veneno",
+        sourceTag: "poison",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Ultimate de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [245, 365, 485],
+          slowPct: [16, 24, 32],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      }
+    ]
+  },
+  {
+    heroId: "h043_clockwork_trapper",
+    archetype: "iniciador mecânico de jaula, foguetes e gancho",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler"],
+    preferredPositions: [3, 4],
+    designTags: ["cogs", "hookshot", "rocket_vision", "battery"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h043_clockwork_trapper_q_cogs",
+        name: "Cogs",
+        sourceTag: "cogs",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Cogs. Define uma função tática específica dentro do kit de iniciador mecânico de jaula, foguetes e gancho.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h043_clockwork_trapper_w_hookshot",
+        name: "Hookshot",
+        sourceTag: "hookshot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Hookshot. Define uma função tática específica dentro do kit de iniciador mecânico de jaula, foguetes e gancho.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 30,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h043_clockwork_trapper_e_rocket_vision",
+        name: "Rocket Visão",
+        sourceTag: "rocket_vision",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["information"],
+        description: "Terceira habilidade baseada em Rocket Visão. Define uma função tática específica dentro do kit de iniciador mecânico de jaula, foguetes e gancho.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h043_clockwork_trapper_r_battery",
+        name: "Battery",
+        sourceTag: "battery",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Battery. Define uma função tática específica dentro do kit de iniciador mecânico de jaula, foguetes e gancho.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h044_lightning_demon",
+    archetype: "caster de vínculo elétrico, empurrão e tempestade",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "offlane", "nuker"],
+    preferredPositions: [2, 3],
+    designTags: ["link_damage", "plasma", "storm_eye", "speed"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h044_lightning_demon_q_link_damage",
+        name: "Link Damage",
+        sourceTag: "link_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Link Damage. Define uma função tática específica dentro do kit de caster de vínculo elétrico, empurrão e tempestade.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h044_lightning_demon_w_plasma",
+        name: "Plasma",
+        sourceTag: "plasma",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Plasma. Define uma função tática específica dentro do kit de caster de vínculo elétrico, empurrão e tempestade.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h044_lightning_demon_e_storm_eye",
+        name: "Tempestade Eye",
+        sourceTag: "storm_eye",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [110, 165, 220, 275],
+          radius: 405,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "R",
+        id: "h044_lightning_demon_r_speed",
+        name: "Velocidade",
+        sourceTag: "speed",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Velocidade. Define uma função tática específica dentro do kit de caster de vínculo elétrico, empurrão e tempestade.",
+        values: {
+          damage: [270, 390, 510],
+          moveSpeedBonusPct: [10, 16, 22],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h045_forest_commander",
+    archetype: "mago global de teleporte, árvores e invocação",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["offlane", "mid", "pusher"],
+    preferredPositions: [2, 3],
+    designTags: ["global", "summon", "tree_trap", "wrath"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 3,
+      microDemand: 65,
+      teamfightReliability: 77
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h045_forest_commander_q_global",
+        name: "Global",
+        sourceTag: "global",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["global_pressure"],
+        description: "Primeira habilidade global ou semi-global. Serve para punir mapa aberto, conectar lutas, defender objetivo ou transformar pickoff em objetivo.",
+        values: {
+          damage: [120, 175, 230, 285],
+          global: true,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 30,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 20
+        },
+        synergyTags: ["deep_vision", "pickoff", "split_push"],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h045_forest_commander_w_summon",
+        name: "Invocação",
+        sourceTag: "summon",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Segunda habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [120, 175, 230, 285],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 25,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 20
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "E",
+        id: "h045_forest_commander_e_tree_trap",
+        name: "Árvore Armadilha",
+        sourceTag: "tree_trap",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Árvore Armadilha. Define uma função tática específica dentro do kit de mago global de teleporte, árvores e invocação.",
+        values: {
+          damage: [120, 175, 230, 285],
+          radius: 445,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h045_forest_commander_r_wrath",
+        name: "Wrath",
+        sourceTag: "wrath",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["global_pressure"],
+        description: "Ultimate global ou semi-global. Serve para punir mapa aberto, conectar lutas, defender objetivo ou transformar pickoff em objetivo.",
+        values: {
+          damage: [280, 400, 520],
+          global: true,
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 30,
+          teamfight: 70,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 35
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h046_lifesteal_berserker",
+    archetype: "carry de roubo de vida, imunidade curta e infestação",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["carry", "durable", "escape"],
+    preferredPositions: [1],
+    designTags: ["lifesteal", "rage", "open_wounds", "infest"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h046_lifesteal_berserker_q_lifesteal",
+        name: "Roubo de Vida",
+        sourceTag: "lifesteal",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        mechanics: ["attack_scaling"],
+        description: "Primeira habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [75, 130, 185, 240],
+          lifestealPct: [15, 25, 35, 45],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 35,
+          gank: 0,
+          teamfight: 20,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 35
+        },
+        synergyTags: [],
+        counterTags: ["anti_heal", "armor", "burst_damage", "disarm", "evasion", "kiting", "silence"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "W",
+        id: "h046_lifesteal_berserker_w_rage",
+        name: "Rage",
+        sourceTag: "rage",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Rage. Define uma função tática específica dentro do kit de carry de roubo de vida, imunidade curta e infestação.",
+        values: {
+          damage: [75, 130, 185, 240],
+          duration: [5, 7, 9, 11],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h046_lifesteal_berserker_e_open_wounds",
+        name: "Open Wounds",
+        sourceTag: "open_wounds",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Open Wounds. Define uma função tática específica dentro do kit de carry de roubo de vida, imunidade curta e infestação.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h046_lifesteal_berserker_r_infest",
+        name: "Infest",
+        sourceTag: "infest",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Infest. Define uma função tática específica dentro do kit de carry de roubo de vida, imunidade curta e infestação.",
+        values: {
+          damage: [235, 355, 475],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h047_dark_vector",
+    archetype: "offlaner de vácuo, parede e corrida acelerada",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "pusher"],
+    preferredPositions: [3],
+    designTags: ["vacuum", "wall", "ion_shell", "surge"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h047_dark_vector_q_vacuum",
+        name: "Vacuum",
+        sourceTag: "vacuum",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Vacuum. Define uma função tática específica dentro do kit de offlaner de vácuo, parede e corrida acelerada.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h047_dark_vector_w_wall",
+        name: "Wall",
+        sourceTag: "wall",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Wall. Define uma função tática específica dentro do kit de offlaner de vácuo, parede e corrida acelerada.",
+        values: {
+          damage: [95, 150, 205, 260],
+          radius: 445,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h047_dark_vector_e_ion_shell",
+        name: "Ion Shell",
+        sourceTag: "ion_shell",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Ion Shell. Define uma função tática específica dentro do kit de offlaner de vácuo, parede e corrida acelerada.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h047_dark_vector_r_surge",
+        name: "Surge",
+        sourceTag: "surge",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Surge. Define uma função tática específica dentro do kit de offlaner de vácuo, parede e corrida acelerada.",
+        values: {
+          damage: [255, 375, 495],
+          moveSpeedBonusPct: [10, 16, 22],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h048_bone_archer",
+    archetype: "atirador invisível de fogo, esqueletos e pickoff",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "mid", "pusher", "escape"],
+    preferredPositions: [1, 2],
+    designTags: ["stealth", "searing_arrows", "summon_skeletons", "strafe"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 55,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h048_bone_archer_q_stealth",
+        name: "Stealth",
+        sourceTag: "stealth",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Stealth. Define uma função tática específica dentro do kit de atirador invisível de fogo, esqueletos e pickoff.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: ["dust", "grouping", "sentry", "true_sight"]
+      },
+      {
+        key: "W",
+        id: "h048_bone_archer_w_searing_arrows",
+        name: "Searing Arrows",
+        sourceTag: "searing_arrows",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Searing Arrows. Define uma função tática específica dentro do kit de atirador invisível de fogo, esqueletos e pickoff.",
+        values: {
+          damage: [130, 185, 240, 295],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h048_bone_archer_e_summon_skeletons",
+        name: "Invocação Skeletons",
+        sourceTag: "summon_skeletons",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Terceira habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [110, 165, 220, 275],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 35,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 30
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "R",
+        id: "h048_bone_archer_r_strafe",
+        name: "Strafe",
+        sourceTag: "strafe",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Strafe. Define uma função tática específica dentro do kit de atirador invisível de fogo, esqueletos e pickoff.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h049_dark_paladin",
+    archetype: "frontliner universal de escudo, cura e negação",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "hard_support", "durable", "healer"],
+    preferredPositions: [3, 5],
+    designTags: ["shield", "borrowed_life", "heal_damage", "curse"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h049_dark_paladin_q_shield",
+        name: "Escudo",
+        sourceTag: "shield",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Primeira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          barrierOrArmorValue: [80, 140, 200, 260],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: [],
+        scaling: {
+          attribute: "highest",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "W",
+        id: "h049_dark_paladin_w_borrowed_life",
+        name: "Borrowed Life",
+        sourceTag: "borrowed_life",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          damage: [75, 130, 185, 240],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h049_dark_paladin_e_heal_damage",
+        name: "Cura Damage",
+        sourceTag: "heal_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Terceira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "highest",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "R",
+        id: "h049_dark_paladin_r_curse",
+        name: "Curse",
+        sourceTag: "curse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Curse. Define uma função tática específica dentro do kit de frontliner universal de escudo, cura e negação.",
+        values: {
+          damage: [235, 355, 475],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h050_wild_enchantress",
+    archetype: "suporte selvagem de cura, controle de creeps e poke",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "soft_support", "pusher"],
+    preferredPositions: [4, 5],
+    designTags: ["heal", "creep_control", "slow", "untouchable"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h050_wild_enchantress_q_heal",
+        name: "Cura",
+        sourceTag: "heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Primeira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "W",
+        id: "h050_wild_enchantress_w_creep_control",
+        name: "Creep Control",
+        sourceTag: "creep_control",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Creep Control. Define uma função tática específica dentro do kit de suporte selvagem de cura, controle de creeps e poke.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h050_wild_enchantress_e_slow",
+        name: "Lentidão",
+        sourceTag: "slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Terceira habilidade baseada em Lentidão. Define uma função tática específica dentro do kit de suporte selvagem de cura, controle de creeps e poke.",
+        values: {
+          damage: [85, 140, 195, 250],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "R",
+        id: "h050_wild_enchantress_r_untouchable",
+        name: "Untouchable",
+        sourceTag: "untouchable",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Untouchable. Define uma função tática específica dentro do kit de suporte selvagem de cura, controle de creeps e poke.",
+        values: {
+          damage: [245, 365, 485],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h051_spear_martyr",
+    archetype: "lutador de sacrifício, fogo interior e dano crescente",
+    primaryAttribute: "strength",
+    attackType: "ranged",
+    roles: ["carry", "offlane", "durable"],
+    preferredPositions: [1, 3],
+    designTags: ["sacrifice", "burning_spears", "regen_break", "berserk"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h051_spear_martyr_q_sacrifice",
+        name: "Sacrifice",
+        sourceTag: "sacrifice",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "W",
+        id: "h051_spear_martyr_w_burning_spears",
+        name: "Burning Spears",
+        sourceTag: "burning_spears",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Burning Spears. Define uma função tática específica dentro do kit de lutador de sacrifício, fogo interior e dano crescente.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h051_spear_martyr_e_regen_break",
+        name: "Regeneração Break",
+        sourceTag: "regen_break",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Regeneração Break. Define uma função tática específica dentro do kit de lutador de sacrifício, fogo interior e dano crescente.",
+        values: {
+          damage: [85, 140, 195, 250],
+          armorReduction: [2.0, 3.5, 5.0, 6.5],
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: ["anti_heal", "burst_damage", "silence"]
+      },
+      {
+        key: "R",
+        id: "h051_spear_martyr_r_berserk",
+        name: "Berserk",
+        sourceTag: "berserk",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Berserk. Define uma função tática específica dentro do kit de lutador de sacrifício, fogo interior e dano crescente.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h052_night_hunter",
+    archetype: "caçador noturno de silêncio, voo e visão superior",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler"],
+    preferredPositions: [3, 4],
+    designTags: ["night_power", "silence", "void_slow", "vision"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h052_night_hunter_q_night_power",
+        name: "Night Power",
+        sourceTag: "night_power",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Night Power. Define uma função tática específica dentro do kit de caçador noturno de silêncio, voo e visão superior.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h052_night_hunter_w_silence",
+        name: "Silêncio",
+        sourceTag: "silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["spell_lockout"],
+        description: "Segunda habilidade baseada em Silêncio. Define uma função tática específica dentro do kit de caçador noturno de silêncio, voo e visão superior.",
+        values: {
+          damage: [85, 140, 195, 250],
+          silence: [2.0, 2.6, 3.2, 3.8],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "E",
+        id: "h052_night_hunter_e_void_slow",
+        name: "Vazio Lentidão",
+        sourceTag: "void_slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Terceira habilidade baseada em Vazio Lentidão. Define uma função tática específica dentro do kit de caçador noturno de silêncio, voo e visão superior.",
+        values: {
+          damage: [85, 140, 195, 250],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "R",
+        id: "h052_night_hunter_r_vision",
+        name: "Visão",
+        sourceTag: "vision",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["information"],
+        description: "Ultimate baseada em Visão. Define uma função tática específica dentro do kit de caçador noturno de silêncio, voo e visão superior.",
+        values: {
+          range: [500, 580, 660],
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h053_brood_matriarch",
+    archetype: "pusher de teia, mobilidade territorial e crias",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "mid", "pusher", "escape"],
+    preferredPositions: [2, 3],
+    designTags: ["webs", "spawn", "lifesteal", "territory"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 3,
+      microDemand: 65,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h053_brood_matriarch_q_webs",
+        name: "Teias",
+        sourceTag: "webs",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 25,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 20
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h053_brood_matriarch_w_spawn",
+        name: "Cria",
+        sourceTag: "spawn",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h053_brood_matriarch_e_lifesteal",
+        name: "Roubo de Vida",
+        sourceTag: "lifesteal",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        mechanics: ["attack_scaling"],
+        description: "Terceira habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [120, 175, 230, 285],
+          lifestealPct: [15, 25, 35, 45],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 25,
+          gank: 0,
+          teamfight: 20,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: ["anti_heal", "armor", "burst_damage", "disarm", "evasion", "kiting", "silence"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "R",
+        id: "h053_brood_matriarch_r_territory",
+        name: "Territory",
+        sourceTag: "territory",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Territory. Define uma função tática específica dentro do kit de pusher de teia, mobilidade territorial e crias.",
+        values: {
+          damage: [280, 400, 520],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h054_bounty_scout",
+    archetype: "caçador furtivo de visão, ouro e perseguição",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["soft_support", "scout", "escape"],
+    preferredPositions: [4],
+    designTags: ["track", "stealth", "bonus_gold", "shuriken"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h054_bounty_scout_q_track",
+        name: "Track",
+        sourceTag: "track",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["information"],
+        description: "Primeira habilidade baseada em Track. Define uma função tática específica dentro do kit de caçador furtivo de visão, ouro e perseguição.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h054_bounty_scout_w_stealth",
+        name: "Stealth",
+        sourceTag: "stealth",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Stealth. Define uma função tática específica dentro do kit de caçador furtivo de visão, ouro e perseguição.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["dust", "grouping", "sentry", "true_sight"]
+      },
+      {
+        key: "E",
+        id: "h054_bounty_scout_e_bonus_gold",
+        name: "Bonus Ouro",
+        sourceTag: "bonus_gold",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Bonus Ouro. Define uma função tática específica dentro do kit de caçador furtivo de visão, ouro e perseguição.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h054_bounty_scout_r_shuriken",
+        name: "Shuriken",
+        sourceTag: "shuriken",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Shuriken. Define uma função tática específica dentro do kit de caçador furtivo de visão, ouro e perseguição.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h055_time_weaver",
+    archetype: "carry móvel de insetos, redução de armadura e reversão",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "escape", "scout"],
+    preferredPositions: [1],
+    designTags: ["time_lapse", "swarm", "shukuchi", "double_hit"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h055_time_weaver_q_time_lapse",
+        name: "Time Lapse",
+        sourceTag: "time_lapse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Time Lapse. Define uma função tática específica dentro do kit de carry móvel de insetos, redução de armadura e reversão.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h055_time_weaver_w_swarm",
+        name: "Swarm",
+        sourceTag: "swarm",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Swarm. Define uma função tática específica dentro do kit de carry móvel de insetos, redução de armadura e reversão.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "E",
+        id: "h055_time_weaver_e_shukuchi",
+        name: "Shukuchi",
+        sourceTag: "shukuchi",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Shukuchi. Define uma função tática específica dentro do kit de carry móvel de insetos, redução de armadura e reversão.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h055_time_weaver_r_double_hit",
+        name: "Double Hit",
+        sourceTag: "double_hit",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["attack_scaling"],
+        description: "Ultimate baseada em Double Hit. Define uma função tática específica dentro do kit de carry móvel de insetos, redução de armadura e reversão.",
+        values: {
+          damage: [255, 375, 495],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h056_twin_dragon",
+    archetype: "suporte bicéfalo de gelo/fogo e controle de área",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "pusher", "disabler", "nuker"],
+    preferredPositions: [5],
+    designTags: ["dual_breath", "ice_path", "liquid_fire", "macropyre"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h056_twin_dragon_q_dual_breath",
+        name: "Dual Breath",
+        sourceTag: "dual_breath",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Dual Breath. Define uma função tática específica dentro do kit de suporte bicéfalo de gelo/fogo e controle de área.",
+        values: {
+          damage: [100, 155, 210, 265],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h056_twin_dragon_w_ice_path",
+        name: "Gelo Path",
+        sourceTag: "ice_path",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [100, 155, 210, 265],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h056_twin_dragon_e_liquid_fire",
+        name: "Liquid Fogo",
+        sourceTag: "liquid_fire",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [100, 155, 210, 265],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "R",
+        id: "h056_twin_dragon_r_macropyre",
+        name: "Macropyre",
+        sourceTag: "macropyre",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Macropyre. Define uma função tática específica dentro do kit de suporte bicéfalo de gelo/fogo e controle de área.",
+        values: {
+          damage: [260, 380, 500],
+          radius: 485,
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h057_fire_rider",
+    archetype: "iniciador voador de óleo, trilha de fogo e arrasto",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["offlane", "initiator", "disabler", "escape"],
+    preferredPositions: [3],
+    designTags: ["sticky_oil", "trail_fire", "drag", "knockback"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h057_fire_rider_q_sticky_oil",
+        name: "Sticky Oil",
+        sourceTag: "sticky_oil",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Primeira habilidade baseada em Sticky Oil. Define uma função tática específica dentro do kit de iniciador voador de óleo, trilha de fogo e arrasto.",
+        values: {
+          damage: [95, 150, 205, 260],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h057_fire_rider_w_trail_fire",
+        name: "Trail Fogo",
+        sourceTag: "trail_fire",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h057_fire_rider_e_drag",
+        name: "Drag",
+        sourceTag: "drag",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Drag. Define uma função tática específica dentro do kit de iniciador voador de óleo, trilha de fogo e arrasto.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h057_fire_rider_r_knockback",
+        name: "Knockback",
+        sourceTag: "knockback",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Knockback. Define uma função tática específica dentro do kit de iniciador voador de óleo, trilha de fogo e arrasto.",
+        values: {
+          damage: [255, 375, 495],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h058_animal_priest",
+    archetype: "suporte de controle espiritual e exército neutro",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["hard_support", "pusher", "healer"],
+    preferredPositions: [5],
+    designTags: ["convert", "heal", "global_recall", "army"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 65,
+      teamfightReliability: 77
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h058_animal_priest_q_convert",
+        name: "Convert",
+        sourceTag: "convert",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Convert. Define uma função tática específica dentro do kit de suporte de controle espiritual e exército neutro.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h058_animal_priest_w_heal",
+        name: "Cura",
+        sourceTag: "heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Segunda habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "highest",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "E",
+        id: "h058_animal_priest_e_global_recall",
+        name: "Global Recall",
+        sourceTag: "global_recall",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["global_pressure"],
+        description: "Terceira habilidade global ou semi-global. Serve para punir mapa aberto, conectar lutas, defender objetivo ou transformar pickoff em objetivo.",
+        values: {
+          damage: [95, 150, 205, 260],
+          global: true,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 40,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 20
+        },
+        synergyTags: ["deep_vision", "pickoff", "split_push"],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h058_animal_priest_r_army",
+        name: "Army",
+        sourceTag: "army",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Army. Define uma função tática específica dentro do kit de suporte de controle espiritual e exército neutro.",
+        values: {
+          damage: [255, 375, 495],
+          summons: [1, 2, 3],
+          summonDuration: [20, 28, 36],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h059_specter_global",
+    archetype: "carry espectral de dispersão e presença global",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "durable"],
+    preferredPositions: [1],
+    designTags: ["dispersion", "global_shadow", "dagger_path", "desolate"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h059_specter_global_q_dispersion",
+        name: "Dispersion",
+        sourceTag: "dispersion",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Dispersion. Define uma função tática específica dentro do kit de carry espectral de dispersão e presença global.",
+        values: {
+          damage: [85, 140, 195, 250],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h059_specter_global_w_global_shadow",
+        name: "Global Sombra",
+        sourceTag: "global_shadow",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["global_pressure"],
+        description: "Segunda habilidade global ou semi-global. Serve para punir mapa aberto, conectar lutas, defender objetivo ou transformar pickoff em objetivo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          global: true,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 30,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 30
+        },
+        synergyTags: ["deep_vision", "pickoff", "split_push"],
+        counterTags: ["dust", "grouping", "sentry", "true_sight"]
+      },
+      {
+        key: "E",
+        id: "h059_specter_global_e_dagger_path",
+        name: "Dagger Path",
+        sourceTag: "dagger_path",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Dagger Path. Define uma função tática específica dentro do kit de carry espectral de dispersão e presença global.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 20,
+          farming: 20,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h059_specter_global_r_desolate",
+        name: "Desolate",
+        sourceTag: "desolate",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Desolate. Define uma função tática específica dentro do kit de carry espectral de dispersão e presença global.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h060_doom_bringer",
+    archetype: "brutamontes de devorar, maldição e silêncio supremo",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    preferredPositions: [3],
+    designTags: ["devour", "infernal_blade", "scorched_earth", "doom"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h060_doom_bringer_q_devour",
+        name: "Devour",
+        sourceTag: "devour",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Devour. Define uma função tática específica dentro do kit de brutamontes de devorar, maldição e silêncio supremo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h060_doom_bringer_w_infernal_blade",
+        name: "Infernal Blade",
+        sourceTag: "infernal_blade",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Infernal Blade. Define uma função tática específica dentro do kit de brutamontes de devorar, maldição e silêncio supremo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h060_doom_bringer_e_scorched_earth",
+        name: "Scorched Earth",
+        sourceTag: "scorched_earth",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Scorched Earth. Define uma função tática específica dentro do kit de brutamontes de devorar, maldição e silêncio supremo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h060_doom_bringer_r_doom",
+        name: "Condenação",
+        sourceTag: "doom",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["spell_lockout"],
+        description: "Ultimate baseada em Condenação. Define uma função tática específica dentro do kit de brutamontes de devorar, maldição e silêncio supremo.",
+        values: {
+          damage: [245, 365, 485],
+          silence: [4.0, 4.6, 5.2],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: true,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h061_ice_ancient",
+    archetype: "suporte glacial de negação de cura e controle global",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "nuker", "disabler"],
+    preferredPositions: [5],
+    designTags: ["anti_heal", "ice_blast", "chilling_touch", "cold_feet"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h061_ice_ancient_q_anti_heal",
+        name: "Anti Cura",
+        sourceTag: "anti_heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Primeira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "W",
+        id: "h061_ice_ancient_w_ice_blast",
+        name: "Gelo Blast",
+        sourceTag: "ice_blast",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [110, 165, 220, 275],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 30,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h061_ice_ancient_e_chilling_touch",
+        name: "Chilling Touch",
+        sourceTag: "chilling_touch",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Chilling Touch. Define uma função tática específica dentro do kit de suporte glacial de negação de cura e controle global.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h061_ice_ancient_r_cold_feet",
+        name: "Cold Feet",
+        sourceTag: "cold_feet",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Cold Feet. Define uma função tática específica dentro do kit de suporte glacial de negação de cura e controle global.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h062_bear_berserker",
+    archetype: "carry de fúria acumulada e burst corpo a corpo",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "durable"],
+    preferredPositions: [1],
+    designTags: ["fury_swipes", "enrage", "earthshock", "overpower"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h062_bear_berserker_q_fury_swipes",
+        name: "Fury Swipes",
+        sourceTag: "fury_swipes",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        mechanics: ["attack_scaling"],
+        description: "Primeira habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [95, 150, 205, 260],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 35,
+          gank: 0,
+          teamfight: 20,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 35
+        },
+        synergyTags: ["armor_reduction", "attack_speed", "lifesteal"],
+        counterTags: ["armor", "disarm", "evasion", "kiting"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "W",
+        id: "h062_bear_berserker_w_enrage",
+        name: "Enrage",
+        sourceTag: "enrage",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Enrage. Define uma função tática específica dentro do kit de carry de fúria acumulada e burst corpo a corpo.",
+        values: {
+          damage: [75, 130, 185, 240],
+          duration: [5, 7, 9, 11],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h062_bear_berserker_e_earthshock",
+        name: "Earthshock",
+        sourceTag: "earthshock",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Earthshock. Define uma função tática específica dentro do kit de carry de fúria acumulada e burst corpo a corpo.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h062_bear_berserker_r_overpower",
+        name: "Overpower",
+        sourceTag: "overpower",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Overpower. Define uma função tática específica dentro do kit de carry de fúria acumulada e burst corpo a corpo.",
+        values: {
+          damage: [235, 355, 475],
+          attackSpeed: [35, 60, 85],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h063_horned_charger",
+    archetype: "ganker global de investida, resistência e bash",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "durable"],
+    preferredPositions: [3, 4],
+    designTags: ["global_charge", "bash", "status_resist", "impact"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h063_horned_charger_q_global_charge",
+        name: "Global Investida",
+        sourceTag: "global_charge",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["global_pressure", "mobility"],
+        description: "Primeira habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [85, 140, 195, 250],
+          global: true,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 60,
+          teamfight: 25,
+          retreat: 25,
+          push: 0,
+          save: 10,
+          objective: 20
+        },
+        synergyTags: ["deep_vision", "pickoff", "split_push"],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h063_horned_charger_w_bash",
+        name: "Bash",
+        sourceTag: "bash",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["hard_control"],
+        description: "Segunda habilidade baseada em Bash. Define uma função tática específica dentro do kit de ganker global de investida, resistência e bash.",
+        values: {
+          damage: [85, 140, 195, 250],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h063_horned_charger_e_status_resist",
+        name: "Status Resist",
+        sourceTag: "status_resist",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Status Resist. Define uma função tática específica dentro do kit de ganker global de investida, resistência e bash.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h063_horned_charger_r_impact",
+        name: "Impact",
+        sourceTag: "impact",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Impact. Define uma função tática específica dentro do kit de ganker global de investida, resistência e bash.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h064_gyro_artillery",
+    archetype: "atirador tecnológico de foguetes, flak e bombardeio",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "nuker"],
+    preferredPositions: [1],
+    designTags: ["flak", "rocket", "missile", "call_down"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h064_gyro_artillery_q_flak",
+        name: "Flak",
+        sourceTag: "flak",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["attack_scaling"],
+        description: "Primeira habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 35,
+          gank: 0,
+          teamfight: 20,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 35
+        },
+        synergyTags: ["armor_reduction", "attack_speed", "lifesteal"],
+        counterTags: [],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "W",
+        id: "h064_gyro_artillery_w_rocket",
+        name: "Rocket",
+        sourceTag: "rocket",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Rocket. Define uma função tática específica dentro do kit de atirador tecnológico de foguetes, flak e bombardeio.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h064_gyro_artillery_e_missile",
+        name: "Missile",
+        sourceTag: "missile",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Missile. Define uma função tática específica dentro do kit de atirador tecnológico de foguetes, flak e bombardeio.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h064_gyro_artillery_r_call_down",
+        name: "Call Down",
+        sourceTag: "call_down",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Call Down. Define uma função tática específica dentro do kit de atirador tecnológico de foguetes, flak e bombardeio.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h065_chemical_brawler",
+    archetype: "lutador químico de stun preparado e farm acelerado",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["carry", "offlane", "durable"],
+    preferredPositions: [1, 3],
+    designTags: ["chemical_rage", "acid_zone", "unstable_stun", "gold_scaling"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h065_chemical_brawler_q_chemical_rage",
+        name: "Chemical Rage",
+        sourceTag: "chemical_rage",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Chemical Rage. Define uma função tática específica dentro do kit de lutador químico de stun preparado e farm acelerado.",
+        values: {
+          damage: [85, 140, 195, 250],
+          duration: [5, 7, 9, 11],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h065_chemical_brawler_w_acid_zone",
+        name: "Acid Zone",
+        sourceTag: "acid_zone",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Acid Zone. Define uma função tática específica dentro do kit de lutador químico de stun preparado e farm acelerado.",
+        values: {
+          damage: [85, 140, 195, 250],
+          radius: 405,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h065_chemical_brawler_e_unstable_stun",
+        name: "Unstable Atordoamento",
+        sourceTag: "unstable_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Terceira habilidade de controle para o arquétipo de lutador químico de stun preparado e farm acelerado. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [85, 140, 195, 250],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 35,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 10
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "R",
+        id: "h065_chemical_brawler_r_gold_scaling",
+        name: "Ouro Scaling",
+        sourceTag: "gold_scaling",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Ouro Scaling. Define uma função tática específica dentro do kit de lutador químico de stun preparado e farm acelerado.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h066_complex_mage",
+    archetype: "arquimago complexo de dez magias combinatórias",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "disabler", "escape"],
+    preferredPositions: [2],
+    designTags: ["spell_weaving", "summon", "global_blast", "control"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 3,
+      microDemand: 65,
+      teamfightReliability: 77
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h066_complex_mage_q_spell_weaving",
+        name: "Spell Weaving",
+        sourceTag: "spell_weaving",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Spell Weaving. Define uma função tática específica dentro do kit de arquimago complexo de dez magias combinatórias.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: [],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.55
+        }
+      },
+      {
+        key: "W",
+        id: "h066_complex_mage_w_summon",
+        name: "Invocação",
+        sourceTag: "summon",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Segunda habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [120, 175, 230, 285],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 25,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 20
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "E",
+        id: "h066_complex_mage_e_global_blast",
+        name: "Global Blast",
+        sourceTag: "global_blast",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["global_pressure"],
+        description: "Terceira habilidade global ou semi-global. Serve para punir mapa aberto, conectar lutas, defender objetivo ou transformar pickoff em objetivo.",
+        values: {
+          damage: [120, 175, 230, 285],
+          global: true,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 20,
+          farming: 10,
+          gank: 50,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 20
+        },
+        synergyTags: ["deep_vision", "pickoff", "split_push"],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h066_complex_mage_r_control",
+        name: "Control",
+        sourceTag: "control",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Control. Define uma função tática específica dentro do kit de arquimago complexo de dez magias combinatórias.",
+        values: {
+          damage: [280, 400, 520],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h067_silence_warden",
+    archetype: "controlador de silêncio, roubo de inteligência e punição global",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "hard_support", "disabler"],
+    preferredPositions: [2, 5],
+    designTags: ["silence", "int_steal", "glaives", "global_silence"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 79
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h067_silence_warden_q_silence",
+        name: "Silêncio",
+        sourceTag: "silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["spell_lockout"],
+        description: "Primeira habilidade baseada em Silêncio. Define uma função tática específica dentro do kit de controlador de silêncio, roubo de inteligência e punição global.",
+        values: {
+          damage: [110, 165, 220, 275],
+          silence: [2.0, 2.6, 3.2, 3.8],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "W",
+        id: "h067_silence_warden_w_int_steal",
+        name: "Int Steal",
+        sourceTag: "int_steal",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Int Steal. Define uma função tática específica dentro do kit de controlador de silêncio, roubo de inteligência e punição global.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h067_silence_warden_e_glaives",
+        name: "Glaives",
+        sourceTag: "glaives",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: [],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "R",
+        id: "h067_silence_warden_r_global_silence",
+        name: "Global Silêncio",
+        sourceTag: "global_silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["global_pressure", "spell_lockout"],
+        description: "Ultimate global ou semi-global. Serve para punir mapa aberto, conectar lutas, defender objetivo ou transformar pickoff em objetivo.",
+        values: {
+          damage: [270, 390, 510],
+          silence: [4.0, 4.6, 5.2],
+          global: true,
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 75,
+          teamfight: 95,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 35
+        },
+        synergyTags: ["deep_vision", "pickoff", "split_push"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      }
+    ]
+  },
+  {
+    heroId: "h068_astral_destroyer",
+    archetype: "mago astral de roubo de mana e dano puro",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "nuker", "disabler"],
+    preferredPositions: [2],
+    designTags: ["astral_prison", "pure_damage", "mana_pool", "sanity"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h068_astral_destroyer_q_astral_prison",
+        name: "Astral Prison",
+        sourceTag: "astral_prison",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Astral Prison. Define uma função tática específica dentro do kit de mago astral de roubo de mana e dano puro.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h068_astral_destroyer_w_pure_damage",
+        name: "Pure Damage",
+        sourceTag: "pure_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "pure",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Pure Damage. Define uma função tática específica dentro do kit de mago astral de roubo de mana e dano puro.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h068_astral_destroyer_e_mana_pool",
+        name: "Mana Pool",
+        sourceTag: "mana_pool",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Mana Pool. Define uma função tática específica dentro do kit de mago astral de roubo de mana e dano puro.",
+        values: {
+          damage: [110, 165, 220, 275],
+          manaValue: [40, 75, 110, 145],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: [],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.55
+        }
+      },
+      {
+        key: "R",
+        id: "h068_astral_destroyer_r_sanity",
+        name: "Sanity",
+        sourceTag: "sanity",
+        kind: "active",
+        target: "unit",
+        damageType: "pure",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Sanity. Define uma função tática específica dentro do kit de mago astral de roubo de mana e dano puro.",
+        values: {
+          damage: [270, 390, 510],
+          manaValue: [40, 75, 110],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: [],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.55
+        }
+      }
+    ]
+  },
+  {
+    heroId: "h069_wolf_alpha",
+    archetype: "pusher lupino de aura, summons e transformação",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "carry", "pusher"],
+    preferredPositions: [1, 3],
+    designTags: ["wolves", "howl", "shapeshift", "aura"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h069_wolf_alpha_q_wolves",
+        name: "Wolves",
+        sourceTag: "wolves",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Primeira habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [85, 140, 195, 250],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 35,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 30
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h069_wolf_alpha_w_howl",
+        name: "Howl",
+        sourceTag: "howl",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Howl. Define uma função tática específica dentro do kit de pusher lupino de aura, summons e transformação.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h069_wolf_alpha_e_shapeshift",
+        name: "Shapeshift",
+        sourceTag: "shapeshift",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Shapeshift. Define uma função tática específica dentro do kit de pusher lupino de aura, summons e transformação.",
+        values: {
+          damage: [85, 140, 195, 250],
+          duration: [5, 7, 9, 11],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h069_wolf_alpha_r_aura",
+        name: "Aura",
+        sourceTag: "aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["teamfight_modifier"],
+        description: "Ultimate baseada em Aura. Define uma função tática específica dentro do kit de pusher lupino de aura, summons e transformação.",
+        values: {
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h070_brew_master",
+    archetype: "offlaner evasivo que divide em três formas",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    preferredPositions: [3],
+    designTags: ["split", "drunken", "clap", "brew"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h070_brew_master_q_split",
+        name: "Divisão",
+        sourceTag: "split",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Divisão. Define uma função tática específica dentro do kit de offlaner evasivo que divide em três formas.",
+        values: {
+          damage: [95, 150, 205, 260],
+          duration: [5, 7, 9, 11],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h070_brew_master_w_drunken",
+        name: "Drunken",
+        sourceTag: "drunken",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Drunken. Define uma função tática específica dentro do kit de offlaner evasivo que divide em três formas.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h070_brew_master_e_clap",
+        name: "Clap",
+        sourceTag: "clap",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Clap. Define uma função tática específica dentro do kit de offlaner evasivo que divide em três formas.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h070_brew_master_r_brew",
+        name: "Brew",
+        sourceTag: "brew",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Brew. Define uma função tática específica dentro do kit de offlaner evasivo que divide em três formas.",
+        values: {
+          damage: [255, 375, 495],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h071_shadow_demon",
+    archetype: "suporte de banimento, ilusões e amplificação de dano",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "nuker"],
+    preferredPositions: [5],
+    designTags: ["banish", "illusion", "purge", "damage_amp"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 65,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h071_shadow_demon_q_banish",
+        name: "Banish",
+        sourceTag: "banish",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Banish. Define uma função tática específica dentro do kit de suporte de banimento, ilusões e amplificação de dano.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h071_shadow_demon_w_illusion",
+        name: "Ilusão",
+        sourceTag: "illusion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Segunda habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [120, 175, 230, 285],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 25,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 10,
+          objective: 20
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "E",
+        id: "h071_shadow_demon_e_purge",
+        name: "Purga",
+        sourceTag: "purge",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Purga. Define uma função tática específica dentro do kit de suporte de banimento, ilusões e amplificação de dano.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h071_shadow_demon_r_damage_amp",
+        name: "Damage Amp",
+        sourceTag: "damage_amp",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Damage Amp. Define uma função tática específica dentro do kit de suporte de banimento, ilusões e amplificação de dano.",
+        values: {
+          damage: [280, 400, 520],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h072_druid_dual",
+    archetype: "carry de dupla unidade, urso e vínculo",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["carry", "pusher", "durable"],
+    preferredPositions: [1],
+    designTags: ["pet", "bond", "savage_roar", "transform"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 3,
+      microDemand: 65,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h072_druid_dual_q_pet",
+        name: "Pet",
+        sourceTag: "pet",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Pet. Define uma função tática específica dentro do kit de carry de dupla unidade, urso e vínculo.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h072_druid_dual_w_bond",
+        name: "Bond",
+        sourceTag: "bond",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Bond. Define uma função tática específica dentro do kit de carry de dupla unidade, urso e vínculo.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h072_druid_dual_e_savage_roar",
+        name: "Savage Roar",
+        sourceTag: "savage_roar",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Savage Roar. Define uma função tática específica dentro do kit de carry de dupla unidade, urso e vínculo.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h072_druid_dual_r_transform",
+        name: "Transform",
+        sourceTag: "transform",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Transform. Define uma função tática específica dentro do kit de carry de dupla unidade, urso e vínculo.",
+        values: {
+          damage: [255, 375, 495],
+          duration: [16, 20, 24],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h073_chaos_lancer",
+    archetype: "carry de ilusões fortes, crítico e teleporte caótico",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["carry", "durable", "disabler"],
+    preferredPositions: [1],
+    designTags: ["chaos_bolt", "pull", "crit_lifesteal", "illusion_ultimate"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 55,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h073_chaos_lancer_q_chaos_bolt",
+        name: "Chaos Bolt",
+        sourceTag: "chaos_bolt",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 20,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h073_chaos_lancer_w_pull",
+        name: "Pull",
+        sourceTag: "pull",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Pull. Define uma função tática específica dentro do kit de carry de ilusões fortes, crítico e teleporte caótico.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h073_chaos_lancer_e_crit_lifesteal",
+        name: "Crit Roubo de Vida",
+        sourceTag: "crit_lifesteal",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        mechanics: ["attack_scaling"],
+        description: "Terceira habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [105, 160, 215, 270],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [160, 195, 230, 265],
+          lifestealPct: [15, 25, 35, 45],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 35,
+          gank: 0,
+          teamfight: 20,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 35
+        },
+        synergyTags: [],
+        counterTags: ["anti_heal", "armor", "burst_damage", "disarm", "evasion", "kiting", "silence"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "R",
+        id: "h073_chaos_lancer_r_illusion_ultimate",
+        name: "Ilusão Ultimate",
+        sourceTag: "illusion_ultimate",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Ultimate de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [245, 365, 485],
+          summons: [1, 2, 3],
+          summonDuration: [20, 28, 36],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 35,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 45
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      }
+    ]
+  },
+  {
+    heroId: "h074_clone_tactician",
+    archetype: "micro-herói de múltiplos clones permanentes",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "pusher", "escape"],
+    preferredPositions: [1, 2],
+    designTags: ["clones", "net", "poof", "stat_share"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 3,
+      microDemand: 65,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h074_clone_tactician_q_clones",
+        name: "Clones",
+        sourceTag: "clones",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Primeira habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [95, 150, 205, 260],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 35,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 30
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "W",
+        id: "h074_clone_tactician_w_net",
+        name: "Net",
+        sourceTag: "net",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["mobility_lockout"],
+        description: "Segunda habilidade baseada em Net. Define uma função tática específica dentro do kit de micro-herói de múltiplos clones permanentes.",
+        values: {
+          damage: [95, 150, 205, 260],
+          root: [1.2, 1.6, 2.0, 2.4],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h074_clone_tactician_e_poof",
+        name: "Poof",
+        sourceTag: "poof",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Poof. Define uma função tática específica dentro do kit de micro-herói de múltiplos clones permanentes.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h074_clone_tactician_r_stat_share",
+        name: "Stat Share",
+        sourceTag: "stat_share",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Stat Share. Define uma função tática específica dentro do kit de micro-herói de múltiplos clones permanentes.",
+        values: {
+          damage: [255, 375, 495],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h075_tree_guardian",
+    archetype: "suporte tanque de raízes, cura global e invisibilidade natural",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["hard_support", "offlane", "healer", "disabler"],
+    preferredPositions: [3, 5],
+    designTags: ["tree_walk", "armor_heal", "root_ultimate", "leech_seed"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h075_tree_guardian_q_tree_walk",
+        name: "Árvore Walk",
+        sourceTag: "tree_walk",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Árvore Walk. Define uma função tática específica dentro do kit de suporte tanque de raízes, cura global e invisibilidade natural.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h075_tree_guardian_w_armor_heal",
+        name: "Armadura Cura",
+        sourceTag: "armor_heal",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Segunda habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          barrierOrArmorValue: [80, 140, 200, 260],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "strength",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "E",
+        id: "h075_tree_guardian_e_root_ultimate",
+        name: "Raiz Ultimate",
+        sourceTag: "root_ultimate",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["mobility_lockout"],
+        description: "Terceira habilidade de controle para o arquétipo de suporte tanque de raízes, cura global e invisibilidade natural. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [85, 140, 195, 250],
+          root: [1.2, 1.6, 2.0, 2.4],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "R",
+        id: "h075_tree_guardian_r_leech_seed",
+        name: "Leech Seed",
+        sourceTag: "leech_seed",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Leech Seed. Define uma função tática específica dentro do kit de suporte tanque de raízes, cura global e invisibilidade natural.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h076_brute_mage",
+    archetype: "suporte de alto corpo, multicast e buffs simples",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["hard_support", "durable", "disabler"],
+    preferredPositions: [5],
+    designTags: ["multicast", "stun", "ignite", "bloodlust"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 57
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h076_brute_mage_q_multicast",
+        name: "Multicast",
+        sourceTag: "multicast",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Multicast. Define uma função tática específica dentro do kit de suporte de alto corpo, multicast e buffs simples.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h076_brute_mage_w_stun",
+        name: "Atordoamento",
+        sourceTag: "stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Segunda habilidade de controle para o arquétipo de suporte de alto corpo, multicast e buffs simples. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [75, 130, 185, 240],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "E",
+        id: "h076_brute_mage_e_ignite",
+        name: "Ignite",
+        sourceTag: "ignite",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Ignite. Define uma função tática específica dentro do kit de suporte de alto corpo, multicast e buffs simples.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h076_brute_mage_r_bloodlust",
+        name: "Bloodlust",
+        sourceTag: "bloodlust",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Bloodlust. Define uma função tática específica dentro do kit de suporte de alto corpo, multicast e buffs simples.",
+        values: {
+          damage: [235, 355, 475],
+          moveSpeedBonusPct: [10, 16, 22],
+          attackSpeed: [35, 60, 85],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h077_decay_zombie",
+    archetype: "frontliner de decomposição, lápide e roubo de força",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "hard_support", "durable"],
+    preferredPositions: [3, 5],
+    designTags: ["decay", "tombstone", "soul_rip", "flesh_golem"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h077_decay_zombie_q_decay",
+        name: "Decay",
+        sourceTag: "decay",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Decay. Define uma função tática específica dentro do kit de frontliner de decomposição, lápide e roubo de força.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h077_decay_zombie_w_tombstone",
+        name: "Tombstone",
+        sourceTag: "tombstone",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Tombstone. Define uma função tática específica dentro do kit de frontliner de decomposição, lápide e roubo de força.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h077_decay_zombie_e_soul_rip",
+        name: "Soul Rip",
+        sourceTag: "soul_rip",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Soul Rip. Define uma função tática específica dentro do kit de frontliner de decomposição, lápide e roubo de força.",
+        values: {
+          damage: [85, 140, 195, 250],
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h077_decay_zombie_r_flesh_golem",
+        name: "Flesh Golem",
+        sourceTag: "flesh_golem",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Flesh Golem. Define uma função tática específica dentro do kit de frontliner de decomposição, lápide e roubo de força.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h078_spell_thief",
+    archetype: "suporte universal de telecinese e roubo de magia",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "hard_support", "disabler", "nuker"],
+    preferredPositions: [4, 5],
+    designTags: ["spell_steal", "lift", "fade_bolt", "arcane_supremacy"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h078_spell_thief_q_spell_steal",
+        name: "Spell Steal",
+        sourceTag: "spell_steal",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Spell Steal. Define uma função tática específica dentro do kit de suporte universal de telecinese e roubo de magia.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h078_spell_thief_w_lift",
+        name: "Lift",
+        sourceTag: "lift",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Lift. Define uma função tática específica dentro do kit de suporte universal de telecinese e roubo de magia.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h078_spell_thief_e_fade_bolt",
+        name: "Fade Bolt",
+        sourceTag: "fade_bolt",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 20,
+          farming: 10,
+          gank: 30,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h078_spell_thief_r_arcane_supremacy",
+        name: "Arcane Supremacy",
+        sourceTag: "arcane_supremacy",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Arcane Supremacy. Define uma função tática específica dentro do kit de suporte universal de telecinese e roubo de magia.",
+        values: {
+          damage: [280, 400, 520],
+          manaValue: [40, 75, 110],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: [],
+        scaling: {
+          attribute: "total",
+          coefficient: 0.55
+        }
+      }
+    ]
+  },
+  {
+    heroId: "h079_storm_disruptor",
+    archetype: "suporte de reposicionamento, campo cinético e tempestade",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "nuker"],
+    preferredPositions: [5],
+    designTags: ["glimpse", "kinetic_field", "static_storm", "thunder_strike"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h079_storm_disruptor_q_glimpse",
+        name: "Glimpse",
+        sourceTag: "glimpse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Glimpse. Define uma função tática específica dentro do kit de suporte de reposicionamento, campo cinético e tempestade.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h079_storm_disruptor_w_kinetic_field",
+        name: "Kinetic Field",
+        sourceTag: "kinetic_field",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["mobility_lockout"],
+        description: "Segunda habilidade baseada em Kinetic Field. Define uma função tática específica dentro do kit de suporte de reposicionamento, campo cinético e tempestade.",
+        values: {
+          damage: [110, 165, 220, 275],
+          root: [1.2, 1.6, 2.0, 2.4],
+          radius: 405,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h079_storm_disruptor_e_static_storm",
+        name: "Static Tempestade",
+        sourceTag: "static_storm",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [110, 165, 220, 275],
+          radius: 405,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "R",
+        id: "h079_storm_disruptor_r_thunder_strike",
+        name: "Thunder Strike",
+        sourceTag: "thunder_strike",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Thunder Strike. Define uma função tática específica dentro do kit de suporte de reposicionamento, campo cinético e tempestade.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h080_carapace_assassin",
+    archetype: "assassino de carapaça, mana burn e espinhos",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["soft_support", "disabler", "scout"],
+    preferredPositions: [4],
+    designTags: ["carapace", "impale", "mana_burn", "burrow"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h080_carapace_assassin_q_carapace",
+        name: "Carapace",
+        sourceTag: "carapace",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Carapace. Define uma função tática específica dentro do kit de assassino de carapaça, mana burn e espinhos.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h080_carapace_assassin_w_impale",
+        name: "Impale",
+        sourceTag: "impale",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Segunda habilidade baseada em Impale. Define uma função tática específica dentro do kit de assassino de carapaça, mana burn e espinhos.",
+        values: {
+          damage: [85, 140, 195, 250],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h080_carapace_assassin_e_mana_burn",
+        name: "Mana Queima",
+        sourceTag: "mana_burn",
+        kind: "active",
+        target: "unit",
+        damageType: "pure",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Mana Queima. Define uma função tática específica dentro do kit de assassino de carapaça, mana burn e espinhos.",
+        values: {
+          damage: [85, 140, 195, 250],
+          manaValue: [40, 75, 110, 145],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: [],
+        scaling: {
+          attribute: "total",
+          coefficient: 0.55
+        }
+      },
+      {
+        key: "R",
+        id: "h080_carapace_assassin_r_burrow",
+        name: "Burrow",
+        sourceTag: "burrow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Burrow. Define uma função tática específica dentro do kit de assassino de carapaça, mana burn e espinhos.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h081_naga_siren",
+    archetype: "carry de ilusões, rede e canção global curta",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "pusher", "disabler"],
+    preferredPositions: [1],
+    designTags: ["illusion", "net", "rip_tide", "song"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 3,
+      microDemand: 65,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h081_naga_siren_q_illusion",
+        name: "Ilusão",
+        sourceTag: "illusion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Primeira habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [95, 150, 205, 260],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 35,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 30
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "W",
+        id: "h081_naga_siren_w_net",
+        name: "Net",
+        sourceTag: "net",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["mobility_lockout"],
+        description: "Segunda habilidade baseada em Net. Define uma função tática específica dentro do kit de carry de ilusões, rede e canção global curta.",
+        values: {
+          damage: [95, 150, 205, 260],
+          root: [1.2, 1.6, 2.0, 2.4],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h081_naga_siren_e_rip_tide",
+        name: "Rip Tide",
+        sourceTag: "rip_tide",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Rip Tide. Define uma função tática específica dentro do kit de carry de ilusões, rede e canção global curta.",
+        values: {
+          damage: [95, 150, 205, 260],
+          armorReduction: [2.0, 3.5, 5.0, 6.5],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h081_naga_siren_r_song",
+        name: "Song",
+        sourceTag: "song",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Song. Define uma função tática específica dentro do kit de carry de ilusões, rede e canção global curta.",
+        values: {
+          damage: [255, 375, 495],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h082_light_keeper",
+    archetype: "suporte de luz, mana, onda carregada e recall",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "nuker", "pusher"],
+    preferredPositions: [5],
+    designTags: ["mana_restore", "charged_wave", "blinding_light", "spirit_form"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h082_light_keeper_q_mana_restore",
+        name: "Mana Restore",
+        sourceTag: "mana_restore",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Mana Restore. Define uma função tática específica dentro do kit de suporte de luz, mana, onda carregada e recall.",
+        values: {
+          manaValue: [40, 75, 110, 145],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: [],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.55
+        }
+      },
+      {
+        key: "W",
+        id: "h082_light_keeper_w_charged_wave",
+        name: "Charged Onda",
+        sourceTag: "charged_wave",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Segunda habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 50,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h082_light_keeper_e_blinding_light",
+        name: "Blinding Light",
+        sourceTag: "blinding_light",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Blinding Light. Define uma função tática específica dentro do kit de suporte de luz, mana, onda carregada e recall.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h082_light_keeper_r_spirit_form",
+        name: "Espírito Form",
+        sourceTag: "spirit_form",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Espírito Form. Define uma função tática específica dentro do kit de suporte de luz, mana, onda carregada e recall.",
+        values: {
+          damage: [280, 400, 520],
+          duration: [16, 20, 24],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h083_spirit_tether",
+    archetype: "suporte de vínculo, cura compartilhada e relocação",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["hard_support", "healer", "escape"],
+    preferredPositions: [5],
+    designTags: ["tether", "heal_share", "overcharge", "relocate"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h083_spirit_tether_q_tether",
+        name: "Tether",
+        sourceTag: "tether",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Tether. Define uma função tática específica dentro do kit de suporte de vínculo, cura compartilhada e relocação.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h083_spirit_tether_w_heal_share",
+        name: "Cura Share",
+        sourceTag: "heal_share",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Segunda habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "highest",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "E",
+        id: "h083_spirit_tether_e_overcharge",
+        name: "Overcharge",
+        sourceTag: "overcharge",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Terceira habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 30,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h083_spirit_tether_r_relocate",
+        name: "Relocate",
+        sourceTag: "relocate",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["global_pressure"],
+        description: "Ultimate global ou semi-global. Serve para punir mapa aberto, conectar lutas, defender objetivo ou transformar pickoff em objetivo.",
+        values: {
+          damage: [255, 375, 495],
+          global: true,
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 40,
+          teamfight: 70,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 35
+        },
+        synergyTags: ["deep_vision", "pickoff", "split_push"],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h084_gargoyle_brood",
+    archetype: "summoner de familiares, camadas defensivas e burst",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["offlane", "mid", "pusher"],
+    preferredPositions: [2, 3],
+    designTags: ["summon_familiars", "gravekeeper", "soul_assumption", "slow"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 3,
+      microDemand: 65,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h084_gargoyle_brood_q_summon_familiars",
+        name: "Invocação Familiars",
+        sourceTag: "summon_familiars",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Primeira habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [120, 175, 230, 285],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 25,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 20
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "W",
+        id: "h084_gargoyle_brood_w_gravekeeper",
+        name: "Gravekeeper",
+        sourceTag: "gravekeeper",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Gravekeeper. Define uma função tática específica dentro do kit de summoner de familiares, camadas defensivas e burst.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h084_gargoyle_brood_e_soul_assumption",
+        name: "Soul Assumption",
+        sourceTag: "soul_assumption",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Soul Assumption. Define uma função tática específica dentro do kit de summoner de familiares, camadas defensivas e burst.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h084_gargoyle_brood_r_slow",
+        name: "Lentidão",
+        sourceTag: "slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Ultimate baseada em Lentidão. Define uma função tática específica dentro do kit de summoner de familiares, camadas defensivas e burst.",
+        values: {
+          damage: [280, 400, 520],
+          slowPct: [16, 24, 32],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      }
+    ]
+  },
+  {
+    heroId: "h085_vampire_carry",
+    archetype: "carry de roubo de atributos, pacto e regeneração nas sombras",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "escape"],
+    preferredPositions: [1],
+    designTags: ["stat_steal", "leash", "self_dispel", "shadow_regen"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h085_vampire_carry_q_stat_steal",
+        name: "Stat Steal",
+        sourceTag: "stat_steal",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Stat Steal. Define uma função tática específica dentro do kit de carry de roubo de atributos, pacto e regeneração nas sombras.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h085_vampire_carry_w_leash",
+        name: "Vínculo",
+        sourceTag: "leash",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["mobility_lockout"],
+        description: "Segunda habilidade de controle para o arquétipo de carry de roubo de atributos, pacto e regeneração nas sombras. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [85, 140, 195, 250],
+          root: [1.2, 1.6, 2.0, 2.4],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 35,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 10
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h085_vampire_carry_e_self_dispel",
+        name: "Self Dispel",
+        sourceTag: "self_dispel",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Self Dispel. Define uma função tática específica dentro do kit de carry de roubo de atributos, pacto e regeneração nas sombras.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h085_vampire_carry_r_shadow_regen",
+        name: "Sombra Regeneração",
+        sourceTag: "shadow_regen",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Sombra Regeneração. Define uma função tática específica dentro do kit de carry de roubo de atributos, pacto e regeneração nas sombras.",
+        values: {
+          damage: [245, 365, 485],
+          heal: [220, 340, 460],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: ["anti_heal", "burst_damage", "dust", "grouping", "sentry", "silence", "true_sight"]
+      }
+    ]
+  },
+  {
+    heroId: "h086_stone_gaze_guardian",
+    archetype: "carry tanque de mana shield, split shot e petrificação",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "durable"],
+    preferredPositions: [1],
+    designTags: ["mana_shield", "split_shot", "stone_gaze", "snake"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h086_stone_gaze_guardian_q_mana_shield",
+        name: "Mana Escudo",
+        sourceTag: "mana_shield",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Primeira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          barrierOrArmorValue: [80, 140, 200, 260],
+          manaValue: [40, 75, 110, 145],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 10
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: [],
+        scaling: {
+          attribute: "agility",
+          coefficient: 0.55
+        }
+      },
+      {
+        key: "W",
+        id: "h086_stone_gaze_guardian_w_split_shot",
+        name: "Divisão Shot",
+        sourceTag: "split_shot",
+        kind: "active",
+        target: "self",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Divisão Shot. Define uma função tática específica dentro do kit de carry tanque de mana shield, split shot e petrificação.",
+        values: {
+          damage: [105, 160, 215, 270],
+          range: [650, 770, 890, 1010],
+          duration: [5, 7, 9, 11],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 20,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h086_stone_gaze_guardian_e_stone_gaze",
+        name: "Stone Gaze",
+        sourceTag: "stone_gaze",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Stone Gaze. Define uma função tática específica dentro do kit de carry tanque de mana shield, split shot e petrificação.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h086_stone_gaze_guardian_r_snake",
+        name: "Snake",
+        sourceTag: "snake",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Snake. Define uma função tática específica dentro do kit de carry tanque de mana shield, split shot e petrificação.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h087_troll_switcher",
+    archetype: "carry alternador de melee/ranged e fúria de ataque",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry"],
+    preferredPositions: [1],
+    designTags: ["form_switch", "fervor", "whirling_axes", "battle_trance"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h087_troll_switcher_q_form_switch",
+        name: "Form Switch",
+        sourceTag: "form_switch",
+        kind: "toggle",
+        target: "self",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Form Switch. Define uma função tática específica dentro do kit de carry alternador de melee/ranged e fúria de ataque.",
+        values: {
+          duration: [5, 7, 9, 11],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h087_troll_switcher_w_fervor",
+        name: "Fervor",
+        sourceTag: "fervor",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [85, 140, 195, 250],
+          attackSpeed: [35, 60, 85, 110],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 35,
+          gank: 0,
+          teamfight: 20,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 35
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h087_troll_switcher_e_whirling_axes",
+        name: "Whirling Axes",
+        sourceTag: "whirling_axes",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Whirling Axes. Define uma função tática específica dentro do kit de carry alternador de melee/ranged e fúria de ataque.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h087_troll_switcher_r_battle_trance",
+        name: "Battle Trance",
+        sourceTag: "battle_trance",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Battle Trance. Define uma função tática específica dentro do kit de carry alternador de melee/ranged e fúria de ataque.",
+        values: {
+          damage: [245, 365, 485],
+          duration: [16, 20, 24],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h088_centaur_retaliator",
+    archetype: "tanque de retaliação, stun e corrida global",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable"],
+    preferredPositions: [3],
+    designTags: ["retaliate", "stomp", "double_edge", "stampede"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h088_centaur_retaliator_q_retaliate",
+        name: "Retaliate",
+        sourceTag: "retaliate",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Retaliate. Define uma função tática específica dentro do kit de tanque de retaliação, stun e corrida global.",
+        values: {
+          damage: [75, 130, 185, 240],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h088_centaur_retaliator_w_stomp",
+        name: "Stomp",
+        sourceTag: "stomp",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Stomp. Define uma função tática específica dentro do kit de tanque de retaliação, stun e corrida global.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h088_centaur_retaliator_e_double_edge",
+        name: "Double Edge",
+        sourceTag: "double_edge",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Double Edge. Define uma função tática específica dentro do kit de tanque de retaliação, stun e corrida global.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h088_centaur_retaliator_r_stampede",
+        name: "Stampede",
+        sourceTag: "stampede",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Stampede. Define uma função tática específica dentro do kit de tanque de retaliação, stun e corrida global.",
+        values: {
+          damage: [235, 355, 475],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h089_gravity_general",
+    archetype: "iniciador universal de empurrão, buff físico e agrupamento",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "disabler", "pusher"],
+    preferredPositions: [3],
+    designTags: ["shockwave", "empower", "skewer", "reverse_gravity"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h089_gravity_general_q_shockwave",
+        name: "Shockwave",
+        sourceTag: "shockwave",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h089_gravity_general_w_empower",
+        name: "Empower",
+        sourceTag: "empower",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Empower. Define uma função tática específica dentro do kit de iniciador universal de empurrão, buff físico e agrupamento.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h089_gravity_general_e_skewer",
+        name: "Skewer",
+        sourceTag: "skewer",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Skewer. Define uma função tática específica dentro do kit de iniciador universal de empurrão, buff físico e agrupamento.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h089_gravity_general_r_reverse_gravity",
+        name: "Reverse Gravity",
+        sourceTag: "reverse_gravity",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Reverse Gravity. Define uma função tática específica dentro do kit de iniciador universal de empurrão, buff físico e agrupamento.",
+        values: {
+          damage: [245, 365, 485],
+          radius: 525,
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h090_timber_mech",
+    archetype: "offlaner mecânico de corrente, corte e acúmulo de armadura",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "durable", "escape"],
+    preferredPositions: [3],
+    designTags: ["chain", "pure_damage", "reactive_armor", "saw"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h090_timber_mech_q_chain",
+        name: "Chain",
+        sourceTag: "chain",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Chain. Define uma função tática específica dentro do kit de offlaner mecânico de corrente, corte e acúmulo de armadura.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h090_timber_mech_w_pure_damage",
+        name: "Pure Damage",
+        sourceTag: "pure_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "pure",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Pure Damage. Define uma função tática específica dentro do kit de offlaner mecânico de corrente, corte e acúmulo de armadura.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h090_timber_mech_e_reactive_armor",
+        name: "Reactive Armadura",
+        sourceTag: "reactive_armor",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Terceira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          barrierOrArmorValue: [80, 140, 200, 260],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h090_timber_mech_r_saw",
+        name: "Saw",
+        sourceTag: "saw",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Saw. Define uma função tática específica dentro do kit de offlaner mecânico de corrente, corte e acúmulo de armadura.",
+        values: {
+          damage: [255, 375, 495],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h091_quill_tank",
+    archetype: "tanque de espinhos, gosma e dano acumulativo",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "durable"],
+    preferredPositions: [3],
+    designTags: ["quills", "goo", "back_reduction", "warpath"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h091_quill_tank_q_quills",
+        name: "Quills",
+        sourceTag: "quills",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Quills. Define uma função tática específica dentro do kit de tanque de espinhos, gosma e dano acumulativo.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h091_quill_tank_w_goo",
+        name: "Goo",
+        sourceTag: "goo",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Segunda habilidade baseada em Goo. Define uma função tática específica dentro do kit de tanque de espinhos, gosma e dano acumulativo.",
+        values: {
+          damage: [75, 130, 185, 240],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h091_quill_tank_e_back_reduction",
+        name: "Back Reduction",
+        sourceTag: "back_reduction",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Back Reduction. Define uma função tática específica dentro do kit de tanque de espinhos, gosma e dano acumulativo.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h091_quill_tank_r_warpath",
+        name: "Warpath",
+        sourceTag: "warpath",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Warpath. Define uma função tática específica dentro do kit de tanque de espinhos, gosma e dano acumulativo.",
+        values: {
+          damage: [235, 355, 475],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h092_polar_berserker",
+    archetype: "lutador polar de salto, bloqueio de terreno e soco crítico",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "carry", "durable", "initiator"],
+    preferredPositions: [1, 3],
+    designTags: ["snowball", "ice_shards", "critical_punch", "save"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h092_polar_berserker_q_snowball",
+        name: "Snowball",
+        sourceTag: "snowball",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Snowball. Define uma função tática específica dentro do kit de lutador polar de salto, bloqueio de terreno e soco crítico.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h092_polar_berserker_w_ice_shards",
+        name: "Gelo Shards",
+        sourceTag: "ice_shards",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h092_polar_berserker_e_critical_punch",
+        name: "Crítico Punch",
+        sourceTag: "critical_punch",
+        kind: "passive",
+        target: "passive",
+        damageType: "physical",
+        mechanics: ["attack_scaling"],
+        description: "Terceira habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [105, 160, 215, 270],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [160, 195, 230, 265],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 35,
+          gank: 0,
+          teamfight: 20,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 35
+        },
+        synergyTags: ["armor_reduction", "attack_speed", "lifesteal"],
+        counterTags: ["armor", "disarm", "evasion", "kiting"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "R",
+        id: "h092_polar_berserker_r_save",
+        name: "Salvamento",
+        sourceTag: "save",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Ultimate defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          range: [500, 580, 660],
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 65,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 25
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h093_sky_mage",
+    archetype: "mago de longo alcance, silêncio e burst místico",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["soft_support", "mid", "nuker", "disabler"],
+    preferredPositions: [2, 4],
+    designTags: ["long_range_nuke", "silence_amp", "slow", "mystic_flare"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 57
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h093_sky_mage_q_long_range_nuke",
+        name: "Long Alcance Nuke",
+        sourceTag: "long_range_nuke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [100, 155, 210, 265],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 30,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "W",
+        id: "h093_sky_mage_w_silence_amp",
+        name: "Silêncio Amp",
+        sourceTag: "silence_amp",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["spell_lockout"],
+        description: "Segunda habilidade baseada em Silêncio Amp. Define uma função tática específica dentro do kit de mago de longo alcance, silêncio e burst místico.",
+        values: {
+          damage: [100, 155, 210, 265],
+          silence: [2.0, 2.6, 3.2, 3.8],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "E",
+        id: "h093_sky_mage_e_slow",
+        name: "Lentidão",
+        sourceTag: "slow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Terceira habilidade baseada em Lentidão. Define uma função tática específica dentro do kit de mago de longo alcance, silêncio e burst místico.",
+        values: {
+          damage: [100, 155, 210, 265],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "R",
+        id: "h093_sky_mage_r_mystic_flare",
+        name: "Mystic Flare",
+        sourceTag: "mystic_flare",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Mystic Flare. Define uma função tática específica dentro do kit de mago de longo alcance, silêncio e burst místico.",
+        values: {
+          damage: [260, 380, 500],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h094_dark_paladin_2",
+    archetype: "cavaleiro sombrio de escudo explosivo e cura invertida",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "hard_support", "durable", "healer"],
+    preferredPositions: [3, 5],
+    designTags: ["shield", "heal_damage", "curse", "borrowed_life"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h094_dark_paladin_2_q_shield",
+        name: "Escudo",
+        sourceTag: "shield",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Primeira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          barrierOrArmorValue: [80, 140, 200, 260],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: [],
+        scaling: {
+          attribute: "highest",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "W",
+        id: "h094_dark_paladin_2_w_heal_damage",
+        name: "Cura Damage",
+        sourceTag: "heal_damage",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Segunda habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "highest",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "E",
+        id: "h094_dark_paladin_2_e_curse",
+        name: "Curse",
+        sourceTag: "curse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Curse. Define uma função tática específica dentro do kit de cavaleiro sombrio de escudo explosivo e cura invertida.",
+        values: {
+          damage: [75, 130, 185, 240],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h094_dark_paladin_2_r_borrowed_life",
+        name: "Borrowed Life",
+        sourceTag: "borrowed_life",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          damage: [235, 355, 475],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h095_ancient_titan",
+    archetype: "iniciador espiritual de eco, sono e redução de resistência",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler"],
+    preferredPositions: [3, 4],
+    designTags: ["spirit", "stomp", "resist_reduction", "earth_splitter"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h095_ancient_titan_q_spirit",
+        name: "Espírito",
+        sourceTag: "spirit",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Espírito. Define uma função tática específica dentro do kit de iniciador espiritual de eco, sono e redução de resistência.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h095_ancient_titan_w_stomp",
+        name: "Stomp",
+        sourceTag: "stomp",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Stomp. Define uma função tática específica dentro do kit de iniciador espiritual de eco, sono e redução de resistência.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h095_ancient_titan_e_resist_reduction",
+        name: "Resist Reduction",
+        sourceTag: "resist_reduction",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Resist Reduction. Define uma função tática específica dentro do kit de iniciador espiritual de eco, sono e redução de resistência.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h095_ancient_titan_r_earth_splitter",
+        name: "Earth Splitter",
+        sourceTag: "earth_splitter",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Earth Splitter. Define uma função tática específica dentro do kit de iniciador espiritual de eco, sono e redução de resistência.",
+        values: {
+          damage: [255, 375, 495],
+          stun: [1.2, 1.55, 1.9],
+          duration: [16, 20, 24],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h096_arena_duelist",
+    archetype: "duelista de comando, purga e vitória escalável",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "carry", "initiator"],
+    preferredPositions: [1, 3],
+    designTags: ["duel", "press_attack", "overwhelming", "moment"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h096_arena_duelist_q_duel",
+        name: "Duel",
+        sourceTag: "duel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Duel. Define uma função tática específica dentro do kit de duelista de comando, purga e vitória escalável.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: true,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h096_arena_duelist_w_press_attack",
+        name: "Press Attack",
+        sourceTag: "press_attack",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Press Attack. Define uma função tática específica dentro do kit de duelista de comando, purga e vitória escalável.",
+        values: {
+          damage: [105, 160, 215, 270],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: ["armor_reduction", "attack_speed", "lifesteal"],
+        counterTags: ["armor", "disarm", "evasion", "kiting"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "E",
+        id: "h096_arena_duelist_e_overwhelming",
+        name: "Overwhelming",
+        sourceTag: "overwhelming",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Overwhelming. Define uma função tática específica dentro do kit de duelista de comando, purga e vitória escalável.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h096_arena_duelist_r_moment",
+        name: "Moment",
+        sourceTag: "moment",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Moment. Define uma função tática específica dentro do kit de duelista de comando, purga e vitória escalável.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h097_demolition_goblin",
+    archetype: "zoner de bombas, minas e explosão controlada",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "nuker", "disabler", "pusher"],
+    preferredPositions: [4],
+    designTags: ["mines", "sticky_bomb", "blast_jump", "stasis"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h097_demolition_goblin_q_mines",
+        name: "Mines",
+        sourceTag: "mines",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Mines. Define uma função tática específica dentro do kit de zoner de bombas, minas e explosão controlada.",
+        values: {
+          damage: [120, 175, 230, 285],
+          radius: 445,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h097_demolition_goblin_w_sticky_bomb",
+        name: "Sticky Bomb",
+        sourceTag: "sticky_bomb",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Sticky Bomb. Define uma função tática específica dentro do kit de zoner de bombas, minas e explosão controlada.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h097_demolition_goblin_e_blast_jump",
+        name: "Blast Jump",
+        sourceTag: "blast_jump",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 20,
+          farming: 10,
+          gank: 30,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h097_demolition_goblin_r_stasis",
+        name: "Stasis",
+        sourceTag: "stasis",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Stasis. Define uma função tática específica dentro do kit de zoner de bombas, minas e explosão controlada.",
+        values: {
+          damage: [280, 400, 520],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h098_ember_duelist",
+    archetype: "espadachim de fogo, correntes e remanescentes",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["mid", "carry", "escape", "nuker"],
+    preferredPositions: [1, 2],
+    designTags: ["remnant", "chains", "sleight", "flame_guard"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h098_ember_duelist_q_remnant",
+        name: "Remnant",
+        sourceTag: "remnant",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Primeira habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 20,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h098_ember_duelist_w_chains",
+        name: "Chains",
+        sourceTag: "chains",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Chains. Define uma função tática específica dentro do kit de espadachim de fogo, correntes e remanescentes.",
+        values: {
+          damage: [120, 175, 230, 285],
+          root: [1.2, 1.6, 2.0, 2.4],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h098_ember_duelist_e_sleight",
+        name: "Sleight",
+        sourceTag: "sleight",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Sleight. Define uma função tática específica dentro do kit de espadachim de fogo, correntes e remanescentes.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h098_ember_duelist_r_flame_guard",
+        name: "Flame Guard",
+        sourceTag: "flame_guard",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Flame Guard. Define uma função tática específica dentro do kit de espadachim de fogo, correntes e remanescentes.",
+        values: {
+          damage: [280, 400, 520],
+          barrierOrArmorValue: [80, 140, 200],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h099_stone_monk",
+    archetype: "monge universal de chutes, reposicionamento e marcas",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["soft_support", "offlane", "initiator", "disabler", "escape"],
+    preferredPositions: [3, 4],
+    designTags: ["kick", "roll", "silence", "magnetize"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 77
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h099_stone_monk_q_kick",
+        name: "Kick",
+        sourceTag: "kick",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Kick. Define uma função tática específica dentro do kit de monge universal de chutes, reposicionamento e marcas.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h099_stone_monk_w_roll",
+        name: "Roll",
+        sourceTag: "roll",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Segunda habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 30,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h099_stone_monk_e_silence",
+        name: "Silêncio",
+        sourceTag: "silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["spell_lockout"],
+        description: "Terceira habilidade baseada em Silêncio. Define uma função tática específica dentro do kit de monge universal de chutes, reposicionamento e marcas.",
+        values: {
+          damage: [95, 150, 205, 260],
+          silence: [2.0, 2.6, 3.2, 3.8],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "R",
+        id: "h099_stone_monk_r_magnetize",
+        name: "Magnetize",
+        sourceTag: "magnetize",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["mobility_lockout"],
+        description: "Ultimate baseada em Magnetize. Define uma função tática específica dentro do kit de monge universal de chutes, reposicionamento e marcas.",
+        values: {
+          damage: [255, 375, 495],
+          root: [1.2, 1.6, 2.0],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h100_abyss_lord",
+    archetype: "senhor abissal de aura, portal e zona de fogo",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "durable", "pusher"],
+    preferredPositions: [3],
+    designTags: ["pit_root", "firestorm", "damage_aura", "portal"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h100_abyss_lord_q_pit_root",
+        name: "Pit Raiz",
+        sourceTag: "pit_root",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["mobility_lockout"],
+        description: "Primeira habilidade de controle para o arquétipo de senhor abissal de aura, portal e zona de fogo. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [85, 140, 195, 250],
+          root: [1.2, 1.6, 2.0, 2.4],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 35,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "W",
+        id: "h100_abyss_lord_w_firestorm",
+        name: "Firestorm",
+        sourceTag: "firestorm",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          radius: 405,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h100_abyss_lord_e_damage_aura",
+        name: "Damage Aura",
+        sourceTag: "damage_aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["teamfight_modifier"],
+        description: "Terceira habilidade baseada em Damage Aura. Define uma função tática específica dentro do kit de senhor abissal de aura, portal e zona de fogo.",
+        values: {
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h100_abyss_lord_r_portal",
+        name: "Portal",
+        sourceTag: "portal",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Portal. Define uma função tática específica dentro do kit de senhor abissal de aura, portal e zona de fogo.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h101_demon_metamorph",
+    archetype: "carry demoníaco de metamorfose, ilusões e troca de vida",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "pusher"],
+    preferredPositions: [1],
+    designTags: ["metamorph", "reflection", "illusion", "sunder"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 55,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h101_demon_metamorph_q_metamorph",
+        name: "Metamorph",
+        sourceTag: "metamorph",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Metamorph. Define uma função tática específica dentro do kit de carry demoníaco de metamorfose, ilusões e troca de vida.",
+        values: {
+          damage: [85, 140, 195, 250],
+          duration: [5, 7, 9, 11],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h101_demon_metamorph_w_reflection",
+        name: "Reflection",
+        sourceTag: "reflection",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Reflection. Define uma função tática específica dentro do kit de carry demoníaco de metamorfose, ilusões e troca de vida.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h101_demon_metamorph_e_illusion",
+        name: "Ilusão",
+        sourceTag: "illusion",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units"],
+        description: "Terceira habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [85, 140, 195, 250],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 35,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 0,
+          objective: 30
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "R",
+        id: "h101_demon_metamorph_r_sunder",
+        name: "Sunder",
+        sourceTag: "sunder",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Sunder. Define uma função tática específica dentro do kit de carry demoníaco de metamorfose, ilusões e troca de vida.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h102_solar_bird",
+    archetype: "ave solar de cura, mergulho e supernova",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "offlane", "healer", "nuker"],
+    preferredPositions: [3, 4],
+    designTags: ["sun_ray", "dive", "spirits", "supernova"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h102_solar_bird_q_sun_ray",
+        name: "Sun Ray",
+        sourceTag: "sun_ray",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Sun Ray. Define uma função tática específica dentro do kit de ave solar de cura, mergulho e supernova.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h102_solar_bird_w_dive",
+        name: "Dive",
+        sourceTag: "dive",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Dive. Define uma função tática específica dentro do kit de ave solar de cura, mergulho e supernova.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h102_solar_bird_e_spirits",
+        name: "Spirits",
+        sourceTag: "spirits",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Spirits. Define uma função tática específica dentro do kit de ave solar de cura, mergulho e supernova.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h102_solar_bird_r_supernova",
+        name: "Supernova",
+        sourceTag: "supernova",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Supernova. Define uma função tática específica dentro do kit de ave solar de cura, mergulho e supernova.",
+        values: {
+          damage: [280, 400, 520],
+          radius: 565,
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h103_fate_oracle",
+    archetype: "suporte de destino, purga, cura explosiva e falsa promessa",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "healer", "disabler"],
+    preferredPositions: [5],
+    designTags: ["purge", "fate_edict", "purifying_flames", "false_promise"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h103_fate_oracle_q_purge",
+        name: "Purga",
+        sourceTag: "purge",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Purga. Define uma função tática específica dentro do kit de suporte de destino, purga, cura explosiva e falsa promessa.",
+        values: {
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h103_fate_oracle_w_fate_edict",
+        name: "Fate Edict",
+        sourceTag: "fate_edict",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Fate Edict. Define uma função tática específica dentro do kit de suporte de destino, purga, cura explosiva e falsa promessa.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h103_fate_oracle_e_purifying_flames",
+        name: "Purifying Flames",
+        sourceTag: "purifying_flames",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Purifying Flames. Define uma função tática específica dentro do kit de suporte de destino, purga, cura explosiva e falsa promessa.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h103_fate_oracle_r_false_promise",
+        name: "False Promise",
+        sourceTag: "false_promise",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          damage: [255, 375, 495],
+          heal: [220, 340, 460],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 65,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h104_winter_controller",
+    archetype: "suporte de gelo, cura protetiva e maldição em área",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "healer", "nuker"],
+    preferredPositions: [5],
+    designTags: ["cold_embrace", "winter_curse", "splinter", "arctic_range"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h104_winter_controller_q_cold_embrace",
+        name: "Cold Embrace",
+        sourceTag: "cold_embrace",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Cold Embrace. Define uma função tática específica dentro do kit de suporte de gelo, cura protetiva e maldição em área.",
+        values: {
+          damage: [120, 175, 230, 285],
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h104_winter_controller_w_winter_curse",
+        name: "Winter Curse",
+        sourceTag: "winter_curse",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Winter Curse. Define uma função tática específica dentro do kit de suporte de gelo, cura protetiva e maldição em área.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: true,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h104_winter_controller_e_splinter",
+        name: "Splinter",
+        sourceTag: "splinter",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Splinter. Define uma função tática específica dentro do kit de suporte de gelo, cura protetiva e maldição em área.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h104_winter_controller_r_arctic_range",
+        name: "Arctic Alcance",
+        sourceTag: "arctic_range",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Arctic Alcance. Define uma função tática específica dentro do kit de suporte de gelo, cura protetiva e maldição em área.",
+        values: {
+          damage: [280, 400, 520],
+          range: [1600, 2000, 2400],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h105_arc_double",
+    archetype: "mago/carry de duplicata temporária, campo e fluxo",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["mid", "carry", "pusher"],
+    preferredPositions: [1, 2],
+    designTags: ["double", "flux", "magnetic_field", "spark"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h105_arc_double_q_double",
+        name: "Double",
+        sourceTag: "double",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Double. Define uma função tática específica dentro do kit de mago/carry de duplicata temporária, campo e fluxo.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h105_arc_double_w_flux",
+        name: "Flux",
+        sourceTag: "flux",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Flux. Define uma função tática específica dentro do kit de mago/carry de duplicata temporária, campo e fluxo.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h105_arc_double_e_magnetic_field",
+        name: "Magnetic Field",
+        sourceTag: "magnetic_field",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["mobility_lockout"],
+        description: "Terceira habilidade baseada em Magnetic Field. Define uma função tática específica dentro do kit de mago/carry de duplicata temporária, campo e fluxo.",
+        values: {
+          damage: [120, 175, 230, 285],
+          root: [1.2, 1.6, 2.0, 2.4],
+          radius: 445,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h105_arc_double_r_spark",
+        name: "Spark",
+        sourceTag: "spark",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Spark. Define uma função tática específica dentro do kit de mago/carry de duplicata temporária, campo e fluxo.",
+        values: {
+          damage: [280, 400, 520],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h106_monkey_warrior",
+    archetype: "carry acrobático de árvores, clone circular e bastão",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "mid", "escape"],
+    preferredPositions: [1, 2],
+    designTags: ["tree_jump", "boundless", "jingu", "command"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h106_monkey_warrior_q_tree_jump",
+        name: "Árvore Jump",
+        sourceTag: "tree_jump",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Árvore Jump. Define uma função tática específica dentro do kit de carry acrobático de árvores, clone circular e bastão.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h106_monkey_warrior_w_boundless",
+        name: "Boundless",
+        sourceTag: "boundless",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Boundless. Define uma função tática específica dentro do kit de carry acrobático de árvores, clone circular e bastão.",
+        values: {
+          damage: [120, 175, 230, 285],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h106_monkey_warrior_e_jingu",
+        name: "Jingu",
+        sourceTag: "jingu",
+        kind: "passive",
+        target: "passive",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Jingu. Define uma função tática específica dentro do kit de carry acrobático de árvores, clone circular e bastão.",
+        values: {
+          damage: [120, 175, 230, 285],
+          critChance: [12, 16, 20, 24],
+          critMultiplier: [160, 195, 230, 265],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h106_monkey_warrior_r_command",
+        name: "Command",
+        sourceTag: "command",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Command. Define uma função tática específica dentro do kit de carry acrobático de árvores, clone circular e bastão.",
+        values: {
+          damage: [280, 400, 520],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h107_dark_fae",
+    archetype: "suporte universal de medo, raízes e burst atrasado",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "hard_support", "disabler", "nuker"],
+    preferredPositions: [4, 5],
+    designTags: ["fear", "bramble", "untargetable", "delayed_stun"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 77
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h107_dark_fae_q_fear",
+        name: "Medo",
+        sourceTag: "fear",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade de controle para o arquétipo de suporte universal de medo, raízes e burst atrasado. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h107_dark_fae_w_bramble",
+        name: "Bramble",
+        sourceTag: "bramble",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Bramble. Define uma função tática específica dentro do kit de suporte universal de medo, raízes e burst atrasado.",
+        values: {
+          damage: [120, 175, 230, 285],
+          root: [1.2, 1.6, 2.0, 2.4],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h107_dark_fae_e_untargetable",
+        name: "Untargetable",
+        sourceTag: "untargetable",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Untargetable. Define uma função tática específica dentro do kit de suporte universal de medo, raízes e burst atrasado.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h107_dark_fae_r_delayed_stun",
+        name: "Delayed Atordoamento",
+        sourceTag: "delayed_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Ultimate de controle para o arquétipo de suporte universal de medo, raízes e burst atrasado. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [280, 400, 520],
+          stun: [1.2, 1.55, 1.9],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 45,
+          teamfight: 70,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 15
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      }
+    ]
+  },
+  {
+    heroId: "h108_rolling_duelist",
+    archetype: "duelista universal de dash, desarme e ultimate rolante",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "initiator", "disabler", "escape"],
+    preferredPositions: [3, 4],
+    designTags: ["roll", "dash_hits", "disarm", "crash"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h108_rolling_duelist_q_roll",
+        name: "Roll",
+        sourceTag: "roll",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Primeira habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 30,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h108_rolling_duelist_w_dash_hits",
+        name: "Avanço Hits",
+        sourceTag: "dash_hits",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Segunda habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 30,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h108_rolling_duelist_e_disarm",
+        name: "Disarm",
+        sourceTag: "disarm",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Disarm. Define uma função tática específica dentro do kit de duelista universal de dash, desarme e ultimate rolante.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h108_rolling_duelist_r_crash",
+        name: "Crash",
+        sourceTag: "crash",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Crash. Define uma função tática específica dentro do kit de duelista universal de dash, desarme e ultimate rolante.",
+        values: {
+          damage: [255, 375, 495],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h109_ink_warlock",
+    archetype: "suporte de tinta, silêncio, vínculo duplo e fantasma",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["soft_support", "hard_support", "disabler", "nuker"],
+    preferredPositions: [4, 5],
+    designTags: ["ink_swell", "silence", "soulbind", "phantom"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h109_ink_warlock_q_ink_swell",
+        name: "Ink Swell",
+        sourceTag: "ink_swell",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Ink Swell. Define uma função tática específica dentro do kit de suporte de tinta, silêncio, vínculo duplo e fantasma.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h109_ink_warlock_w_silence",
+        name: "Silêncio",
+        sourceTag: "silence",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["spell_lockout"],
+        description: "Segunda habilidade baseada em Silêncio. Define uma função tática específica dentro do kit de suporte de tinta, silêncio, vínculo duplo e fantasma.",
+        values: {
+          damage: [110, 165, 220, 275],
+          silence: [2.0, 2.6, 3.2, 3.8],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "E",
+        id: "h109_ink_warlock_e_soulbind",
+        name: "Soulbind",
+        sourceTag: "soulbind",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Soulbind. Define uma função tática específica dentro do kit de suporte de tinta, silêncio, vínculo duplo e fantasma.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h109_ink_warlock_r_phantom",
+        name: "Phantom",
+        sourceTag: "phantom",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Phantom. Define uma função tática específica dentro do kit de suporte de tinta, silêncio, vínculo duplo e fantasma.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h110_arena_sentinel",
+    archetype: "soldado de arena, lança, escudo frontal e zona de duelo",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    preferredPositions: [3],
+    designTags: ["arena", "spear", "shield", "rebuke"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h110_arena_sentinel_q_arena",
+        name: "Arena",
+        sourceTag: "arena",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Arena. Define uma função tática específica dentro do kit de soldado de arena, lança, escudo frontal e zona de duelo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          radius: 405,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: true,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h110_arena_sentinel_w_spear",
+        name: "Lança",
+        sourceTag: "spear",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Lança. Define uma função tática específica dentro do kit de soldado de arena, lança, escudo frontal e zona de duelo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h110_arena_sentinel_e_shield",
+        name: "Escudo",
+        sourceTag: "shield",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Terceira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          barrierOrArmorValue: [80, 140, 200, 260],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 0
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: [],
+        scaling: {
+          attribute: "strength",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "R",
+        id: "h110_arena_sentinel_r_rebuke",
+        name: "Rebuke",
+        sourceTag: "rebuke",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Rebuke. Define uma função tática específica dentro do kit de soldado de arena, lança, escudo frontal e zona de duelo.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h111_void_duelist",
+    archetype: "universal móvel com remanescentes e controle vetorial",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["mid", "escape", "nuker", "disabler"],
+    preferredPositions: [2],
+    designTags: ["astral_step", "remnant", "pulse", "shield"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h111_void_duelist_q_astral_step",
+        name: "Astral Step",
+        sourceTag: "astral_step",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Astral Step. Define uma função tática específica dentro do kit de universal móvel com remanescentes e controle vetorial.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h111_void_duelist_w_remnant",
+        name: "Remnant",
+        sourceTag: "remnant",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["mobility"],
+        description: "Segunda habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 20,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h111_void_duelist_e_pulse",
+        name: "Pulse",
+        sourceTag: "pulse",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Pulse. Define uma função tática específica dentro do kit de universal móvel com remanescentes e controle vetorial.",
+        values: {
+          damage: [120, 175, 230, 285],
+          radius: 445,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h111_void_duelist_r_shield",
+        name: "Escudo",
+        sourceTag: "shield",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Ultimate defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          barrierOrArmorValue: [80, 140, 200],
+          range: [500, 580, 660],
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 65,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 15
+        },
+        synergyTags: ["frontliners", "high_value_core", "long_fights"],
+        counterTags: [],
+        scaling: {
+          attribute: "highest",
+          coefficient: 0.35
+        }
+      }
+    ]
+  },
+  {
+    heroId: "h112_artillery_grandma",
+    archetype: "suporte universal de poke, montaria e artilharia",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["soft_support", "hard_support", "nuker", "disabler"],
+    preferredPositions: [4, 5],
+    designTags: ["scatter", "cookie", "rapid_fire", "mortar"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h112_artillery_grandma_q_scatter",
+        name: "Scatter",
+        sourceTag: "scatter",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Scatter. Define uma função tática específica dentro do kit de suporte universal de poke, montaria e artilharia.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h112_artillery_grandma_w_cookie",
+        name: "Cookie",
+        sourceTag: "cookie",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Cookie. Define uma função tática específica dentro do kit de suporte universal de poke, montaria e artilharia.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h112_artillery_grandma_e_rapid_fire",
+        name: "Rapid Fogo",
+        sourceTag: "rapid_fire",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [110, 165, 220, 275],
+          attackSpeed: [35, 60, 85, 110],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "R",
+        id: "h112_artillery_grandma_r_mortar",
+        name: "Mortar",
+        sourceTag: "mortar",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Mortar. Define uma função tática específica dentro do kit de suporte universal de poke, montaria e artilharia.",
+        values: {
+          damage: [270, 390, 510],
+          range: [1600, 2000, 2400],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h113_forest_trickster",
+    archetype: "atiradora da mata de armadilhas, boomerang e fuga",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "soft_support", "escape", "nuker"],
+    preferredPositions: [1, 4],
+    designTags: ["bushwhack", "boomerang", "scurry", "sharpshot"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h113_forest_trickster_q_bushwhack",
+        name: "Bushwhack",
+        sourceTag: "bushwhack",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Bushwhack. Define uma função tática específica dentro do kit de atiradora da mata de armadilhas, boomerang e fuga.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h113_forest_trickster_w_boomerang",
+        name: "Boomerang",
+        sourceTag: "boomerang",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Boomerang. Define uma função tática específica dentro do kit de atiradora da mata de armadilhas, boomerang e fuga.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h113_forest_trickster_e_scurry",
+        name: "Scurry",
+        sourceTag: "scurry",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Scurry. Define uma função tática específica dentro do kit de atiradora da mata de armadilhas, boomerang e fuga.",
+        values: {
+          damage: [110, 165, 220, 275],
+          moveSpeedBonusPct: [10, 16, 22, 28],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h113_forest_trickster_r_sharpshot",
+        name: "Sharpshot",
+        sourceTag: "sharpshot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Sharpshot. Define uma função tática específica dentro do kit de atiradora da mata de armadilhas, boomerang e fuga.",
+        values: {
+          damage: [290, 410, 530],
+          range: [1600, 2000, 2400],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 20,
+          farming: 20,
+          gank: 30,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h114_dawn_paladin",
+    archetype: "paladina global de cura, martelo e presença de luta",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "carry", "healer", "initiator"],
+    preferredPositions: [1, 3],
+    designTags: ["hammer", "luminosity", "global_heal", "starbreaker"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h114_dawn_paladin_q_hammer",
+        name: "Hammer",
+        sourceTag: "hammer",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Hammer. Define uma função tática específica dentro do kit de paladina global de cura, martelo e presença de luta.",
+        values: {
+          damage: [85, 140, 195, 250],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h114_dawn_paladin_w_luminosity",
+        name: "Luminosity",
+        sourceTag: "luminosity",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Luminosity. Define uma função tática específica dentro do kit de paladina global de cura, martelo e presença de luta.",
+        values: {
+          damage: [85, 140, 195, 250],
+          heal: [75, 120, 165, 210],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h114_dawn_paladin_e_global_heal",
+        name: "Global Cura",
+        sourceTag: "global_heal",
+        kind: "active",
+        target: "global",
+        damageType: "none",
+        mechanics: ["defensive_utility", "global_pressure"],
+        description: "Terceira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          heal: [75, 120, 165, 210],
+          global: true,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 30,
+          teamfight: 45,
+          retreat: 15,
+          push: 0,
+          save: 45,
+          objective: 30
+        },
+        synergyTags: ["deep_vision", "frontliners", "high_value_core", "long_fights", "pickoff", "split_push"],
+        counterTags: ["anti_heal", "burst_damage", "silence"],
+        scaling: {
+          attribute: "strength",
+          coefficient: 0.35
+        }
+      },
+      {
+        key: "R",
+        id: "h114_dawn_paladin_r_starbreaker",
+        name: "Starbreaker",
+        sourceTag: "starbreaker",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Starbreaker. Define uma função tática específica dentro do kit de paladina global de cura, martelo e presença de luta.",
+        values: {
+          damage: [245, 365, 485],
+          armorReduction: [2.0, 3.5, 5.0],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h115_grapple_brawler",
+    archetype: "lutadora de agarrão, arremesso e save agressivo",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["soft_support", "offlane", "initiator", "escape"],
+    preferredPositions: [3, 4],
+    designTags: ["dispose", "rebound", "sidekick", "unleash"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h115_grapple_brawler_q_dispose",
+        name: "Dispose",
+        sourceTag: "dispose",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Dispose. Define uma função tática específica dentro do kit de lutadora de agarrão, arremesso e save agressivo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h115_grapple_brawler_w_rebound",
+        name: "Rebound",
+        sourceTag: "rebound",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Rebound. Define uma função tática específica dentro do kit de lutadora de agarrão, arremesso e save agressivo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h115_grapple_brawler_e_sidekick",
+        name: "Sidekick",
+        sourceTag: "sidekick",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Sidekick. Define uma função tática específica dentro do kit de lutadora de agarrão, arremesso e save agressivo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h115_grapple_brawler_r_unleash",
+        name: "Unleash",
+        sourceTag: "unleash",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["mobility_lockout"],
+        description: "Ultimate de controle para o arquétipo de lutadora de agarrão, arremesso e save agressivo. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [245, 365, 485],
+          root: [1.2, 1.6, 2.0],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 45,
+          teamfight: 70,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 15
+        },
+        synergyTags: ["chase", "damage_over_time", "kiting"],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h116_primal_beast",
+    archetype: "fera colossal de investida, pisoteio e agarrão brutal",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["offlane", "initiator", "durable", "disabler"],
+    preferredPositions: [3],
+    designTags: ["onslaught", "trample", "uproar", "pulverize"],
+    kitIdentity: {
+      primaryGamePlan: "initiate_and_absorb",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h116_primal_beast_q_onslaught",
+        name: "Onslaught",
+        sourceTag: "onslaught",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Onslaught. Define uma função tática específica dentro do kit de fera colossal de investida, pisoteio e agarrão brutal.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h116_primal_beast_w_trample",
+        name: "Trample",
+        sourceTag: "trample",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Trample. Define uma função tática específica dentro do kit de fera colossal de investida, pisoteio e agarrão brutal.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h116_primal_beast_e_uproar",
+        name: "Uproar",
+        sourceTag: "uproar",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Uproar. Define uma função tática específica dentro do kit de fera colossal de investida, pisoteio e agarrão brutal.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h116_primal_beast_r_pulverize",
+        name: "Pulverize",
+        sourceTag: "pulverize",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Pulverize. Define uma função tática específica dentro do kit de fera colossal de investida, pisoteio e agarrão brutal.",
+        values: {
+          damage: [245, 365, 485],
+          stun: [1.2, 1.55, 1.9],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h117_gunslinger_wraith",
+    archetype: "atiradora espectral de medo, silêncio e tiros paralelos",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["carry", "mid", "nuker"],
+    preferredPositions: [1, 2],
+    designTags: ["deadshot", "silence_zone", "double_shot", "ethereal_attack"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h117_gunslinger_wraith_q_deadshot",
+        name: "Deadshot",
+        sourceTag: "deadshot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Deadshot. Define uma função tática específica dentro do kit de atiradora espectral de medo, silêncio e tiros paralelos.",
+        values: {
+          damage: [130, 185, 240, 295],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 20,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h117_gunslinger_wraith_w_silence_zone",
+        name: "Silêncio Zone",
+        sourceTag: "silence_zone",
+        kind: "active",
+        target: "global",
+        damageType: "magical",
+        mechanics: ["spell_lockout"],
+        description: "Segunda habilidade baseada em Silêncio Zone. Define uma função tática específica dentro do kit de atiradora espectral de medo, silêncio e tiros paralelos.",
+        values: {
+          damage: [110, 165, 220, 275],
+          silence: [2.0, 2.6, 3.2, 3.8],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 35,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      },
+      {
+        key: "E",
+        id: "h117_gunslinger_wraith_e_double_shot",
+        name: "Double Shot",
+        sourceTag: "double_shot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Double Shot. Define uma função tática específica dentro do kit de atiradora espectral de medo, silêncio e tiros paralelos.",
+        values: {
+          damage: [130, 185, 240, 295],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 20,
+          farming: 20,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h117_gunslinger_wraith_r_ethereal_attack",
+        name: "Ethereal Attack",
+        sourceTag: "ethereal_attack",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Ethereal Attack. Define uma função tática específica dentro do kit de atiradora espectral de medo, silêncio e tiros paralelos.",
+        values: {
+          damage: [290, 410, 530],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: ["armor_reduction", "attack_speed", "lifesteal"],
+        counterTags: ["armor", "disarm", "evasion", "kiting"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      }
+    ]
+  },
+  {
+    heroId: "h118_circus_controller",
+    archetype: "controlador circense de medo, armadilhas e salvamento",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["soft_support", "hard_support", "disabler"],
+    preferredPositions: [4, 5],
+    designTags: ["fear_whip", "escape_box", "wheel", "knife_barrage"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h118_circus_controller_q_fear_whip",
+        name: "Medo Whip",
+        sourceTag: "fear_whip",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade de controle para o arquétipo de controlador circense de medo, armadilhas e salvamento. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 45,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h118_circus_controller_w_escape_box",
+        name: "Escape Box",
+        sourceTag: "escape_box",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Escape Box. Define uma função tática específica dentro do kit de controlador circense de medo, armadilhas e salvamento.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h118_circus_controller_e_wheel",
+        name: "Wheel",
+        sourceTag: "wheel",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Wheel. Define uma função tática específica dentro do kit de controlador circense de medo, armadilhas e salvamento.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h118_circus_controller_r_knife_barrage",
+        name: "Knife Barrage",
+        sourceTag: "knife_barrage",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Knife Barrage. Define uma função tática específica dentro do kit de controlador circense de medo, armadilhas e salvamento.",
+        values: {
+          damage: [245, 365, 485],
+          duration: [16, 20, 24],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h119_twin_blade_duelist",
+    archetype: "duelista de duas posturas, corte veloz e disciplina de combate",
+    primaryAttribute: "agility",
+    attackType: "melee",
+    roles: ["carry", "mid", "escape"],
+    preferredPositions: [1, 2],
+    designTags: ["stance_switch", "dash_slash", "parry", "flurry"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 3,
+      microDemand: 50,
+      teamfightReliability: 65
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h119_twin_blade_duelist_q_stance_switch",
+        name: "Stance Switch",
+        sourceTag: "stance_switch",
+        kind: "toggle",
+        target: "self",
+        damageType: "none",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Stance Switch. Define uma função tática específica dentro do kit de duelista de duas posturas, corte veloz e disciplina de combate.",
+        values: {
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h119_twin_blade_duelist_w_dash_slash",
+        name: "Avanço Slash",
+        sourceTag: "dash_slash",
+        kind: "active",
+        target: "point",
+        damageType: "physical",
+        mechanics: ["mobility"],
+        description: "Segunda habilidade de mobilidade. Permite iniciar, reposicionar, fugir ou conectar o herói a objetivos e lutas no timing correto.",
+        values: {
+          damage: [140, 195, 250, 305],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 20,
+          teamfight: 0,
+          retreat: 25,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h119_twin_blade_duelist_e_parry",
+        name: "Parry",
+        sourceTag: "parry",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Parry. Define uma função tática específica dentro do kit de duelista de duas posturas, corte veloz e disciplina de combate.",
+        values: {
+          damage: [120, 175, 230, 285],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h119_twin_blade_duelist_r_flurry",
+        name: "Flurry",
+        sourceTag: "flurry",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Flurry. Define uma função tática específica dentro do kit de duelista de duas posturas, corte veloz e disciplina de combate.",
+        values: {
+          damage: [280, 400, 520],
+          attackSpeed: [35, 60, 85],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h120_heavy_artillery_commander",
+    archetype: "novo artilheiro pesado de zona, supressão e cerco",
+    primaryAttribute: "strength",
+    attackType: "ranged",
+    roles: ["offlane", "soft_support", "pusher", "disabler"],
+    preferredPositions: [3, 4],
+    designTags: ["siege_mode", "suppressive_fire", "shell_zone", "bunker"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h120_heavy_artillery_commander_q_siege_mode",
+        name: "Siege Mode",
+        sourceTag: "siege_mode",
+        kind: "toggle",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Siege Mode. Define uma função tática específica dentro do kit de novo artilheiro pesado de zona, supressão e cerco.",
+        values: {
+          damage: [85, 140, 195, 250],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h120_heavy_artillery_commander_w_suppressive_fire",
+        name: "Suppressive Fogo",
+        sourceTag: "suppressive_fire",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h120_heavy_artillery_commander_e_shell_zone",
+        name: "Shell Zone",
+        sourceTag: "shell_zone",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Shell Zone. Define uma função tática específica dentro do kit de novo artilheiro pesado de zona, supressão e cerco.",
+        values: {
+          damage: [85, 140, 195, 250],
+          radius: 405,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h120_heavy_artillery_commander_r_bunker",
+        name: "Bunker",
+        sourceTag: "bunker",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Bunker. Define uma função tática específica dentro do kit de novo artilheiro pesado de zona, supressão e cerco.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h121_vengeance_captain",
+    archetype: "suporte de vingança, troca de posição e aura ofensiva",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["hard_support", "soft_support", "disabler"],
+    preferredPositions: [4, 5],
+    designTags: ["swap", "vengeance_aura", "armor_break", "missile_stun"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 67
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h121_vengeance_captain_q_swap",
+        name: "Swap",
+        sourceTag: "swap",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Swap. Define uma função tática específica dentro do kit de suporte de vingança, troca de posição e aura ofensiva.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h121_vengeance_captain_w_vengeance_aura",
+        name: "Vengeance Aura",
+        sourceTag: "vengeance_aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["teamfight_modifier"],
+        description: "Segunda habilidade baseada em Vengeance Aura. Define uma função tática específica dentro do kit de suporte de vingança, troca de posição e aura ofensiva.",
+        values: {
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h121_vengeance_captain_e_armor_break",
+        name: "Armadura Break",
+        sourceTag: "armor_break",
+        kind: "active",
+        target: "unit",
+        damageType: "none",
+        mechanics: ["defensive_utility"],
+        description: "Terceira habilidade defensiva. Aumenta a sobrevivência de aliados ou do próprio herói e deve ser valorizada contra burst, pickoff e lutas longas.",
+        values: {
+          armorReduction: [2.0, 3.5, 5.0, 6.5],
+          barrierOrArmorValue: [80, 140, 200, 260],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 20,
+          retreat: 15,
+          push: 0,
+          save: 55,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h121_vengeance_captain_r_missile_stun",
+        name: "Missile Atordoamento",
+        sourceTag: "missile_stun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["hard_control"],
+        description: "Ultimate de controle para o arquétipo de suporte de vingança, troca de posição e aura ofensiva. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [245, 365, 485],
+          stun: [1.2, 1.55, 1.9],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 45,
+          teamfight: 70,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 15
+        },
+        synergyTags: ["burst_followup", "objective_conversion", "skillshots"],
+        counterTags: ["basic_or_strong_dispel", "debuff_immunity", "status_resistance"]
+      }
+    ]
+  },
+  {
+    heroId: "h122_crystal_channeler",
+    archetype: "suporte glacial de mana, congelamento e ultimate canalizada",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["hard_support", "disabler", "nuker"],
+    preferredPositions: [5],
+    designTags: ["mana_aura", "frostbite", "crystal_nova", "freezing_field"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h122_crystal_channeler_q_mana_aura",
+        name: "Mana Aura",
+        sourceTag: "mana_aura",
+        kind: "passive",
+        target: "passive",
+        damageType: "none",
+        mechanics: ["teamfight_modifier"],
+        description: "Primeira habilidade baseada em Mana Aura. Define uma função tática específica dentro do kit de suporte glacial de mana, congelamento e ultimate canalizada.",
+        values: {
+          manaValue: [40, 75, 110, 145],
+          cooldown: 0,
+          manaCost: 0
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: false,
+          breakable: true
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: [],
+        scaling: {
+          attribute: "intelligence",
+          coefficient: 0.55
+        }
+      },
+      {
+        key: "W",
+        id: "h122_crystal_channeler_w_frostbite",
+        name: "Frostbite",
+        sourceTag: "frostbite",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Segunda habilidade baseada em Frostbite. Define uma função tática específica dentro do kit de suporte glacial de mana, congelamento e ultimate canalizada.",
+        values: {
+          damage: [100, 155, 210, 265],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h122_crystal_channeler_e_crystal_nova",
+        name: "Crystal Nova",
+        sourceTag: "crystal_nova",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Crystal Nova. Define uma função tática específica dentro do kit de suporte glacial de mana, congelamento e ultimate canalizada.",
+        values: {
+          damage: [100, 155, 210, 265],
+          radius: 365,
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h122_crystal_channeler_r_freezing_field",
+        name: "Freezing Field",
+        sourceTag: "freezing_field",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Freezing Field. Define uma função tática específica dentro do kit de suporte glacial de mana, congelamento e ultimate canalizada.",
+        values: {
+          damage: [260, 380, 500],
+          radius: 485,
+          duration: [8, 10, 12],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h123_greatsword_knight",
+    archetype: "guerreiro de espada pesada, cleave e força explosiva",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["carry", "initiator", "durable"],
+    preferredPositions: [1, 3],
+    designTags: ["cleave", "storm_hammer", "warcry", "god_strength"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 1,
+      microDemand: 30,
+      teamfightReliability: 45
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h123_greatsword_knight_q_cleave",
+        name: "Corte",
+        sourceTag: "cleave",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["attack_scaling"],
+        description: "Primeira habilidade de escalamento físico. Aumenta DPS real com itens de dano, velocidade de ataque, redução de armadura e proteção de core.",
+        values: {
+          damage: [95, 150, 205, 260],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: true,
+          canLifesteal: true,
+          canSpellLifesteal: false,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 35,
+          gank: 0,
+          teamfight: 20,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 35
+        },
+        synergyTags: ["armor_reduction", "attack_speed", "lifesteal"],
+        counterTags: ["armor", "disarm", "evasion", "kiting"],
+        scaling: {
+          attribute: "attackDamage",
+          coefficient: 1.0
+        }
+      },
+      {
+        key: "W",
+        id: "h123_greatsword_knight_w_storm_hammer",
+        name: "Tempestade Hammer",
+        sourceTag: "storm_hammer",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [75, 130, 185, 240],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          radius: 365,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "E",
+        id: "h123_greatsword_knight_e_warcry",
+        name: "Warcry",
+        sourceTag: "warcry",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["teamfight_modifier"],
+        description: "Terceira habilidade baseada em Warcry. Define uma função tática específica dentro do kit de guerreiro de espada pesada, cleave e força explosiva.",
+        values: {
+          damage: [75, 130, 185, 240],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h123_greatsword_knight_r_god_strength",
+        name: "God Strength",
+        sourceTag: "god_strength",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em God Strength. Define uma função tática específica dentro do kit de guerreiro de espada pesada, cleave e força explosiva.",
+        values: {
+          damage: [235, 355, 475],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h124_stone_giant",
+    archetype: "colosso de pedra, arremesso e combo de burst",
+    primaryAttribute: "strength",
+    attackType: "melee",
+    roles: ["mid", "offlane", "nuker", "initiator"],
+    preferredPositions: [2, 3],
+    designTags: ["toss", "avalanche", "tree_grab", "grow"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h124_stone_giant_q_toss",
+        name: "Toss",
+        sourceTag: "toss",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Toss. Define uma função tática específica dentro do kit de colosso de pedra, arremesso e combo de burst.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h124_stone_giant_w_avalanche",
+        name: "Avalanche",
+        sourceTag: "avalanche",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Avalanche. Define uma função tática específica dentro do kit de colosso de pedra, arremesso e combo de burst.",
+        values: {
+          damage: [110, 165, 220, 275],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h124_stone_giant_e_tree_grab",
+        name: "Árvore Grab",
+        sourceTag: "tree_grab",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Árvore Grab. Define uma função tática específica dentro do kit de colosso de pedra, arremesso e combo de burst.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h124_stone_giant_r_grow",
+        name: "Grow",
+        sourceTag: "grow",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Grow. Define uma função tática específica dentro do kit de colosso de pedra, arremesso e combo de burst.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h125_wind_archer",
+    archetype: "arqueira do vento de stun em linha, foco e fuga",
+    primaryAttribute: "universal",
+    attackType: "ranged",
+    roles: ["mid", "soft_support", "escape", "disabler"],
+    preferredPositions: [2, 4],
+    designTags: ["shackleshot", "powershot", "windrun", "focus_fire"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h125_wind_archer_q_shackleshot",
+        name: "Shackleshot",
+        sourceTag: "shackleshot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["hard_control"],
+        description: "Primeira habilidade de controle para o arquétipo de arqueira do vento de stun em linha, foco e fuga. Cria janela de pickoff, peel ou iniciação, com valor aumentado quando aliados têm follow-up.",
+        values: {
+          damage: [110, 165, 220, 275],
+          stun: [0.8, 1.15, 1.5, 1.85],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 65,
+          teamfight: 25,
+          retreat: 0,
+          push: 0,
+          save: 20,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h125_wind_archer_w_powershot",
+        name: "Powershot",
+        sourceTag: "powershot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Powershot. Define uma função tática específica dentro do kit de arqueira do vento de stun em linha, foco e fuga.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 10,
+          gank: 30,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h125_wind_archer_e_windrun",
+        name: "Windrun",
+        sourceTag: "windrun",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Windrun. Define uma função tática específica dentro do kit de arqueira do vento de stun em linha, foco e fuga.",
+        values: {
+          damage: [110, 165, 220, 275],
+          moveSpeedBonusPct: [10, 16, 22, 28],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h125_wind_archer_r_focus_fire",
+        name: "Focus Fogo",
+        sourceTag: "focus_fire",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [270, 390, 510],
+          attackSpeed: [35, 60, 85],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      }
+    ]
+  },
+  {
+    heroId: "h126_storm_edict_prophet",
+    archetype: "mago de edictos elétricos, pulso e divisão de terra",
+    primaryAttribute: "intelligence",
+    attackType: "ranged",
+    roles: ["mid", "pusher", "nuker", "disabler"],
+    preferredPositions: [2],
+    designTags: ["split_earth", "diabolic_edict", "lightning_storm", "pulse_nova"],
+    kitIdentity: {
+      primaryGamePlan: "tempo_and_burst",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h126_storm_edict_prophet_q_split_earth",
+        name: "Divisão Earth",
+        sourceTag: "split_earth",
+        kind: "active",
+        target: "self",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Divisão Earth. Define uma função tática específica dentro do kit de mago de edictos elétricos, pulso e divisão de terra.",
+        values: {
+          damage: [110, 165, 220, 275],
+          duration: [5, 7, 9, 11],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: false,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h126_storm_edict_prophet_w_diabolic_edict",
+        name: "Diabolic Edict",
+        sourceTag: "diabolic_edict",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Segunda habilidade baseada em Diabolic Edict. Define uma função tática específica dentro do kit de mago de edictos elétricos, pulso e divisão de terra.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h126_storm_edict_prophet_e_lightning_storm",
+        name: "Lightning Tempestade",
+        sourceTag: "lightning_storm",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [110, 165, 220, 275],
+          radius: 405,
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      },
+      {
+        key: "R",
+        id: "h126_storm_edict_prophet_r_pulse_nova",
+        name: "Pulse Nova",
+        sourceTag: "pulse_nova",
+        kind: "active",
+        target: "area",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Pulse Nova. Define uma função tática específica dentro do kit de mago de edictos elétricos, pulso e divisão de terra.",
+        values: {
+          damage: [270, 390, 510],
+          radius: 525,
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 0,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  },
+  {
+    heroId: "h127_goblin_clock_sniper",
+    archetype: "atirador tecnológico de minas leves, mira e recuo",
+    primaryAttribute: "agility",
+    attackType: "ranged",
+    roles: ["carry", "mid", "scout"],
+    preferredPositions: [1, 2],
+    designTags: ["aimed_shot", "recoil_jump", "spotter_drone", "calibrated_burst"],
+    kitIdentity: {
+      primaryGamePlan: "scale_and_carry",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h127_goblin_clock_sniper_q_aimed_shot",
+        name: "Aimed Shot",
+        sourceTag: "aimed_shot",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Aimed Shot. Define uma função tática específica dentro do kit de atirador tecnológico de minas leves, mira e recuo.",
+        values: {
+          damage: [130, 185, 240, 295],
+          range: [650, 770, 890, 1010],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 50,
+          farming: 20,
+          gank: 20,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h127_goblin_clock_sniper_w_recoil_jump",
+        name: "Recoil Jump",
+        sourceTag: "recoil_jump",
+        kind: "active",
+        target: "point",
+        damageType: "magical",
+        mechanics: ["movement_control"],
+        description: "Segunda habilidade baseada em Recoil Jump. Define uma função tática específica dentro do kit de atirador tecnológico de minas leves, mira e recuo.",
+        values: {
+          damage: [110, 165, 220, 275],
+          slowPct: [16, 24, 32, 40],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: false,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "E",
+        id: "h127_goblin_clock_sniper_e_spotter_drone",
+        name: "Spotter Drone",
+        sourceTag: "spotter_drone",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Spotter Drone. Define uma função tática específica dentro do kit de atirador tecnológico de minas leves, mira e recuo.",
+        values: {
+          damage: [110, 165, 220, 275],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 10,
+          gank: 0,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 10
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h127_goblin_clock_sniper_r_calibrated_burst",
+        name: "Calibrated Explosão",
+        sourceTag: "calibrated_burst",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate de dano mágico ou híbrido. Usada para pressão de lane, farm, burst e controle de ritmo.",
+        values: {
+          damage: [270, 390, 510],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: true,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 20,
+          farming: 20,
+          gank: 20,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 0,
+          objective: 25
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: ["barrier", "magic_resistance", "spell_immunity"]
+      }
+    ]
+  },
+  {
+    heroId: "h128_rune_blade_nomad",
+    archetype: "lutador de runas, corte circular e bloqueio mágico",
+    primaryAttribute: "universal",
+    attackType: "melee",
+    roles: ["offlane", "soft_support", "durable", "disabler"],
+    preferredPositions: [3, 4],
+    designTags: ["rune_slash", "warding_circle", "spell_parry", "runic_prison"],
+    kitIdentity: {
+      primaryGamePlan: "control_and_enable",
+      executionComplexity: 2,
+      microDemand: 40,
+      teamfightReliability: 55
+    },
+    skills: [
+      {
+        key: "Q",
+        id: "h128_rune_blade_nomad_q_rune_slash",
+        name: "Rune Slash",
+        sourceTag: "rune_slash",
+        kind: "active",
+        target: "unit",
+        damageType: "physical",
+        mechanics: ["generic_spell"],
+        description: "Primeira habilidade baseada em Rune Slash. Define uma função tática específica dentro do kit de lutador de runas, corte circular e bloqueio mágico.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: false,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: [],
+        counterTags: []
+      },
+      {
+        key: "W",
+        id: "h128_rune_blade_nomad_w_warding_circle",
+        name: "Warding Circle",
+        sourceTag: "warding_circle",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["controlled_units", "information"],
+        description: "Segunda habilidade de unidades controladas ou pressão de mapa. Melhora push, scout, farm e split pressure, mas aumenta exigência de micro.",
+        values: {
+          damage: [85, 140, 195, 250],
+          summons: [1, 2, 3, 4],
+          summonDuration: [20, 28, 36, 44],
+          range: [500, 580, 660, 740],
+          duration: [4.0, 5.5, 7.0, 8.5],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: true,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 30,
+          farming: 25,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 35,
+          save: 10,
+          objective: 20
+        },
+        synergyTags: ["armor_reduction", "auras", "split_push", "vision"],
+        counterTags: ["aoe_clear", "armor_aura", "crimson_barrier"]
+      },
+      {
+        key: "E",
+        id: "h128_rune_blade_nomad_e_spell_parry",
+        name: "Spell Parry",
+        sourceTag: "spell_parry",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Terceira habilidade baseada em Spell Parry. Define uma função tática específica dentro do kit de lutador de runas, corte circular e bloqueio mágico.",
+        values: {
+          damage: [85, 140, 195, 250],
+          range: [500, 580, 660, 740],
+          cooldown: [18, 16, 14, 12],
+          manaCost: [80, 95, 110, 125]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 0,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 0
+        },
+        synergyTags: ["cooldown_reduction", "magic_resistance_reduction", "spell_amp"],
+        counterTags: []
+      },
+      {
+        key: "R",
+        id: "h128_rune_blade_nomad_r_runic_prison",
+        name: "Runic Prison",
+        sourceTag: "runic_prison",
+        kind: "active",
+        target: "unit",
+        damageType: "magical",
+        mechanics: ["generic_spell"],
+        description: "Ultimate baseada em Runic Prison. Define uma função tática específica dentro do kit de lutador de runas, corte circular e bloqueio mágico.",
+        values: {
+          damage: [245, 365, 485],
+          range: [500, 580, 660],
+          cooldown: [120, 100, 80],
+          manaCost: [150, 225, 300]
+        },
+        flags: {
+          dispellable: true,
+          piercesDebuffImmunity: false,
+          canBeDisjointed: true,
+          usesProjectile: false,
+          canCrit: false,
+          canLifesteal: false,
+          canSpellLifesteal: true,
+          affectsBuildings: false,
+          affectsIllusions: true,
+          breaksInvisibility: true,
+          breakable: false
+        },
+        aiUsage: {
+          laning: 0,
+          farming: 0,
+          gank: 10,
+          teamfight: 45,
+          retreat: 0,
+          push: 0,
+          save: 10,
+          objective: 15
+        },
+        synergyTags: [],
+        counterTags: []
+      }
+    ]
+  }
+];
+
+export const COMPLETE_HERO_SKILL_KIT_COUNT = COMPLETE_HERO_SKILL_KITS.length;
+
+export function getSkillKit(heroId: string) {
+  return COMPLETE_HERO_SKILL_KITS.find((kit) => kit.heroId === heroId);
+}
+
+export function validateSkillKit(kit: CompleteHeroSkillKit) {
+  const keys = new Set(kit.skills.map((skill) => skill.key));
+  return kit.skills.length === 4 &&
+    keys.size === 4 &&
+    keys.has("Q") &&
+    keys.has("W") &&
+    keys.has("E") &&
+    keys.has("R");
+}
+
+export function validateCompleteHeroSkillKits() {
+  return COMPLETE_HERO_SKILL_KITS.every(validateSkillKit);
+}
+
+// Testes recomendados para o Codex:
+// 1. COMPLETE_HERO_SKILL_KIT_COUNT deve ser 128.
+// 2. Todo herói deve ter exatamente 4 skills.
+// 3. Cada skill deve ter key Q/W/E/R sem duplicação.
+// 4. Toda skill ativa deve ter cooldown e manaCost.
+// 5. Toda skill com damageType diferente de none deve ter damage ou uma mecânica de dano.
+// 6. Toda skill de controle deve ter ao menos uma duração de controle.
+// 7. skills passivas devem ter cooldown = 0 e manaCost = 0.
+// 8. sourceTag deve bater com um designTag do herói ou fallback.
+// 9. aiUsage deve conter todas as chaves obrigatórias.
+// 10. counterTags e synergyTags podem ser vazios, mas devem existir.

@@ -5,13 +5,12 @@ import type { PlayerContext, PlayerModeScore } from '../types/aiTypes.ts'
 function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
   return {
     gameTime: { seconds: 600, minutes: 10, phase: 'early_mid' },
+    matchSeed: 'test-seed',
     teamPlan: {
       type: 'group_push',
       urgency: 70,
-      confidence: 64,
       risk: 38,
       expectedValue: 72,
-      expiresAtGameTime: 640,
       reasonTags: ['group'],
     },
     team: {
@@ -31,7 +30,6 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
       baseThreat: 0,
       visionControl: 55,
       netWorthLead: 400,
-      xpLead: 300,
       numbersAdvantage: 1,
       fightReadiness: 72,
       lowResourcePressure: 10,
@@ -43,13 +41,11 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
       farmPriority: 62,
       farmingEfficiency: 55,
       gpmDecisionBias: 58,
-      mapAwareness: 70,
       teamfight: 76,
       positioning: 74,
       communication: 68,
       discipline: 78,
       aggression: 58,
-      heroMastery: 72,
       personality: {
         riskTolerance: 54,
         greed: 42,
@@ -65,7 +61,6 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
       healthPct: 0.82,
       manaPct: 0.7,
       danger: 24,
-      nearBase: false,
       itemTimingUrgency: 24,
     },
     local: {
@@ -73,7 +68,6 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
       allySaveNeed: 0,
       nearbyFightValue: 45,
       finishEnemyValue: 20,
-      towerPressure: 50,
       objectivePressure: 74,
     },
     map: {
