@@ -27,9 +27,9 @@ Com a aba oculta o navegador reduz o rAF a ~1–2 fps e o clamp de 0.12s faz o j
 
 `nextVisualPruneAt` (~linha 6432) é variável de módulo usada por `pruneVisualPositionsOccasionally`, chamada pelas camadas de creep e arcane com Maps diferentes. A camada de creep desenha primeiro e sempre vence o gate, então o Map de arcanes nunca é podado. Tornar o gate por-mapa (ex.: guardar o timestamp dentro de uma estrutura por camada, ou um `WeakMap<Map, number>`). Aproveitar e podar também o Map do `AttackRangeCanvasLayer` (entradas `range-*` nunca são removidas).
 
-### 4. MELHORIA — nitidez em HiDPI
+### 4. MELHORIA — nitidez em HiDPI (REVERTIDA — só refazer depois da task 2)
 
-`maxCanvasDevicePixelRatio = 1` (~linha 5847) deixa os canvases borrados em telas com escala 125/150%. Subir o cap para 2.
+Subir `maxCanvasDevicePixelRatio` de 1 para 2 foi implementado e **revertido**: quadruplicar o raster dos 5 canvases reintroduziu stutter (o frame drop vira lentidão da simulação enquanto ela estiver acoplada ao rAF — movimento acelera, lentifica, dá uma parada e retoma). Só reimplementar DEPOIS da task 2 (sim fora do rAF), e de forma adaptativa: começar em DPR 2 e cair para 1 automaticamente se o FPS médio ficar abaixo de ~50 por alguns segundos.
 
 ### 5. MELHORIA — parar de redesenhar quando nada muda
 

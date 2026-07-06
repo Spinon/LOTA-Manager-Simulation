@@ -6558,7 +6558,10 @@ function getMaxSimulationStepsPerFrame(speed: number) {
 }
 
 const uiSnapshotIntervalSeconds = 0.5
-const maxCanvasDevicePixelRatio = 2
+// Manter em 1: DPR 2 quadruplica o custo de raster dos 5 canvases e reintroduz
+// stutter (frame drops viram lentidao da sim enquanto ela for acoplada ao rAF).
+// So subir de novo como DPR adaptativo depois que a sim rodar fora do rAF.
+const maxCanvasDevicePixelRatio = 1
 
 function App() {
   const [state, setState] = useState<SimulationState | undefined>(undefined)
