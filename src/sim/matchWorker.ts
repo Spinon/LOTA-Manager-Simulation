@@ -23,8 +23,14 @@ export type MatchWorkerResponse =
 
 const renderFrameIntervalSeconds = 0.2
 const maxSimulationSeconds = 50 * 60
-const simulationChunkSteps = 2400
-const maxBufferedAheadSeconds = maxSimulationSeconds
+// Chunks curtos: cada flush vira um postMessage que o main thread precisa
+// desserializar de forma síncrona — lotes de ~5s de jogo (~25 frames) mantêm
+// esse bloqueio abaixo de ~15ms e deixam o worker responder rápido ao cursor.
+const simulationChunkSteps = 150
+// Teto de buffer à frente do cursor: limita a memória do playback (frames de
+// estado completos pesam ~50KB cada). O worker simula ~25x mais rápido que o
+// tempo real, então 180s de folga nunca esvaziam nem a 16x de velocidade.
+const maxBufferedAheadSeconds = 180
 
 let activeRunId = 0
 let playbackCursor = 0

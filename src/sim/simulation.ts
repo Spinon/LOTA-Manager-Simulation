@@ -224,7 +224,12 @@ export type Boss = {
 export type CombatTarget = Arcane | Creep | Tower | Structure | Base | Camp | Boss
 export type RouteCreepTargetMode = 'attack' | 'vision'
 export type TickFrameContext = {
-  routeCreepTargetCache: Map<string, CombatTarget | null>
+  routeCreepTargetCache: Record<RouteCreepTargetMode, Map<string, CombatTarget | null>>
+  // Caches válidos dentro de um único tick (mesma semântica do cache de alvo
+  // acima: pequenas mutações de posição/hp no meio do tick são ignoradas).
+  arcaneNearRouteCache: Map<Point[], Map<string, boolean>>
+  attackableTowersCache: Partial<Record<TeamId, Tower[]>>
+  attackableStructuresCache: Partial<Record<TeamId, Structure[]>>
 }
 export type SpatialGrid<T extends { pos: Point }> = {
   cellSize: number
@@ -294,6 +299,7 @@ export type SimulationState = {
 export const analyzedGameStateCache = new WeakMap<SimulationState, { time: number; analyzed: AnalyzedGameState }>()
 export const playerAiProfileCache = new Map<string, ReturnType<typeof buildPlayerAiProfile>>()
 export const creepSpatialGridCache = new WeakMap<SimulationState, { time: number; grid: SpatialGrid<Creep> }>()
+export const aliveTowersByLaneCache = new WeakMap<SimulationState, { time: number; byTeamLane: Map<string, Tower[]> }>()
 
 export type CombatSource = {
   id: string
@@ -455,7 +461,10 @@ export const teleportNearbyPenaltyRadius = 10
 export const teleportNearbyPenaltySeconds = 25
 export const teleportArrivalOffset = 2.8
 export const teleportManaCost = 75
-export const simulationFrameSeconds = 1 / 60
+// 30Hz é suficiente para a física da sim: o playback consome frames a 5Hz com
+// interpolação visual, e as decisões de IA já são gated a 0.1s (decisionGateSeconds).
+// Dobrar o passo corta ~metade do custo de CPU da partida no worker.
+export const simulationFrameSeconds = 1 / 30
 export const decisionGateSeconds = 0.1
 export const maxDecisionHoldSeconds = 6
 export const teamDecisionIntervalSeconds = 1.2
@@ -1346,7 +1355,10 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
 
   let next: SimulationState = state
   const frameContext: TickFrameContext = {
-    routeCreepTargetCache: new Map(),
+    routeCreepTargetCache: { attack: new Map(), vision: new Map() },
+    arcaneNearRouteCache: new Map(),
+    attackableTowersCache: {},
+    attackableStructuresCache: {},
   }
   const previousDayCycle = getDayCycle(next.time)
   const previousTime = next.time
@@ -1356,7 +1368,9 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
     next.nextWave += NON_COMBAT_RULES.map.waveIntervalSeconds
   }
   next.runes = spawnRunesForTick(next, previousTime)
-  const passiveGold = passiveGoldForTick(next.time, delta)
+  // Ouro passivo acumula na cadência do gate de decisão (mesma taxa por
+  // segundo): conceder a cada tick clonava 10 arcanes/tick só para somar ouro.
+  const passiveGold = shouldDecide ? passiveGoldForTick(next.time, decisionGateSeconds) : 0
   next.effects = next.effects.filter((effect) => next.time - effect.createdAt < effect.duration)
   next.timedEffects = next.timedEffects.filter((effect) => effect.expiresAt > next.time)
   next = processTimedEffects(next)
@@ -1401,13 +1415,17 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
 
   next.arcanes = next.arcanes.map((arcane) => updateArcaneMovement(arcane, next, delta, shouldDecide))
   next = collectRunes(next)
-  next.arcanes = next.arcanes.map((arcane) => (
-    arcane.stats.hp > 0 && arcane.respawn <= next.time
-      ? grantArcaneEconomy(arcane, passiveGold, 0)
-      : arcane
-  ))
+  if (passiveGold > 0) {
+    next.arcanes = next.arcanes.map((arcane) => (
+      arcane.stats.hp > 0 && arcane.respawn <= next.time
+        ? grantArcaneEconomy(arcane, passiveGold, 0)
+        : arcane
+    ))
+  }
   next.creeps = next.creeps.map((creep) => updateCreepMovement(creep, next, delta, frameContext))
-  resolveUnitHitboxes(next)
+  // Separação de hitbox é cosmética (evita unidades empilhadas); rodar só nos
+  // ticks de decisão (10Hz) é indistinguível no playback de 5Hz e poupa CPU.
+  if (shouldDecide) resolveUnitHitboxes(next)
   next = updateTeamFortifications(next)
   next = resolveCombat(next, frameContext)
   next = resolveDeaths(next)
@@ -2445,9 +2463,11 @@ export function getBaseThreat(state: SimulationState, team: TeamId) {
     arcane.stats.hp > 0 &&
     arcane.respawn <= state.time
   )), 18)
-  const enemyCreep = nearest(base.pos, state.creeps.filter((creep) => creep.team !== team), 12)
+  const nearBaseEnemyCreeps = querySpatialGrid(getCreepSpatialGrid(state), base.pos, 12)
+    .filter((creep) => creep.team !== team)
+  const enemyCreep = nearest(base.pos, nearBaseEnemyCreeps, 12)
   const pressure = state.arcanes.filter((arcane) => arcane.team !== team && arcane.stats.hp > 0 && arcane.respawn <= state.time && distance(arcane.pos, base.pos) <= 20).length * 2 +
-    state.creeps.filter((creep) => creep.team !== team && distance(creep.pos, base.pos) <= 12).length
+    nearBaseEnemyCreeps.filter((creep) => distance(creep.pos, base.pos) <= 12).length
   const hpRatio = base.hp / base.maxHp
 
   if (!enemyArcane && !enemyCreep && hpRatio > 0.45) return undefined
@@ -4815,20 +4835,56 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
 }
 
 export function getCachedRouteCreepTarget(creep: Creep, state: SimulationState, mode: RouteCreepTargetMode, frameContext: TickFrameContext) {
-  const key = `${creep.id}:${mode}`
-  if (frameContext.routeCreepTargetCache.has(key)) {
-    return frameContext.routeCreepTargetCache.get(key) ?? undefined
+  const cache = frameContext.routeCreepTargetCache[mode]
+  const cached = cache.get(creep.id)
+  if (cached !== undefined) {
+    return cached ?? undefined
   }
-  const target = getRouteCreepTarget(creep, state, mode)
-  frameContext.routeCreepTargetCache.set(key, target ?? null)
+  const target = getRouteCreepTarget(creep, state, mode, frameContext)
+  cache.set(creep.id, target ?? null)
   return target
 }
 
-export function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: RouteCreepTargetMode = 'attack') {
+export function getCachedAttackableEnemyTowers(state: SimulationState, team: TeamId, frameContext: TickFrameContext) {
+  const cached = frameContext.attackableTowersCache[team]
+  if (cached) return cached
+  const towers = getAttackableEnemyTowers(state, team)
+  frameContext.attackableTowersCache[team] = towers
+  return towers
+}
+
+export function getCachedAttackableEnemyStructures(state: SimulationState, team: TeamId, frameContext: TickFrameContext) {
+  const cached = frameContext.attackableStructuresCache[team]
+  if (cached) return cached
+  const structures = getAttackableEnemyStructures(state, team)
+  frameContext.attackableStructuresCache[team] = structures
+  return structures
+}
+
+export function isArcaneNearRouteCached(arcane: Arcane, path: Point[], frameContext: TickFrameContext) {
+  let perPath = frameContext.arcaneNearRouteCache.get(path)
+  if (!perPath) {
+    perPath = new Map()
+    frameContext.arcaneNearRouteCache.set(path, perPath)
+  }
+  const cached = perPath.get(arcane.id)
+  if (cached !== undefined) return cached
+  const result = isNearRoute(arcane.pos, path, 12)
+  perPath.set(arcane.id, result)
+  return result
+}
+
+export function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: RouteCreepTargetMode = 'attack', frameContext?: TickFrameContext) {
   const structureRange = isMeleeCreep(creep) ? 3.2 : creep.range
   const visionRange = getCreepVisionRange(creep)
   const unitRange = mode === 'attack' ? creep.range : visionRange
   const objectiveRange = mode === 'attack' ? structureRange : visionRange
+  const lanePath = lanePaths[creep.team][creep.lane]
+  const isArcaneNearLane = (arcane: Arcane) => (
+    frameContext
+      ? isArcaneNearRouteCached(arcane, lanePath, frameContext)
+      : isNearRoute(arcane.pos, lanePath, 12)
+  )
   const selectTarget = <T extends { pos: Point }>(entities: T[], range: number) => (
     mode === 'attack'
       ? nearestReachableByCreep(creep, entities, range)
@@ -4841,7 +4897,7 @@ export function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: 
         arcane.id === creep.aggroTargetId &&
         arcane.stats.hp > 0 &&
         arcane.respawn <= state.time &&
-        isNearRoute(arcane.pos, lanePaths[creep.team][creep.lane], 12)
+        isArcaneNearLane(arcane)
       )), unitRange)
     : undefined
   if (aggroTarget) return aggroTarget
@@ -4852,17 +4908,24 @@ export function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: 
   )
   if (enemyCreep) return enemyCreep
 
+  const attackableTowers = frameContext
+    ? getCachedAttackableEnemyTowers(state, creep.team, frameContext)
+    : getAttackableEnemyTowers(state, creep.team)
+  const attackableStructures = frameContext
+    ? getCachedAttackableEnemyStructures(state, creep.team, frameContext)
+    : getAttackableEnemyStructures(state, creep.team)
+
   return selectTarget(
     state.arcanes.filter((arcane) => (
       arcane.team !== creep.team &&
       arcane.stats.hp > 0 &&
       arcane.respawn <= state.time &&
-      isNearRoute(arcane.pos, lanePaths[creep.team][creep.lane], 12)
+      isArcaneNearLane(arcane)
     )),
     unitRange,
   ) ?? selectTarget([
-    ...getAttackableEnemyTowers(state, creep.team).filter((tower) => tower.lane === creep.lane),
-    ...getAttackableEnemyStructures(state, creep.team).filter((structure) => structure.lane === creep.lane || structure.kind === 'tower_tier_4'),
+    ...attackableTowers.filter((tower) => tower.lane === creep.lane),
+    ...attackableStructures.filter((structure) => structure.lane === creep.lane || structure.kind === 'tower_tier_4'),
     ...(isEnemyBaseUnlocked(state, creep.team) ? state.bases.filter((base) => base.team !== creep.team && base.hp > 0) : []),
   ], objectiveRange)
 }
@@ -4915,6 +4978,7 @@ export function isStructureLikeTarget(target: { pos: Point }) {
 
 export type UnitHitboxBody = {
   id: string
+  index: number
   pos: Point
   radius: number
   movable: boolean
@@ -4934,6 +4998,7 @@ export function resolveUnitHitboxes(state: SimulationState) {
     if (arcane.stats.hp <= 0 || arcane.respawn > state.time) continue
     bodies.push({
       id: arcane.id,
+      index: bodies.length,
       pos: arcane.pos,
       radius: getUnitHitboxRadius(arcane),
       movable: true,
@@ -4945,6 +5010,7 @@ export function resolveUnitHitboxes(state: SimulationState) {
     if (creep.hp <= 0) continue
     bodies.push({
       id: creep.id,
+      index: bodies.length,
       pos: creep.pos,
       radius: getUnitHitboxRadius(creep),
       movable: true,
@@ -4955,6 +5021,7 @@ export function resolveUnitHitboxes(state: SimulationState) {
   if (state.boss.hp > 0 && state.boss.respawn <= state.time) {
     bodies.push({
       id: state.boss.id,
+      index: bodies.length,
       pos: state.boss.pos,
       radius: getUnitHitboxRadius(state.boss),
       movable: true,
@@ -4966,6 +5033,7 @@ export function resolveUnitHitboxes(state: SimulationState) {
     if (camp.hp <= 0) continue
     bodies.push({
       id: camp.id,
+      index: bodies.length,
       pos: camp.pos,
       radius: getUnitHitboxRadius(camp),
       movable: false,
@@ -4977,7 +5045,6 @@ export function resolveUnitHitboxes(state: SimulationState) {
 
   for (let pass = 0; pass < maxHitboxResolutionPasses; pass += 1) {
     const grid = buildUnitHitboxGrid(bodies)
-    const resolvedPairs = new Set<string>()
 
     for (const body of bodies) {
       const gridX = Math.floor(body.pos.x / unitHitboxGridSize)
@@ -4987,10 +5054,10 @@ export function resolveUnitHitboxes(state: SimulationState) {
           const cell = grid.get(getUnitHitboxGridKey(x, y))
           if (!cell) continue
           for (const other of cell) {
-            if (body.id === other.id) continue
-            const pairKey = body.id < other.id ? `${body.id}:${other.id}` : `${other.id}:${body.id}`
-            if (resolvedPairs.has(pairKey)) continue
-            resolvedPairs.add(pairKey)
+            // Cada corpo vive numa única célula, então o par (a, b) aparece uma
+            // única vez na varredura de vizinhança de cada lado; processar só
+            // quando other vem depois no buffer resolve cada par exatamente uma vez.
+            if (other.index <= body.index) continue
             separateUnitHitboxes(body, other)
           }
         }
@@ -5071,6 +5138,22 @@ export function getUnitHitboxRadius(entity: Arcane | Creep | Camp | Boss) {
 
 export function isArcaneSilenced(state: SimulationState, arcane: Arcane) {
   return hasTimedEffect(state, arcane.id, 'silence')
+}
+
+export function hasAnyCastableSkill(state: SimulationState, arcane: Arcane) {
+  if (isArcaneSilenced(state, arcane)) return false
+
+  const skills = getHeroDefinition(arcane.heroDefinitionId).skills ?? []
+  for (const skill of skills) {
+    if (skill.kind === 'passive') continue
+    const level = getSimpleSkillLevel(arcane, skill)
+    if (level <= 0) continue
+    if (arcane.stats.mana < getSimpleSkillManaCost(arcane, skill, level)) continue
+    if ((arcane.itemCooldowns[skill.id] ?? 0) > state.time) continue
+    return true
+  }
+
+  return false
 }
 
 export function tryCastSimpleSkill(state: SimulationState, arcane: Arcane, fallbackTarget: CombatTarget | undefined) {
@@ -5707,6 +5790,8 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     if (arcane.stats.hp <= 0 || arcane.respawn > next.time) return
     if (arcane.channeling) return
     if (isArcaneStunned(next, arcane)) return
+    const attackReady = next.time - arcane.lastAttack >= getEffectiveArcaneAttackCooldown(next, arcane)
+    if (!attackReady && !hasAnyCastableSkill(next, arcane)) return
     const canAttackBoss = next.boss.hp > 0 && arcane.microDecision.startsWith('Atacar chefe')
     const bossTarget = canAttackBoss && distance(arcane.pos, next.boss.pos) <= getArcaneAttackCenterRange(arcane, next.boss) ? next.boss : undefined
     const objectiveTarget = getFocusedObjectiveTarget(next, arcane)
@@ -5724,8 +5809,8 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     ))
     const target = bossTarget ?? objectiveTarget ?? lastHitTarget ?? denyTarget ?? enemyArcaneTarget ?? nearestReachableByArcane(arcane, [
       ...fallbackEnemyCreeps,
-      ...getAttackableEnemyTowers(next, arcane.team),
-      ...getAttackableEnemyStructures(next, arcane.team),
+      ...getCachedAttackableEnemyTowers(next, arcane.team, frameContext),
+      ...getCachedAttackableEnemyStructures(next, arcane.team, frameContext),
       ...(isEnemyBaseUnlocked(next, arcane.team) ? next.bases.filter((base) => base.team !== arcane.team && base.hp > 0) : []),
       ...next.camps.filter((camp) => camp.hp > 0),
       ...(canAttackBoss ? [next.boss] : []),
@@ -7024,16 +7109,37 @@ export function isNearRoute(point: Point, path: Point[], maxDistance: number) {
   return distance(point, nearestLanePoint(point, path)) <= maxDistance
 }
 
+// Torres vivas por (time, lane), cacheado por tick: as checagens de decisão
+// (isUnsafeUnderEnemyTower/isTooDeepForAggression) rodam por creep candidato e
+// filtravam state.towers inteiro a cada chamada.
+export function getAliveTowersInLane(state: SimulationState, team: TeamId, lane: LaneId) {
+  let cached = aliveTowersByLaneCache.get(state)
+  if (!cached || cached.time !== state.time) {
+    cached = { time: state.time, byTeamLane: new Map() }
+    aliveTowersByLaneCache.set(state, cached)
+  }
+  const key = `${team}:${lane}`
+  let towers = cached.byTeamLane.get(key)
+  if (!towers) {
+    towers = state.towers.filter((tower) => tower.team === team && tower.hp > 0 && tower.lane === lane)
+    cached.byTeamLane.set(key, towers)
+  }
+  return towers
+}
+
 export function isUnsafeUnderEnemyTower(state: SimulationState, team: TeamId, point: Point, lane: LaneId) {
-  const enemyTower = nearest(point, state.towers.filter((tower) => tower.team !== team && tower.hp > 0 && tower.lane === lane), 9.8)
+  const enemyTeam: TeamId = team === 'dawn' ? 'dusk' : 'dawn'
+  const enemyTower = nearest(point, getAliveTowersInLane(state, enemyTeam, lane), 9.8)
   if (!enemyTower) return false
 
-  const alliedWave = nearest(enemyTower.pos, state.creeps.filter((creep) => creep.team === team && creep.lane === lane), 8)
+  const nearbyCreeps = querySpatialGrid(getCreepSpatialGrid(state), enemyTower.pos, 8)
+  const alliedWave = nearest(enemyTower.pos, nearbyCreeps.filter((creep) => creep.team === team && creep.lane === lane), 8)
   return !alliedWave
 }
 
 export function isTooDeepForAggression(state: SimulationState, arcane: Arcane, point: Point, lane: LaneId, phase: GamePhase) {
-  const enemyTierOne = state.towers.find((tower) => tower.team !== arcane.team && tower.lane === lane && tower.tier === 1 && tower.hp > 0)
+  const enemyTeam: TeamId = arcane.team === 'dawn' ? 'dusk' : 'dawn'
+  const enemyTierOne = getAliveTowersInLane(state, enemyTeam, lane).find((tower) => tower.tier === 1)
   if (!enemyTierOne) return false
 
   const path = lanePaths[arcane.team][lane]
@@ -7044,7 +7150,8 @@ export function isTooDeepForAggression(state: SimulationState, arcane: Arcane, p
 
   if (targetProgress <= towerProgress + allowedAfterTower) return false
 
-  const alliedWave = nearest(point, state.creeps.filter((creep) => creep.team === arcane.team && creep.lane === lane), 9)
+  const nearbyCreeps = querySpatialGrid(getCreepSpatialGrid(state), point, 9)
+  const alliedWave = nearest(point, nearbyCreeps.filter((creep) => creep.team === arcane.team && creep.lane === lane), 9)
   return !alliedWave
 }
 
