@@ -30,7 +30,7 @@ function scoreRetreatMode(context: PlayerContext): PlayerModeScore {
     (1 - context.self.healthPct) * 95 +
     context.self.danger * 0.85 +
     context.local.enemyNumbersAdvantage * 13 +
-    context.map.gankRisk * 0.45 -
+    context.map.gankRisk * 0.2 -
     context.local.allySaveNeed * 0.22 -
     context.profile.personality.riskTolerance * 0.18
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { Brain, Coins, Eye, Gauge, HeartPulse, Package, Pause, Play, RotateCcw, Swords, Target, TowerControl, Zap } from 'lucide-react'
+import type { ItemSeed } from './data/itemSeeds'
 import { analyzeGameState } from './ai/analysis/gameStateAnalyzer'
 import { DEFAULT_TEAM_AI_PROFILES } from './ai/config/aiConstants'
 import { resolvePlayerExecution } from './ai/execution/executionModel'
@@ -226,6 +227,14 @@ type Boss = {
   aggroUntil?: number
 }
 type CombatTarget = Arcane | Creep | Tower | Structure | Base | Camp | Boss
+type RouteCreepTargetMode = 'attack' | 'vision'
+type TickFrameContext = {
+  routeCreepTargetCache: Map<string, CombatTarget | null>
+}
+type SpatialGrid<T extends { pos: Point }> = {
+  cellSize: number
+  cells: Map<number, T[]>
+}
 type MapRune = {
   id: string
   kind: RuneKind
@@ -289,6 +298,7 @@ type SimulationState = {
 
 const analyzedGameStateCache = new WeakMap<SimulationState, { time: number; analyzed: AnalyzedGameState }>()
 const playerAiProfileCache = new Map<string, ReturnType<typeof buildPlayerAiProfile>>()
+const creepSpatialGridCache = new WeakMap<SimulationState, { time: number; grid: SpatialGrid<Creep> }>()
 
 type CombatSource = {
   id: string
@@ -381,7 +391,7 @@ type ShopItem = {
     effectId: string
     target: string
     tags: string[]
-    values: Record<string, number | string | boolean>
+    values: Record<string, number | number[] | string | boolean>
     dispelPower?: DispelPower
     cooldown: number
     duration?: number
@@ -394,6 +404,14 @@ type ShopItem = {
     magicResistance: number
     statusResistance: number
     slowResistance: number
+    strength: number
+    agility: number
+    intelligence: number
+    attackSpeed: number
+    moveSpeedPct: number
+    spellAmpPct: number
+    lifestealPct: number
+    cooldownReductionPct: number
     moveSpeed: number
   }
 }
@@ -779,6 +797,11 @@ let shopCatalog: ShopItem[] = []
 let consumableCatalog: ConsumableItem[] = []
 let getRecommendedBuildItemIdsForHero = (_heroDefinitionId: string): string[] => []
 let getRecommendedStartingItemNamesForHero = (_heroDefinitionId: string, role: string): string[] => getFallbackStartingItemNames(role)
+let getRuntimeItemSeedById: (id: string) => ItemSeed | undefined = () => undefined
+let toRuntimeItemModifier: (
+  seed: ItemSeed,
+  context: { primaryAttribute?: PrimaryAttribute; attackType?: AttackType },
+) => StatModifier = (seed) => ({ id: seed.id, source: 'item' })
 
 async function loadGameData() {
   const [heroModule, itemModule] = await Promise.all([
@@ -790,6 +813,8 @@ async function loadGameData() {
   consumableCatalog = itemModule.consumableCatalog
   getRecommendedBuildItemIdsForHero = itemModule.getRecommendedBuildItemIds
   getRecommendedStartingItemNamesForHero = itemModule.getRecommendedStartingItemNames
+  getRuntimeItemSeedById = itemModule.getItemSeedById
+  toRuntimeItemModifier = itemModule.toItemModifier
 }
 
 const rosterSeed: Omit<Arcane, 'pos' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCooldowns' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'stats'>[] = [
@@ -951,7 +976,7 @@ function getFallbackStartingItemNames(role: string) {
 function buildArcaneStats(heroDefinitionId: string, level: number, gold: number, xp: number, hpRatio = 1, manaRatio = 1, itemNames: string[] = [], statBonusLevels = 0): Stats {
   const definition = getHeroDefinition(heroDefinitionId)
   const calculated = calculateHeroStats(definition, level, [
-    ...getItemStatModifiers(itemNames),
+    ...getItemStatModifiers(itemNames, definition),
     ...getStatBonusModifiers(statBonusLevels),
   ])
   const maxHp = Math.round(calculated.resources.maxHealth)
@@ -983,9 +1008,18 @@ function buildArcaneStats(heroDefinitionId: string, level: number, gold: number,
   }
 }
 
-function getItemStatModifiers(itemNames: string[]) {
+function getItemStatModifiers(itemNames: string[], hero?: HeroDefinition) {
   return itemNames
-    .map((name) => shopCatalog.find((item) => item.name === name)?.modifier)
+    .map((name) => {
+      const item = shopCatalog.find((candidate) => candidate.name === name)
+      if (!item) return undefined
+      const seed = getRuntimeItemSeedById(item.id)
+      if (!seed || !hero) return item.modifier
+      return toRuntimeItemModifier(seed, {
+        primaryAttribute: hero.primaryAttribute,
+        attackType: hero.attackType,
+      })
+    })
     .filter((modifier): modifier is StatModifier => modifier !== undefined)
 }
 
@@ -1301,6 +1335,9 @@ function tick(state: SimulationState, delta: number, shouldDecide: boolean): Sim
   if (state.winner) return state
 
   let next: SimulationState = state
+  const frameContext: TickFrameContext = {
+    routeCreepTargetCache: new Map(),
+  }
   const previousDayCycle = getDayCycle(next.time)
   const previousTime = next.time
   next.time = Number((next.time + delta).toFixed(3))
@@ -1357,10 +1394,10 @@ function tick(state: SimulationState, delta: number, shouldDecide: boolean): Sim
       ? grantArcaneEconomy(arcane, passiveGold, 0)
       : arcane
   ))
-  next.creeps = next.creeps.map((creep) => updateCreepMovement(creep, next, delta))
+  next.creeps = next.creeps.map((creep) => updateCreepMovement(creep, next, delta, frameContext))
   resolveUnitHitboxes(next)
   next = updateTeamFortifications(next)
-  next = resolveCombat(next)
+  next = resolveCombat(next, frameContext)
   next = resolveDeaths(next)
   next.winner = next.bases.find((base) => base.hp <= 0)?.team === 'dawn' ? 'dusk' : next.bases.find((base) => base.hp <= 0)?.team === 'dusk' ? 'dawn' : undefined
   return next
@@ -1930,15 +1967,28 @@ function updateTeamPlans(state: SimulationState): SimulationState {
   const analyzed = getAnalyzedGameState(state)
   const teamPlans = Object.fromEntries((['dawn', 'dusk'] as TeamId[]).map((team) => [
     team,
-    selectTeamPlan({
+    enrichTeamPlanWithMapTarget(state, team, selectTeamPlan({
       analyzed,
       teamId: team,
       teamProfile: DEFAULT_TEAM_AI_PROFILES[team],
       previousPlan: state.teamPlans[team],
-    }),
+    })),
   ])) as Partial<Record<TeamId, TeamPlan>>
 
   return { ...state, teamPlans }
+}
+
+function enrichTeamPlanWithMapTarget(state: SimulationState, team: TeamId, plan: TeamPlan | undefined): TeamPlan | undefined {
+  if (!plan) return undefined
+  if (plan.type !== 'group_push' || plan.targetPosition) return plan
+  const objective = getBestGroupPushObjective(state, team)
+  if (!objective) return plan
+  return {
+    ...plan,
+    targetId: getStructureId(objective),
+    targetPosition: objective.pos,
+    reasonTags: [...plan.reasonTags, 'lane_target'],
+  }
 }
 
 function getAnalyzedGameState(state: SimulationState) {
@@ -1984,6 +2034,25 @@ function isTeamCallTargetAlive(state: SimulationState, call: TeamCall) {
   return state.arcanes.some((arcane) => arcane.id === call.targetId && arcane.stats.hp > 0 && arcane.respawn <= state.time)
 }
 
+function getPlannedMapObjective(state: SimulationState, team: TeamId, targetId: string): Tower | Structure | Base | undefined {
+  const tower = state.towers.find((candidate) => candidate.id === targetId && candidate.team !== team && candidate.hp > 0)
+  if (tower) return tower
+  const structure = state.structures.find((candidate) => candidate.id === targetId && candidate.team !== team && candidate.hp > 0)
+  if (structure) return structure
+  return state.bases.find((candidate) => candidate.id === targetId && candidate.team !== team && candidate.hp > 0)
+}
+
+function getTeamObjectiveKind(objective: Tower | Structure | Base): Exclude<TeamObjectiveKind, 'boss' | 'pickoff'> {
+  return 'tier' in objective ? 'tower' : 'structure'
+}
+
+function getRelativeTeamLead(analyzed: AnalyzedGameState, team: TeamId) {
+  const teamState = analyzed.teams[team]
+  const opponent = Object.entries(analyzed.teams).find(([teamId]) => teamId !== team)?.[1]
+  if (!teamState || !opponent) return 0
+  return teamState.netWorthLead / Math.max(1, opponent.netWorth)
+}
+
 function createAiGameSnapshot(state: SimulationState): RawAiGameSnapshot {
   const teams = Object.fromEntries((['dawn', 'dusk'] as TeamId[]).map((team) => {
     const arcanes = state.arcanes.filter((arcane) => arcane.team === team)
@@ -2023,11 +2092,30 @@ function createAiGameSnapshot(state: SimulationState): RawAiGameSnapshot {
         dusk: isEnemyBaseUnlocked(state, 'dusk'),
       },
       highValueObjectiveAvailableByTeam: {
-        dawn: getAttackableEnemyTowers(state, 'dawn').length > 0 || getAttackableEnemyStructures(state, 'dawn').length > 0,
-        dusk: getAttackableEnemyTowers(state, 'dusk').length > 0 || getAttackableEnemyStructures(state, 'dusk').length > 0,
+        dawn: hasHighValueObjectiveOpportunity(state, 'dawn'),
+        dusk: hasHighValueObjectiveOpportunity(state, 'dusk'),
       },
     },
   }
+}
+
+function hasHighValueObjectiveOpportunity(state: SimulationState, team: TeamId) {
+  const enemyTeam: TeamId = team === 'dawn' ? 'dusk' : 'dawn'
+  const aliveAllies = state.arcanes.filter((arcane) => arcane.team === team && arcane.stats.hp > 0 && arcane.respawn <= state.time).length
+  const aliveEnemies = state.arcanes.filter((arcane) => arcane.team === enemyTeam && arcane.stats.hp > 0 && arcane.respawn <= state.time).length
+  if (aliveAllies - aliveEnemies >= 2) return true
+
+  return getObjectiveCandidates(state, team).some((objective) => {
+    if (objective.hp <= 0) return false
+    if (objective.hp / Math.max(1, objective.maxHp) < 0.65) return true
+    const objectiveLane = 'lane' in objective ? objective.lane : nearestLaneId(team, objective.pos)
+    const alliedWave = nearest(objective.pos, state.creeps.filter((creep) => (
+      creep.team === team &&
+      creep.hp > 0 &&
+      creep.lane === objectiveLane
+    )), 10)
+    return alliedWave !== undefined
+  })
 }
 
 function createTeamCall(state: SimulationState, caller: Arcane, phase: GamePhase): TeamCall | undefined {
@@ -2043,6 +2131,9 @@ function createTeamCall(state: SimulationState, caller: Arcane, phase: GamePhase
     teamId: caller.team,
     teamProfile: DEFAULT_TEAM_AI_PROFILES[caller.team],
   })
+  const analyzed = getAnalyzedGameState(state)
+  const teamState = analyzed.teams[caller.team]
+  const relativeLead = getRelativeTeamLead(analyzed, caller.team)
   const planWantsQuietMap = teamPlan?.type === 'farm_map' || teamPlan?.type === 'avoid_fight'
   const planWantsDefense = teamPlan?.type === 'defend_tower' || teamPlan?.type === 'defend_high_ground'
   const planWantsPickoff = teamPlan?.type === 'pickoff'
@@ -2055,6 +2146,17 @@ function createTeamCall(state: SimulationState, caller: Arcane, phase: GamePhase
       : teamPlan?.type === 'group_push' || teamPlan?.type === 'take_boss' || teamPlan?.type === 'end_game'
         ? 52
         : 58
+
+  const plannedObjective = teamPlan?.targetId ? getPlannedMapObjective(state, caller.team, teamPlan.targetId) : undefined
+  if (plannedObjective && (teamPlan?.type === 'group_push' || teamPlan?.type === 'end_game')) {
+    objectives.push({
+      kind: getTeamObjectiveKind(plannedObjective),
+      targetId: getStructureId(plannedObjective),
+      targetName: 'Executar plano de rota',
+      pos: plannedObjective.pos,
+      score: 76 + teamPlan.urgency * 0.35 + Math.max(0, teamState?.numbersAdvantage ?? 0) * 10,
+    })
+  }
 
   const vulnerableEnemy = visibleEnemies
     .map((enemy) => {
@@ -2190,15 +2292,20 @@ function createTeamCall(state: SimulationState, caller: Arcane, phase: GamePhase
   const bossTarget = state.boss.hp > 0
     ? (() => {
       const localNumbers = getLocalNumbers(state, caller.team, state.boss.pos, 22, visibleEnemies)
+      const bossWindowOpen = localNumbers.advantage >= 1 ||
+        (teamState?.numbersAdvantage ?? 0) >= 2 ||
+        relativeLead >= 0.3
+      const resourcePenalty = (teamState?.lowResourcePressure ?? 0) > 60 ? 36 : 0
       return {
         boss: state.boss,
         localNumbers,
-        score: 58 + (teamPlan?.type === 'take_boss' ? 20 : planWantsQuietMap ? -12 : 0) + (phase === 'late' ? 22 : 0) + Math.max(0, localNumbers.advantage) * 14 - Math.max(0, -localNumbers.advantage) * 22 - distance(caller.pos, state.boss.pos) * 0.42,
+        bossWindowOpen,
+        score: 58 + (teamPlan?.type === 'take_boss' ? 20 : planWantsQuietMap ? -12 : 0) + (phase === 'late' ? 22 : 0) + Math.max(0, localNumbers.advantage) * 14 - Math.max(0, -localNumbers.advantage) * 22 - distance(caller.pos, state.boss.pos) * 0.42 - resourcePenalty,
       }
     })()
     : undefined
 
-  if (bossTarget && bossTarget.score > 38 && bossTarget.localNumbers.advantage >= (phase === 'late' ? -0.1 : 0.5)) {
+  if (bossTarget && bossTarget.bossWindowOpen && bossTarget.score > 38 && bossTarget.localNumbers.advantage >= (phase === 'late' ? -0.1 : 0.5)) {
     objectives.push({
       kind: 'boss',
       targetId: bossTarget.boss.id,
@@ -2394,6 +2501,38 @@ function getLaneWinAssessment(state: SimulationState, team: TeamId, lane: LaneId
     losing: winChance < 0.42,
     winning: winChance > 0.62,
   }
+}
+
+function getBestGroupPushObjective(state: SimulationState, team: TeamId): Tower | Structure | Base | undefined {
+  const objectiveCandidates = getObjectiveCandidates(state, team)
+  if (objectiveCandidates.length === 0) return undefined
+
+  const lanes = (['top', 'mid', 'bot'] as LaneId[])
+    .map((lane) => {
+      const laneObjective = objectiveCandidates
+        .filter((objective) => ('lane' in objective ? objective.lane === lane : true))
+        .sort((a, b) => laneProgress(a.pos, lanePaths[team][lane]) - laneProgress(b.pos, lanePaths[team][lane]))[0]
+      if (!laneObjective) return undefined
+      const assessment = getLaneWinAssessment(state, team, lane)
+      const alliedWave = nearest(laneObjective.pos, state.creeps.filter((creep) => creep.team === team && creep.hp > 0 && creep.lane === lane), 13)
+      const hpPressure = (1 - laneObjective.hp / Math.max(1, laneObjective.maxHp)) * 32
+      const waveBonus = alliedWave ? 18 : 0
+      return {
+        lane,
+        objective: laneObjective,
+        score: assessment.winChance * 100 + assessment.score * 0.12 + hpPressure + waveBonus,
+      }
+    })
+    .filter((entry): entry is { lane: LaneId; objective: Tower | Structure | Base; score: number } => entry !== undefined)
+    .sort((a, b) => b.score - a.score)
+
+  return lanes[0]?.objective ?? objectiveCandidates[0]
+}
+
+function nearestLaneId(team: TeamId, point: Point): LaneId {
+  return (['top', 'mid', 'bot'] as LaneId[])
+    .map((lane) => ({ lane, distance: distance(point, nearestLanePoint(point, lanePaths[team][lane])) }))
+    .sort((a, b) => a.distance - b.distance)[0].lane
 }
 
 function getTeamPushPower(state: SimulationState, team: TeamId) {
@@ -2905,23 +3044,23 @@ function shouldReconsiderArcaneDecision(state: SimulationState, arcane: Arcane, 
   if (nearbyTowerThreat && hpRatio < 0.84) return true
 
   const lastHitDamage = getArcaneLastHitDamage(state, arcane)
-  const lastHitOpportunity = state.creeps.some((creep) => (
-    creep.team !== arcane.team &&
-    creep.lane === arcane.lane &&
-    creep.hp > 0 &&
-    creep.hp <= lastHitDamage * 1.12 &&
-    distance(creep.pos, arcane.pos) <= Math.max(getArcaneAttackCenterRange(arcane, creep) + 2, 7)
-  ))
-  if (lastHitOpportunity) return true
-
-  const denyOpportunity = state.creeps.some((creep) => (
-    creep.team === arcane.team &&
-    creep.lane === arcane.lane &&
-    creep.hp > 0 &&
-    creep.hp <= creep.maxHp * 0.5 &&
-    distance(creep.pos, arcane.pos) <= Math.max(arcane.stats.range + 2, 7)
-  ))
-  if (denyOpportunity) return true
+  for (const creep of state.creeps) {
+    if (creep.lane !== arcane.lane || creep.hp <= 0) continue
+    if (
+      creep.team !== arcane.team &&
+      creep.hp <= lastHitDamage * 1.12 &&
+      distance(creep.pos, arcane.pos) <= Math.max(getArcaneAttackCenterRange(arcane, creep) + 2, 7)
+    ) {
+      return true
+    }
+    if (
+      creep.team === arcane.team &&
+      creep.hp <= creep.maxHp * 0.5 &&
+      distance(creep.pos, arcane.pos) <= Math.max(arcane.stats.range + 2, 7)
+    ) {
+      return true
+    }
+  }
 
   if (arcane.microDecision.startsWith('Atacar chefe') && state.boss.hp <= 0) return true
   if ((arcane.macroDecision.startsWith('Pressionar torre') || arcane.macroDecision.startsWith('Fazer objetivo')) && !getFocusedObjectiveTarget(state, arcane)) return true
@@ -2993,7 +3132,7 @@ type RuntimeItemEffect = {
   kind: string
   target: string
   tags: string[]
-  values: Record<string, number | string | boolean>
+  values: Record<string, number | number[] | string | boolean>
   cooldown?: number
   duration?: number
 }
@@ -3188,13 +3327,19 @@ function updateArcaneMovement(arcane: Arcane, state: SimulationState, delta: num
   let aiFailure = arcane.aiFailure
   const ownBase = teamInfo[arcane.team].base
   const path = lanePaths[arcane.team][arcane.lane]
-  let pathIndex = syncLanePathIndex(arcane.pos, path, arcane.pathIndex)
   const phase = getGamePhase(state.time)
   const atBase = distance(arcane.pos, ownBase) < baseServiceRange
   const canBuyAtBase = atBase && hasBasePurchaseOpportunity(state, arcane)
   const isSupport = arcane.role.includes('Support')
   const decisionDue = arcane.forceDecision || (shouldDecide && state.time >= arcane.nextDecisionAt)
   const shouldRunDecision = decisionDue && (arcane.forceDecision || shouldReconsiderArcaneDecision(state, arcane, atBase, canBuyAtBase))
+  const shouldRefreshLaneProgress = shouldDecide ||
+    arcane.forceDecision ||
+    distance(arcane.pos, arcane.target) <= 1.35 ||
+    distance(arcane.pos, arcane.lastDecisionPos) > 1.2
+  let pathIndex = shouldRefreshLaneProgress
+    ? syncLanePathIndex(arcane.pos, path, arcane.pathIndex)
+    : arcane.pathIndex
 
   if (isArcaneStunned(state, arcane)) {
     const hpRegen = atBase
@@ -3513,7 +3658,7 @@ function updateArcaneMovement(arcane: Arcane, state: SimulationState, delta: num
     }
   }
 
-  if (isLaneAdvanceMicroDecision(microDecision)) {
+  if (isLaneAdvanceMicroDecision(microDecision) && shouldRefreshLaneProgress) {
     pathIndex = syncLanePathIndex(arcane.pos, path, pathIndex)
     target = getLaneAdvancePoint(arcane, path, pathIndex)
   }
@@ -4093,12 +4238,13 @@ function getActiveItemDamage(arcane: Arcane, item: ShopItem) {
     0
   const primaryPct = getActiveItemNumber(values, 'damageFromPrimaryAttributePct') ?? 0
   if (primaryPct <= 0) return base
-  const calculated = calculateHeroStats(getHeroDefinition(arcane.heroDefinitionId), arcane.stats.level, getItemStatModifiers(arcane.items))
-  const primary = getPrimaryAttributeValue(getHeroDefinition(arcane.heroDefinitionId), calculated.attributes)
+  const hero = getHeroDefinition(arcane.heroDefinitionId)
+  const calculated = calculateHeroStats(hero, arcane.stats.level, getItemStatModifiers(arcane.items, hero))
+  const primary = getPrimaryAttributeValue(hero, calculated.attributes)
   return Math.round(base + primary * (primaryPct / 100))
 }
 
-function getActiveItemLevelDamage(values: Record<string, number | string | boolean>, level: number) {
+function getActiveItemLevelDamage(values: Record<string, number | number[] | string | boolean>, level: number) {
   const damageByLevel = values.damageByLevel
   if (typeof damageByLevel !== 'string') return 0
   const valuesByLevel = damageByLevel
@@ -4132,7 +4278,7 @@ function hasAnyItemTag(tags: string[], candidates: string[]) {
   return candidates.some((tag) => tags.includes(tag))
 }
 
-function getActiveItemNumber(values: Record<string, number | string | boolean>, key: string) {
+function getActiveItemNumber(values: Record<string, number | number[] | string | boolean>, key: string) {
   const value = values[key]
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
@@ -4627,15 +4773,17 @@ function absorbDamageWithBarriers(state: SimulationState, targetId: string, inco
   return remainingDamage
 }
 
-function updateCreepMovement(creep: Creep, state: SimulationState, delta: number): Creep {
-  if (getRouteCreepTarget(creep, state, 'attack')) {
+function updateCreepMovement(creep: Creep, state: SimulationState, delta: number, frameContext: TickFrameContext): Creep {
+  if (getCachedRouteCreepTarget(creep, state, 'attack', frameContext)) {
     return creep
   }
 
-  const visibleTarget = getRouteCreepTarget(creep, state, 'vision')
+  const visibleTarget = getCachedRouteCreepTarget(creep, state, 'vision', frameContext)
   if (visibleTarget) {
     const moveTarget = getCreepMoveDestination(creep, visibleTarget)
-    return { ...creep, pos: moveToward(creep.pos, moveTarget, 4.2 * delta) }
+    const nextPos = moveToward(creep.pos, moveTarget, 4.2 * delta)
+    if (distanceSquared(nextPos, creep.pos) < 0.0001) return creep
+    return { ...creep, pos: nextPos }
   }
 
   const path = lanePaths[creep.team][creep.lane]
@@ -4643,10 +4791,22 @@ function updateCreepMovement(creep: Creep, state: SimulationState, delta: number
   if (distance(creep.pos, formationPoint(path[pathIndex], creep.id)) < 1.8 && pathIndex < path.length - 1) {
     pathIndex += 1
   }
-  return { ...creep, pathIndex, pos: moveToward(creep.pos, formationPoint(path[pathIndex], creep.id), 4.2 * delta) }
+  const nextPos = moveToward(creep.pos, formationPoint(path[pathIndex], creep.id), 4.2 * delta)
+  if (pathIndex === creep.pathIndex && distanceSquared(nextPos, creep.pos) < 0.0001) return creep
+  return { ...creep, pathIndex, pos: nextPos }
 }
 
-function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: 'attack' | 'vision' = 'attack') {
+function getCachedRouteCreepTarget(creep: Creep, state: SimulationState, mode: RouteCreepTargetMode, frameContext: TickFrameContext) {
+  const key = `${creep.id}:${mode}`
+  if (frameContext.routeCreepTargetCache.has(key)) {
+    return frameContext.routeCreepTargetCache.get(key) ?? undefined
+  }
+  const target = getRouteCreepTarget(creep, state, mode)
+  frameContext.routeCreepTargetCache.set(key, target ?? null)
+  return target
+}
+
+function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: RouteCreepTargetMode = 'attack') {
   const structureRange = isMeleeCreep(creep) ? 3.2 : creep.range
   const visionRange = getCreepVisionRange(creep)
   const unitRange = mode === 'attack' ? creep.range : visionRange
@@ -4656,6 +4816,8 @@ function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: 'attack
       ? nearestReachableByCreep(creep, entities, range)
       : nearest(creep.pos, entities, range)
   )
+  const creepGrid = getCreepSpatialGrid(state)
+  const nearbyCreeps = querySpatialGrid(creepGrid, creep.pos, unitRange + 2.5)
   const aggroTarget = creep.aggroUntil && creep.aggroUntil > state.time
     ? selectTarget(state.arcanes.filter((arcane) => (
         arcane.id === creep.aggroTargetId &&
@@ -4667,7 +4829,7 @@ function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: 'attack
   if (aggroTarget) return aggroTarget
 
   const enemyCreep = selectTarget(
-    state.creeps.filter((other) => other.team !== creep.team && other.lane === creep.lane),
+    nearbyCreeps.filter((other) => other.team !== creep.team && other.lane === creep.lane),
     unitRange,
   )
   if (enemyCreep) return enemyCreep
@@ -4685,6 +4847,20 @@ function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: 'attack
     ...getAttackableEnemyStructures(state, creep.team).filter((structure) => structure.lane === creep.lane || structure.kind === 'tower_tier_4'),
     ...(isEnemyBaseUnlocked(state, creep.team) ? state.bases.filter((base) => base.team !== creep.team && base.hp > 0) : []),
   ], objectiveRange)
+}
+
+function isCachedRouteCreepAttackTargetValid(creep: Creep, target: CombatTarget, state: SimulationState) {
+  if ('player' in target && (target.stats.hp <= 0 || target.respawn > state.time)) return false
+  if ('type' in target && target.hp <= 0) return false
+  if ('tier' in target && target.hp <= 0) return false
+  if ('kind' in target && 'hp' in target && target.hp <= 0) return false
+  if ('maxHp' in target && !('player' in target) && !('type' in target) && !('tier' in target) && target.hp <= 0) return false
+
+  const attackRange = isStructureLikeTarget(target)
+    ? isMeleeCreep(creep) ? 3.2 : creep.range
+    : creep.range
+  const reach = getCreepAttackCenterRange(creep, target, attackRange)
+  return distanceSquared(creep.pos, target.pos) <= reach * reach
 }
 
 function getCreepMoveDestination(creep: Creep, target: { pos: Point }) {
@@ -4728,6 +4904,7 @@ type UnitHitboxBody = {
 }
 
 const unitHitboxGridSize = 4
+const proximityGridCellSize = 10
 const maxHitboxResolutionPasses = 2
 
 function resolveUnitHitboxes(state: SimulationState) {
@@ -5336,12 +5513,13 @@ function hasAnySimpleSkillTag(skill: HeroSkillDefinition, tags: string[]) {
   return tags.some((tag) => skill.tags.includes(tag))
 }
 
-function resolveCombat(state: SimulationState): SimulationState {
+function resolveCombat(state: SimulationState, frameContext: TickFrameContext): SimulationState {
   const next = state
 
   next.creeps.forEach((creep) => {
-    const target = getRouteCreepTarget(creep, next, 'attack')
+    const target = getCachedRouteCreepTarget(creep, next, 'attack', frameContext)
     if (target && next.time - creep.lastAttack >= 1.25) {
+      if (!isCachedRouteCreepAttackTargetValid(creep, target, next)) return
       creep.lastAttack = next.time
       next.effects = addAttackEffect(next.effects, {
         kind: 'creep',
@@ -5762,7 +5940,8 @@ function getItemProcDamage(arcane: Arcane, effect: RuntimeItemEffect) {
     0
   const intPct = getActiveItemNumber(effect.values, 'damageFromIntPct') ?? 0
   if (intPct <= 0) return baseDamage
-  const calculated = calculateHeroStats(getHeroDefinition(arcane.heroDefinitionId), arcane.stats.level, getItemStatModifiers(arcane.items))
+  const hero = getHeroDefinition(arcane.heroDefinitionId)
+  const calculated = calculateHeroStats(hero, arcane.stats.level, getItemStatModifiers(arcane.items, hero))
   return baseDamage + calculated.attributes.intelligence * (intPct / 100)
 }
 
@@ -6148,7 +6327,7 @@ function resolveDeaths(state: SimulationState): SimulationState {
         gameTime: next.time,
         position: arcane.pos,
         value: Math.min(88, 42 + arcane.stats.level * 2 + (killerArcane ? 10 : 0)),
-        expiresAtGameTime: next.time + 150,
+        expiresAtGameTime: next.time + 100,
         tags: ['death', 'danger', arcane.lane],
       })
 
@@ -8050,7 +8229,7 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
   if ('player' in entity) {
     const heroDefinition = getHeroDefinition(entity.heroDefinitionId)
     const calculated = calculateHeroStats(heroDefinition, entity.stats.level, [
-      ...getItemStatModifiers(entity.items),
+      ...getItemStatModifiers(entity.items, heroDefinition),
       ...getStatBonusModifiers(entity.statBonusLevels),
     ])
     const auraMultiplier = getAuraMultiplier(state, entity.team)
@@ -8473,12 +8652,20 @@ function ItemDetail({ itemName, cooldowns, now }: { itemName?: string; cooldowns
 
 function ItemStatSummary({ item }: { item: ShopItem }) {
   const entries = [
+    ['For', item.summary.strength],
+    ['Agi', item.summary.agility],
+    ['Int', item.summary.intelligence],
     ['Dano', item.summary.damage],
+    ['AtkSpd', item.summary.attackSpeed],
     ['HP', item.summary.maxHp],
     ['Mana', item.summary.maxMana],
     ['Armor', item.summary.armor],
     ['MR', item.summary.magicResistance],
     ['Move', item.summary.moveSpeed],
+    ['Move%', item.summary.moveSpeedPct],
+    ['Spell', item.summary.spellAmpPct],
+    ['Lifesteal', item.summary.lifestealPct],
+    ['CDR', item.summary.cooldownReductionPct],
   ].filter(([, value]) => Number(value) !== 0)
 
   if (entries.length === 0) return <p>Sem atributos diretos relevantes.</p>
@@ -8655,7 +8842,7 @@ function getItemTargetLabel(target: string) {
   return target
 }
 
-function formatItemEffectValues(values: Record<string, number | string | boolean>) {
+function formatItemEffectValues(values: Record<string, number | number[] | string | boolean>) {
   return Object.entries(values)
     .filter(([key]) => !['cooldown', 'duration'].includes(key))
     .slice(0, 4)
@@ -8998,6 +9185,54 @@ function nearestReachableByArcane<T extends { pos: Point }>(arcane: Arcane, enti
   return closest
 }
 
+function getCreepSpatialGrid(state: SimulationState) {
+  const cached = creepSpatialGridCache.get(state)
+  if (cached && cached.time === state.time) return cached.grid
+
+  const grid = buildSpatialGrid(state.creeps.filter((creep) => creep.hp > 0), proximityGridCellSize)
+  creepSpatialGridCache.set(state, { time: state.time, grid })
+  return grid
+}
+
+function buildSpatialGrid<T extends { pos: Point }>(entities: T[], cellSize: number): SpatialGrid<T> {
+  const cells = new Map<number, T[]>()
+  for (const entity of entities) {
+    const key = getSpatialGridKey(entity.pos, cellSize)
+    const cell = cells.get(key)
+    if (cell) {
+      cell.push(entity)
+    } else {
+      cells.set(key, [entity])
+    }
+  }
+  return { cellSize, cells }
+}
+
+function querySpatialGrid<T extends { pos: Point }>(grid: SpatialGrid<T>, point: Point, radius: number): T[] {
+  const minX = Math.floor((point.x - radius) / grid.cellSize)
+  const maxX = Math.floor((point.x + radius) / grid.cellSize)
+  const minY = Math.floor((point.y - radius) / grid.cellSize)
+  const maxY = Math.floor((point.y + radius) / grid.cellSize)
+  const results: T[] = []
+
+  for (let y = minY; y <= maxY; y += 1) {
+    for (let x = minX; x <= maxX; x += 1) {
+      const cell = grid.cells.get(getSpatialGridCellKey(x, y))
+      if (cell) results.push(...cell)
+    }
+  }
+
+  return results
+}
+
+function getSpatialGridKey(point: Point, cellSize: number) {
+  return getSpatialGridCellKey(Math.floor(point.x / cellSize), Math.floor(point.y / cellSize))
+}
+
+function getSpatialGridCellKey(x: number, y: number) {
+  return x * 256 + y
+}
+
 function getArcaneAttackCenterRange(arcane: Arcane, target: { pos: Point }) {
   return arcane.stats.range + getEntityCollisionRadius(arcane) + getEntityCollisionRadius(target) * 0.85
 }
@@ -9040,6 +9275,7 @@ function getDangerScore(state: SimulationState, arcane: Arcane, visibleEnemies =
   enemy.respawn <= state.time &&
   isPointVisibleToTeam(state, arcane.team, enemy.pos)
 ))) {
+  const nearbyEnemyCreeps = querySpatialGrid(getCreepSpatialGrid(state), arcane.pos, 8)
   const enemyHeroPressure = visibleEnemies.reduce((score, enemy) => {
     const range = 16
     const proximity = Math.max(0, 1 - distance(arcane.pos, enemy.pos) / range)
@@ -9051,7 +9287,7 @@ function getDangerScore(state: SimulationState, arcane: Arcane, visibleEnemies =
       const proximity = Math.max(0, 1 - distance(arcane.pos, tower.pos) / (tower.range + 2))
       return score + proximity * 38
     }, 0)
-  const creepPressure = state.creeps
+  const creepPressure = nearbyEnemyCreeps
     .filter((creep) => creep.team !== arcane.team)
     .reduce((score, creep) => {
       const proximity = Math.max(0, 1 - distance(arcane.pos, creep.pos) / 8)
@@ -9085,6 +9321,7 @@ function getEnemyActionThreatScore(
     isPointVisibleToTeam(state, arcane.team, enemy.pos)
   )),
 ) {
+  const nearbyEnemyCreeps = querySpatialGrid(getCreepSpatialGrid(state), point, 20)
   const towerThreat = state.towers
     .filter((tower) => tower.team !== arcane.team && tower.hp > 0)
     .reduce((score, tower) => {
@@ -9097,7 +9334,7 @@ function getEnemyActionThreatScore(
     if (distance(point, enemy.pos) > radius) return score
     return score + (enemy.stats.hp / enemy.stats.maxHp > 0.45 ? 20 : 12)
   }, 0)
-  const creepThreat = state.creeps
+  const creepThreat = nearbyEnemyCreeps
     .filter((creep) => creep.team !== arcane.team)
     .reduce((score, creep) => {
       const radius = getCreepVisionRange(creep)

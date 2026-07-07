@@ -72,7 +72,7 @@ export interface ItemEffectSeed {
   kind: ItemEffectKind;
   target: ItemEffectTarget;
   tags: string[];
-  values?: Record<string, number | string | boolean>;
+  values?: Record<string, number | number[] | string | boolean>;
 }
 
 export interface ItemSeed {
