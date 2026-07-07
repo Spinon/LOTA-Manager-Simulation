@@ -114,6 +114,9 @@ const resumeBufferSeconds = 1.5
 // Começa a pré-simular a próxima partida quando o buffer da atual está quase
 // no teto (worker ativo já ocioso) ou quando a partida atual terminou de simular.
 const prefetchBufferAheadSeconds = 150
+// Desativado por ora a pedido (2026-07-07): manter o mecanismo inerte até
+// ganhar confiança; reativar trocando esta flag.
+const standbyPrefetchEnabled = false
 
 function createBrowserMatchSeed() {
   const values = new Uint32Array(2)
@@ -282,7 +285,7 @@ function App() {
         }, 100)
 
     const startStandbyPrefetch = () => {
-      if (standbyRef.current) return
+      if (!standbyPrefetchEnabled || standbyRef.current) return
       const seed = createBrowserMatchSeed()
       const standbyWorker = new Worker(new URL('./sim/matchWorker.ts', import.meta.url), { type: 'module' })
       const standbyRunId = (runSeqRef.current += 1)
