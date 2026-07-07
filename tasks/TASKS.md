@@ -115,7 +115,9 @@ Adicionar um early-out barato por camada: guardar (timestamp do último frame de
 
 ---
 
-### [ ] T6 — (Opcional) Simulador de balanceamento em lote
+### [x] T6 — (Opcional) Simulador de balanceamento em lote
+
+> Concluída em 2026-07-07 — `scripts/batch-sim.mjs` + `npm run batch-sim`; 20 partidas em ~11min de CPU, relatório com winrate por time/herói, duração média, kills e % antes do teto. Primeiro achado de balanceamento: dusk venceu 67% vs 33% do dawn nas 20 seeds (vale investigar viés de lado).
 
 **Objetivo**: aproveitar a sim extraída (T2) para rodar partidas em massa em Node e gerar estatísticas de balanceamento. Depende da T2.
 
