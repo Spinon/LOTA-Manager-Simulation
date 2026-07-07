@@ -196,13 +196,12 @@ function App() {
         const bufferAhead = Math.max(0, latestTime - playbackCursorRef.current)
         setBufferInfo({ simTime: latestTime, frameCount: frameBufferRef.current.length, bufferAhead })
 
-        const hasStartupBuffer = latestTime >= startupBufferSeconds || workerDoneRef.current
-        if (!stateRef.current && hasStartupBuffer) {
+        if (!stateRef.current) {
           const firstFrame = frameBufferRef.current[0]
           stateRef.current = firstFrame
           currentFrameKeyRef.current = getFrameKey(firstFrame)
           setState(firstFrame)
-          setPlaybackStatus('ready')
+          setPlaybackStatus(latestTime >= startupBufferSeconds || workerDoneRef.current ? 'ready' : 'buffering')
         } else if (stateRef.current && playbackStatusRef.current === 'buffering' && bufferAhead >= resumeBufferSeconds) {
           setPlaybackStatus('ready')
         }
