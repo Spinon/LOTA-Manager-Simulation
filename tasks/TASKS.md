@@ -103,7 +103,9 @@ Adicionar um early-out barato por camada: guardar (timestamp do último frame de
 
 ---
 
-### [ ] T5 — Nitidez HiDPI com DPR adaptativo
+### [x] T5 — Nitidez HiDPI com DPR adaptativo
+
+> Concluída em 2026-07-07 — `maxCanvasDevicePixelRatio` voltou a 2 com cap adaptativo no App (`getCanvasDpr`/`reportRenderFps` alimentado pelo FrameCounter): FPS <50 por 3s seguidos derruba o cap para 1 sem voltar na mesma partida; reset no restart; amostras de aba oculta ignoradas. Validado emulando DPR 2 (backing store 2x) e carga artificial (degradou para 1 após ~3.2s); debug em `__lotaDpr`.
 
 **Objetivo**: reintroduzir a nitidez em telas com escala 125/150% sem trazer de volta o stutter. Depende da T3 (com a sim no worker, queda de FPS não afeta mais a velocidade do jogo).
 

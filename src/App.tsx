@@ -250,6 +250,7 @@ function App() {
     lastBufferInfoPaintRef.current = 0
     workerRef.current = worker
     stateRef.current = undefined
+    resetAdaptiveDpr()
     setState(undefined)
     setLoadingError(undefined)
 
@@ -941,7 +942,9 @@ function FrameCounter() {
       frames += 1
       const elapsed = now - lastSample
       if (elapsed >= 500) {
-        setFps(Math.round((frames * 1000) / elapsed))
+        const measuredFps = Math.round((frames * 1000) / elapsed)
+        setFps(measuredFps)
+        reportRenderFps(measuredFps, elapsed)
         frames = 0
         lastSample = now
       }
@@ -974,6 +977,48 @@ if (import.meta.env.DEV) {
 // o intervalo de frames + delay de interpolação (ver aviso na T4 do TASKS.md).
 const drawIdleSettleMs = 600
 
+// DPR adaptativo (T5): os canvases começam nítidos (teto maxCanvasDevicePixelRatio)
+// e, se o FPS médio ficar abaixo de lowFpsThreshold por lowFpsWindowMs seguidos,
+// o teto cai para 1 e não volta a subir na mesma partida (reset no restart).
+// O FrameCounter alimenta reportRenderFps; amostras velhas (aba oculta) são ignoradas.
+const lowFpsThreshold = 50
+const lowFpsWindowMs = 3000
+const staleFpsSampleMs = 1500
+
+let adaptiveDprCap = maxCanvasDevicePixelRatio
+let lowFpsStreakMs = 0
+
+function getCanvasDpr() {
+  return Math.min(adaptiveDprCap, window.devicePixelRatio || 1)
+}
+
+function reportRenderFps(fps: number, sampleMs: number) {
+  if (adaptiveDprCap <= 1) return
+  if ((window.devicePixelRatio || 1) <= 1) return
+  if (sampleMs > staleFpsSampleMs) return
+  if (fps < lowFpsThreshold) {
+    lowFpsStreakMs += sampleMs
+    if (lowFpsStreakMs >= lowFpsWindowMs) {
+      adaptiveDprCap = 1
+    }
+  } else {
+    lowFpsStreakMs = 0
+  }
+}
+
+function resetAdaptiveDpr() {
+  adaptiveDprCap = maxCanvasDevicePixelRatio
+  lowFpsStreakMs = 0
+}
+
+if (import.meta.env.DEV) {
+  ;(window as unknown as { __lotaDpr?: unknown }).__lotaDpr = {
+    get cap() { return adaptiveDprCap },
+    get streakMs() { return lowFpsStreakMs },
+    get effective() { return getCanvasDpr() },
+  }
+}
+
 function createDrawGate() {
   let lastKey = ''
   let lastChangeAt = 0
@@ -992,7 +1037,7 @@ function getCanvasDrawKey(canvas: HTMLCanvasElement, ...parts: Array<string | nu
   return [
     canvas.clientWidth,
     canvas.clientHeight,
-    Math.min(maxCanvasDevicePixelRatio, window.devicePixelRatio || 1),
+    getCanvasDpr(),
     ...parts,
   ].join('|')
 }
@@ -1815,7 +1860,7 @@ type CanvasViewport = {
 }
 
 function prepareCanvasForDraw(canvas: HTMLCanvasElement) {
-  const dpr = Math.min(maxCanvasDevicePixelRatio, window.devicePixelRatio || 1)
+  const dpr = getCanvasDpr()
   const viewport = {
     width: Math.max(1, canvas.clientWidth),
     height: Math.max(1, canvas.clientHeight),

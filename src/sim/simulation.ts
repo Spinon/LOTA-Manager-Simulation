@@ -6850,10 +6850,11 @@ export function getMaxSimulationStepsPerFrame(speed: number) {
 }
 
 export const uiSnapshotIntervalSeconds = 0.5
-// Manter em 1: DPR 2 quadruplica o custo de raster dos 5 canvases e reintroduz
-// stutter (frame drops viram lentidao da sim enquanto ela for acoplada ao rAF).
-// So subir de novo como DPR adaptativo depois que a sim rodar fora do rAF.
-export const maxCanvasDevicePixelRatio = 1
+// Teto de DPR dos canvases. Com a sim no worker (T3), frame drops de render
+// nao afetam mais a velocidade do jogo, entao HiDPI voltou: o App aplica este
+// teto de forma ADAPTATIVA (T5) — comeca nitido e cai para 1 se o FPS medio
+// ficar < 50 por ~3s seguidos (ver getCanvasDpr/reportRenderFps no App.tsx).
+export const maxCanvasDevicePixelRatio = 2
 
 export function getEntityPosition(entity: Arcane | Creep | Tower | Structure | Base | Camp | Boss | MapRune | undefined) {
   if (!entity || !('pos' in entity)) return undefined
