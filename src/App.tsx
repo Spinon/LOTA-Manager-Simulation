@@ -135,6 +135,18 @@ function prunePlaybackFrames(
   frameIndexRef.current = Math.max(0, frameIndexRef.current - removeCount)
 }
 
+function paintBufferInfoThrottled(
+  lastPaintRef: React.MutableRefObject<number>,
+  setBufferInfo: React.Dispatch<React.SetStateAction<{ simTime: number; frameCount: number; bufferAhead: number }>>,
+  next: { simTime: number; frameCount: number; bufferAhead: number },
+  force = false,
+) {
+  const now = performance.now()
+  if (!force && now - lastPaintRef.current < 250) return
+  lastPaintRef.current = now
+  setBufferInfo(next)
+}
+
 function App() {
   const [state, setState] = useState<SimulationState | undefined>(undefined)
   const [loadingError, setLoadingError] = useState<string | undefined>(undefined)
@@ -150,6 +162,7 @@ function App() {
   const playbackCursorRef = useRef(0)
   const lastPlaybackTick = useRef<number | null>(null)
   const lastCursorPostRef = useRef(0)
+  const lastBufferInfoPaintRef = useRef(0)
   const runIdRef = useRef(0)
   const workerRef = useRef<Worker | undefined>(undefined)
   const workerDoneRef = useRef(false)
@@ -173,6 +186,7 @@ function App() {
     lastPlaybackTick.current = null
     currentFrameKeyRef.current = ''
     lastCursorPostRef.current = 0
+    lastBufferInfoPaintRef.current = 0
     workerRef.current = worker
     stateRef.current = undefined
     setState(undefined)
@@ -194,13 +208,22 @@ function App() {
         frameBufferRef.current.push(message.frame)
         const latestTime = message.frame.time
         const bufferAhead = Math.max(0, latestTime - playbackCursorRef.current)
-        setBufferInfo({ simTime: latestTime, frameCount: frameBufferRef.current.length, bufferAhead })
+        paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
+          simTime: latestTime,
+          frameCount: frameBufferRef.current.length,
+          bufferAhead,
+        })
 
         if (!stateRef.current) {
           const firstFrame = frameBufferRef.current[0]
           stateRef.current = firstFrame
           currentFrameKeyRef.current = getFrameKey(firstFrame)
           setState(firstFrame)
+          paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
+            simTime: latestTime,
+            frameCount: frameBufferRef.current.length,
+            bufferAhead,
+          }, true)
           setPlaybackStatus(latestTime >= startupBufferSeconds || workerDoneRef.current ? 'ready' : 'buffering')
         } else if (stateRef.current && playbackStatusRef.current === 'buffering' && bufferAhead >= resumeBufferSeconds) {
           setPlaybackStatus('ready')
@@ -211,7 +234,11 @@ function App() {
       if (message.type === 'progress') {
         workerDoneRef.current = message.done
         const bufferAhead = Math.max(0, message.simTime - playbackCursorRef.current)
-        setBufferInfo({ simTime: message.simTime, frameCount: message.frameCount, bufferAhead })
+        paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
+          simTime: message.simTime,
+          frameCount: message.frameCount,
+          bufferAhead,
+        }, message.done)
         if (stateRef.current && playbackStatusRef.current === 'buffering' && (bufferAhead >= resumeBufferSeconds || message.done)) {
           setPlaybackStatus('ready')
         }
@@ -220,7 +247,11 @@ function App() {
 
       workerDoneRef.current = true
       const bufferAhead = Math.max(0, message.simTime - playbackCursorRef.current)
-      setBufferInfo({ simTime: message.simTime, frameCount: message.frameCount, bufferAhead })
+      paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
+        simTime: message.simTime,
+        frameCount: message.frameCount,
+        bufferAhead,
+      }, true)
       if (!stateRef.current && frameBufferRef.current[0]) {
         const firstFrame = frameBufferRef.current[0]
         stateRef.current = firstFrame

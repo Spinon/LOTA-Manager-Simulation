@@ -22,8 +22,8 @@ export type MatchWorkerResponse =
 
 const renderFrameIntervalSeconds = 0.1
 const maxSimulationSeconds = 50 * 60
-const simulationChunkSteps = 720
-const maxBufferedAheadSeconds = 60
+const simulationChunkSteps = 180
+const maxBufferedAheadSeconds = 8
 
 let activeRunId = 0
 let playbackCursor = 0
