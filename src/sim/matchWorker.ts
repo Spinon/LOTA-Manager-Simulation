@@ -16,14 +16,15 @@ export type MatchWorkerRequest =
 
 export type MatchWorkerResponse =
   | { type: 'frame'; runId: number; frame: MatchRenderFrame }
+  | { type: 'frames'; runId: number; frames: MatchRenderFrame[] }
   | { type: 'progress'; runId: number; simTime: number; frameCount: number; done: boolean }
   | { type: 'done'; runId: number; winner?: TeamId; simTime: number; frameCount: number }
   | { type: 'error'; runId: number; message: string }
 
-const renderFrameIntervalSeconds = 0.1
+const renderFrameIntervalSeconds = 0.2
 const maxSimulationSeconds = 50 * 60
 const simulationChunkSteps = 2400
-const maxBufferedAheadSeconds = 180
+const maxBufferedAheadSeconds = maxSimulationSeconds
 
 let activeRunId = 0
 let playbackCursor = 0
@@ -54,18 +55,26 @@ async function runMatch(seed: string, runId: number) {
     let decisionAccumulator = 0
     let nextFrameAt = renderFrameIntervalSeconds
     let frameCount = 0
+    let pendingFrames: MatchRenderFrame[] = []
 
     const postFrame = () => {
-      const response: MatchWorkerResponse = {
-        type: 'frame',
-        runId,
-        frame: createMatchRenderFrame(state),
-      }
-      self.postMessage(response)
+      pendingFrames.push(createMatchRenderFrame(state))
       frameCount += 1
     }
 
+    const flushFrames = () => {
+      if (pendingFrames.length === 0) return
+      const response: MatchWorkerResponse = {
+        type: 'frames',
+        runId,
+        frames: pendingFrames,
+      }
+      self.postMessage(response)
+      pendingFrames = []
+    }
+
     postFrame()
+    flushFrames()
 
     const runChunk = () => {
       if (runId !== activeRunId) return
@@ -94,6 +103,7 @@ async function runMatch(seed: string, runId: number) {
           nextFrameAt += renderFrameIntervalSeconds
         }
       }
+      flushFrames()
 
       const progress: MatchWorkerResponse = {
         type: 'progress',

@@ -96,7 +96,7 @@ import './App.css'
 
 type PlaybackStatus = 'loading' | 'ready' | 'buffering' | 'ended' | 'error'
 
-const startupBufferSeconds = 120
+const startupBufferSeconds = 100
 const minimumStartupWaitMs = 10_000
 const resumeBufferSeconds = 1.5
 
@@ -158,6 +158,7 @@ function App() {
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('loading')
   const [uiDataReady, setUiDataReady] = useState(false)
   const [startupWaitDone, setStartupWaitDone] = useState(false)
+  const [startupWaitProgress, setStartupWaitProgress] = useState(0)
   const [bufferInfo, setBufferInfo] = useState({ simTime: 0, frameCount: 0, bufferAhead: 0 })
   const [selected, setSelected] = useState<Selected>({ kind: 'arcane', id: 'd-quasar' })
   const [dataPanelOpen, setDataPanelOpen] = useState(false)
@@ -174,6 +175,15 @@ function App() {
   const stateRef = useRef<SimulationState | undefined>(undefined)
   if (import.meta.env.DEV) {
     ;(window as unknown as { __lotaStateRef?: typeof stateRef }).__lotaStateRef = stateRef
+    ;(window as unknown as { __lotaPlayback?: unknown }).__lotaPlayback = {
+      bufferInfo,
+      playbackStatus,
+      startupWaitDone,
+      startupWaitProgress,
+      frameCount: frameBufferRef.current.length,
+      cursor: playbackCursorRef.current,
+      workerDone: workerDoneRef.current,
+    }
   }
   const hasState = state !== undefined
   const phase = state ? getGamePhase(state.time) : 'early'
@@ -212,8 +222,13 @@ function App() {
     setLoadingError(undefined)
     setPlaybackStatus('loading')
     setStartupWaitDone(false)
+    setStartupWaitProgress(0)
     setBufferInfo({ simTime: 0, frameCount: 0, bufferAhead: 0 })
+    const startupStartedAt = performance.now()
     const startupTimer = window.setTimeout(() => setStartupWaitDone(true), minimumStartupWaitMs)
+    const startupProgressTimer = window.setInterval(() => {
+      setStartupWaitProgress(Math.min(1, (performance.now() - startupStartedAt) / minimumStartupWaitMs))
+    }, 100)
 
     worker.onmessage = (event: MessageEvent<MatchWorkerResponse>) => {
       const message = event.data
@@ -225,9 +240,12 @@ function App() {
         return
       }
 
-      if (message.type === 'frame') {
-        frameBufferRef.current.push(message.frame)
-        const latestTime = message.frame.time
+      if (message.type === 'frame' || message.type === 'frames') {
+        const incomingFrames = message.type === 'frame' ? [message.frame] : message.frames
+        frameBufferRef.current.push(...incomingFrames)
+        const latestFrame = incomingFrames[incomingFrames.length - 1]
+        if (!latestFrame) return
+        const latestTime = latestFrame.time
         const bufferAhead = Math.max(0, latestTime - playbackCursorRef.current)
         paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
           simTime: latestTime,
@@ -245,7 +263,7 @@ function App() {
             frameCount: frameBufferRef.current.length,
             bufferAhead,
           }, true)
-          setPlaybackStatus(latestTime >= startupBufferSeconds || workerDoneRef.current ? 'ready' : 'buffering')
+          setPlaybackStatus(workerDoneRef.current ? 'ready' : 'buffering')
         } else if (
           stateRef.current &&
           playbackStatusRef.current === 'buffering' &&
@@ -291,6 +309,7 @@ function App() {
 
     return () => {
       window.clearTimeout(startupTimer)
+      window.clearInterval(startupProgressTimer)
       worker.postMessage({ type: 'cancel', runId })
       worker.terminate()
       if (workerRef.current === worker) workerRef.current = undefined
@@ -305,6 +324,17 @@ function App() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
+
+  useEffect(() => {
+    if (
+      stateRef.current &&
+      startupWaitDone &&
+      playbackStatus === 'buffering' &&
+      (workerDoneRef.current || bufferInfo.bufferAhead >= startupBufferSeconds)
+    ) {
+      setPlaybackStatus('ready')
+    }
+  }, [bufferInfo.bufferAhead, playbackStatus, startupWaitDone])
 
   const playbackStatusRef = useRef(playbackStatus)
   playbackStatusRef.current = playbackStatus
@@ -380,19 +410,11 @@ function App() {
   const isInitialBuffering = playbackCursorRef.current <= 0.001 && playbackStatus === 'buffering'
 
   if (!state || !uiDataReady || !startupWaitDone || playbackStatus === 'loading' || isInitialBuffering) {
-    const startupProgress = Math.min(startupBufferSeconds, bufferInfo.bufferAhead)
     return (
       <main className="sim-shell loading-shell">
         <div className="loading-panel">
-          <strong>{loadingError ? 'Erro ao carregar LOTA' : 'Carregando LOTA'}</strong>
-          <span>
-            {loadingError ?? (
-              !uiDataReady
-                ? 'Carregando herois e itens...'
-                : `Preparando partida... ${startupProgress.toFixed(1)}s / ${startupBufferSeconds}s de buffer, minimo 10s`
-            )}
-          </span>
-          {!loadingError && <progress value={startupProgress} max={startupBufferSeconds} />}
+          <strong>{loadingError ? 'Erro ao carregar LOTA' : 'Carregando'}</strong>
+          {!loadingError && <progress value={startupWaitProgress} max={1} />}
         </div>
       </main>
     )
