@@ -542,9 +542,12 @@
 
 .meter i {
   height: 100%;
+  width: 100%;
   display: block;
   border-radius: inherit;
-  transition: width 260ms ease;
+  /* transform (compositor) em vez de width (layout): ver comentário no Meter */
+  transform-origin: left center;
+  transition: transform 260ms ease;
 }
 
 .meter.hp i {

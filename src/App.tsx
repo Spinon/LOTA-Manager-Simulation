@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { startTransition, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { Brain, Coins, Eye, Gauge, HeartPulse, Package, Pause, Play, RotateCcw, Swords, Target, TowerControl, Zap } from 'lucide-react'
 import {
   campStrengthLabel,
@@ -167,6 +167,7 @@ function App() {
   const playbackCursorRef = useRef(0)
   const lastPlaybackTick = useRef<number | null>(null)
   const lastCursorPostRef = useRef(0)
+  const lastStatePaintRef = useRef(0)
   const lastBufferInfoPaintRef = useRef(0)
   const runIdRef = useRef(0)
   const workerRef = useRef<Worker | undefined>(undefined)
@@ -215,6 +216,7 @@ function App() {
     lastPlaybackTick.current = null
     currentFrameKeyRef.current = ''
     lastCursorPostRef.current = 0
+    lastStatePaintRef.current = 0
     lastBufferInfoPaintRef.current = 0
     workerRef.current = worker
     stateRef.current = undefined
@@ -376,11 +378,19 @@ function App() {
             if (currentFrame) {
               stateRef.current = currentFrame
               const frameKey = getFrameKey(currentFrame)
-              if (frameKey !== currentFrameKeyRef.current) {
+              const reachedEnd = workerDoneRef.current && frameIndexRef.current >= frames.length - 1 && Boolean(currentFrame.winner)
+              // Os canvases leem stateRef a cada rAF; o setState só alimenta os
+              // painéis React, que não mostram nada com granularidade menor que
+              // ~1s (relógio mm:ss, ouro, kills, barras). Re-renderizar a árvore
+              // inteira a cada frame de 0.2s custa dezenas de ms por passada e
+              // rouba frames do canvas — 3 updates/s bastam, e startTransition
+              // deixa o React fatiar o render sem congelar a animação.
+              if (frameKey !== currentFrameKeyRef.current && (reachedEnd || now - lastStatePaintRef.current >= 300)) {
                 currentFrameKeyRef.current = frameKey
-                setState(currentFrame)
+                lastStatePaintRef.current = now
+                startTransition(() => setState(currentFrame))
               }
-              if (workerDoneRef.current && frameIndexRef.current >= frames.length - 1 && currentFrame.winner) {
+              if (reachedEnd) {
                 setPlaybackStatus('ended')
               }
             }
@@ -848,6 +858,23 @@ function FrameCounter() {
   )
 }
 
+const drawStats: Record<string, { ms: number; calls: number }> = {}
+if (import.meta.env.DEV) {
+  ;(window as unknown as { __lotaDrawStats?: typeof drawStats }).__lotaDrawStats = drawStats
+}
+
+function timeDraw(name: string, draw: () => void) {
+  if (!import.meta.env.DEV) {
+    draw()
+    return
+  }
+  const start = performance.now()
+  draw()
+  const bucket = drawStats[name] ?? (drawStats[name] = { ms: 0, calls: 0 })
+  bucket.ms += performance.now() - start
+  bucket.calls += 1
+}
+
 function CreepCanvasLayer({
   stateRef,
   selected,
@@ -866,7 +893,9 @@ function CreepCanvasLayer({
     if (!canvas) return undefined
 
     let frame = 0
-    let lastDrawKey = ''
+    // Desenha a cada rAF: a interpolação visual (getBufferedVisualPosition)
+    // gera posições novas entre os frames de 0.2s do worker — qualquer gate
+    // por "frame novo" derruba o movimento para 5 FPS.
     const draw = () => {
       const current = latest.current
       const currentState = stateRef.current
@@ -875,18 +904,12 @@ function CreepCanvasLayer({
         return
       }
       const selectedId = current.selected?.kind === 'creep' ? current.selected.id : undefined
-      const drawKey = getCanvasDrawKey(canvas, currentState.time, selectedId ?? 'none', currentState.creeps.length)
-      if (drawKey === lastDrawKey) {
-        frame = window.requestAnimationFrame(draw)
-        return
-      }
-      lastDrawKey = drawKey
-      drawCreepCanvas(
+      timeDraw('creep', () => drawCreepCanvas(
         canvas,
         currentState.creeps,
         selectedId,
         visualPositions.current,
-      )
+      ))
       frame = window.requestAnimationFrame(draw)
     }
 
@@ -1052,7 +1075,7 @@ function ArcaneCanvasLayer({
     if (!canvas) return undefined
 
     let frame = 0
-    let lastDrawKey = ''
+    // Sem gate por frame: ver comentário no CreepCanvasLayer.
     const draw = () => {
       const current = latest.current
       const currentState = stateRef.current
@@ -1061,20 +1084,14 @@ function ArcaneCanvasLayer({
         return
       }
       const selectedId = current.selected?.kind === 'arcane' ? current.selected.id : undefined
-      const drawKey = getCanvasDrawKey(canvas, currentState.time, selectedId ?? 'none', currentState.arcanes.length, currentState.timedEffects.length)
-      if (drawKey === lastDrawKey) {
-        frame = window.requestAnimationFrame(draw)
-        return
-      }
-      lastDrawKey = drawKey
-      drawArcaneCanvas(
+      timeDraw('arcane', () => drawArcaneCanvas(
         canvas,
         currentState.arcanes,
         selectedId,
         currentState.timedEffects,
         currentState.time,
         visualPositions.current,
-      )
+      ))
       frame = window.requestAnimationFrame(draw)
     }
 
@@ -1312,24 +1329,17 @@ function BossCanvasLayer({
     if (!canvas) return undefined
 
     let frame = 0
-    let lastDrawKey = ''
+    // Sem gate por frame: ver comentário no CreepCanvasLayer.
     const draw = () => {
       const currentState = stateRef.current
       if (currentState) {
-        const selectedId = latest.current.selected?.kind === 'boss' ? latest.current.selected.id : 'none'
-        const drawKey = getCanvasDrawKey(canvas, currentState.time, selectedId, currentState.boss.hp, currentState.boss.respawn)
-        if (drawKey === lastDrawKey) {
-          frame = window.requestAnimationFrame(draw)
-          return
-        }
-        lastDrawKey = drawKey
-        drawBossCanvas(
+        timeDraw('boss', () => drawBossCanvas(
           canvas,
           currentState.boss,
           latest.current.selected?.kind === 'boss' && latest.current.selected.id === currentState.boss.id,
           currentState.time,
           visualPositions.current,
-        )
+        ))
       }
       frame = window.requestAnimationFrame(draw)
     }
@@ -1420,25 +1430,11 @@ function FxCanvasLayer({ stateRef }: { stateRef: React.RefObject<SimulationState
     if (!canvas) return undefined
 
     let frame = 0
-    let lastDrawKey = ''
+    // Sem gate por frame: ver comentário no CreepCanvasLayer.
     const draw = () => {
       const currentState = stateRef.current
       if (currentState) {
-        const drawKey = getCanvasDrawKey(
-          canvas,
-          currentState.time,
-          currentState.effects.length,
-          currentState.deathMarkers.length,
-          currentState.denyMarkers.length,
-          currentState.goldMarkers.length,
-          currentState.skillMarkers.length,
-        )
-        if (drawKey === lastDrawKey) {
-          frame = window.requestAnimationFrame(draw)
-          return
-        }
-        lastDrawKey = drawKey
-        drawFxCanvas(
+        timeDraw('fx', () => drawFxCanvas(
           canvas,
           currentState.effects,
           currentState.deathMarkers,
@@ -1446,7 +1442,7 @@ function FxCanvasLayer({ stateRef }: { stateRef: React.RefObject<SimulationState
           currentState.goldMarkers,
           currentState.skillMarkers ?? [],
           currentState.time,
-        )
+        ))
       }
       frame = window.requestAnimationFrame(draw)
     }
@@ -1590,18 +1586,11 @@ function AttackRangeCanvasLayer({
     if (!canvas) return undefined
 
     let frame = 0
-    let lastDrawKey = ''
+    // Sem gate por frame: ver comentário no CreepCanvasLayer.
     const draw = () => {
       const currentState = stateRef.current
       if (currentState) {
-        const selectedKey = latest.current.selected ? `${latest.current.selected.kind}:${latest.current.selected.id}` : 'none'
-        const drawKey = getCanvasDrawKey(canvas, currentState.time, selectedKey)
-        if (drawKey === lastDrawKey) {
-          frame = window.requestAnimationFrame(draw)
-          return
-        }
-        lastDrawKey = drawKey
-        drawAttackRangeCanvas(canvas, currentState, latest.current.selected, visualPositions.current)
+        timeDraw('range', () => drawAttackRangeCanvas(canvas, currentState, latest.current.selected, visualPositions.current))
       }
       frame = window.requestAnimationFrame(draw)
     }
@@ -1611,15 +1600,6 @@ function AttackRangeCanvasLayer({
   }, [stateRef])
 
   return <canvas ref={canvasRef} className="attack-range-canvas" aria-hidden="true" />
-}
-
-function getCanvasDrawKey(canvas: HTMLCanvasElement, ...parts: Array<string | number | undefined>) {
-  return [
-    canvas.clientWidth,
-    canvas.clientHeight,
-    Math.min(maxCanvasDevicePixelRatio, window.devicePixelRatio || 1),
-    ...parts,
-  ].join('|')
 }
 
 function drawAttackRangeCanvas(
@@ -2545,7 +2525,11 @@ function Portrait({ arcane }: { arcane: Arcane }) {
 }
 
 function Meter({ value, max, tone }: { value: number; max: number; tone: 'hp' | 'mana' | 'xp' }) {
-  return <span className={`meter ${tone}`}><i style={{ width: `${Math.max(0, Math.min(100, (value / max) * 100))}%` }} /></span>
+  // scaleX em vez de width: transições de width invalidam o layout do documento
+  // inteiro a cada frame de animação, e as leituras de clientWidth dos canvases
+  // pagam esse reflow; transform anima só no compositor.
+  const ratio = Math.max(0, Math.min(1, value / max))
+  return <span className={`meter ${tone}`}><i style={{ transform: `scaleX(${ratio})` }} /></span>
 }
 
 function getHealthRingEmptyAngle(value: number, max: number) {
