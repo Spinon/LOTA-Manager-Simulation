@@ -25,6 +25,7 @@ import {
   getItemTimingUrgency,
   getLaneWinAssessment,
   getLevelProgress,
+  loadGameData,
   getRuneGlyph,
   getRuneInspectorSubtitle,
   getRuneKindLabel,
@@ -154,6 +155,7 @@ function App() {
   const [speed, setSpeed] = useState(1)
   const [matchSeed, setMatchSeed] = useState(() => createBrowserMatchSeed())
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('loading')
+  const [uiDataReady, setUiDataReady] = useState(false)
   const [bufferInfo, setBufferInfo] = useState({ simTime: 0, frameCount: 0, bufferAhead: 0 })
   const [selected, setSelected] = useState<Selected>({ kind: 'arcane', id: 'd-quasar' })
   const [dataPanelOpen, setDataPanelOpen] = useState(false)
@@ -174,6 +176,21 @@ function App() {
   const hasState = state !== undefined
   const phase = state ? getGamePhase(state.time) : 'early'
   const dayCycle = state ? getDayCycle(state.time) : 'day'
+
+  useEffect(() => {
+    let cancelled = false
+    loadGameData()
+      .then(() => {
+        if (!cancelled) setUiDataReady(true)
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setLoadingError(error instanceof Error ? error.message : 'Falha ao carregar dados do jogo')
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   useEffect(() => {
     const worker = new Worker(new URL('./sim/matchWorker.ts', import.meta.url), { type: 'module' })
@@ -350,12 +367,12 @@ function App() {
     dusk: state ? getTeamNetWorth(state, 'dusk') : 0,
   }), [state])
 
-  if (!state) {
+  if (!state || !uiDataReady) {
     return (
       <main className="sim-shell loading-shell">
         <div className="loading-panel">
           <strong>{loadingError ? 'Erro ao carregar LOTA' : 'Carregando LOTA'}</strong>
-          <span>{loadingError ?? `Preparando partida... ${Math.min(startupBufferSeconds, bufferInfo.simTime).toFixed(1)}s / ${startupBufferSeconds}s de buffer`}</span>
+          <span>{loadingError ?? (!uiDataReady ? 'Carregando herois e itens...' : `Preparando partida... ${Math.min(startupBufferSeconds, bufferInfo.simTime).toFixed(1)}s / ${startupBufferSeconds}s de buffer`)}</span>
           {!loadingError && <progress value={Math.min(startupBufferSeconds, bufferInfo.simTime)} max={startupBufferSeconds} />}
         </div>
       </main>
