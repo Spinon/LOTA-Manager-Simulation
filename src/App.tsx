@@ -96,9 +96,24 @@ import './App.css'
 
 type PlaybackStatus = 'loading' | 'ready' | 'buffering' | 'ended' | 'error'
 
+// Partida standby: enquanto o jogador assiste a atual, um segundo worker
+// pré-simula a próxima seed até o teto de buffer. No restart, o worker e os
+// frames são adotados e o playback começa sem tela de loading.
+type StandbyMatch = {
+  seed: string
+  worker: Worker
+  runId: number
+  frames: SimulationState[]
+  workerDone: boolean
+  simTime: number
+}
+
 const startupBufferSeconds = 100
 const minimumStartupWaitMs = 10_000
 const resumeBufferSeconds = 1.5
+// Começa a pré-simular a próxima partida quando o buffer da atual está quase
+// no teto (worker ativo já ocioso) ou quando a partida atual terminou de simular.
+const prefetchBufferAheadSeconds = 150
 
 function createBrowserMatchSeed() {
   const values = new Uint32Array(2)
@@ -170,8 +185,10 @@ function App() {
   const lastStatePaintRef = useRef(0)
   const lastBufferInfoPaintRef = useRef(0)
   const runIdRef = useRef(0)
+  const runSeqRef = useRef(0)
   const workerRef = useRef<Worker | undefined>(undefined)
   const workerDoneRef = useRef(false)
+  const standbyRef = useRef<StandbyMatch | undefined>(undefined)
   const currentFrameKeyRef = useRef('')
   const stateRef = useRef<SimulationState | undefined>(undefined)
   if (import.meta.env.DEV) {
@@ -184,6 +201,9 @@ function App() {
       frameCount: frameBufferRef.current.length,
       cursor: playbackCursorRef.current,
       workerDone: workerDoneRef.current,
+      standby: standbyRef.current
+        ? { seed: standbyRef.current.seed, simTime: standbyRef.current.simTime, frames: standbyRef.current.frames.length, done: standbyRef.current.workerDone }
+        : undefined,
     }
   }
   const hasState = state !== undefined
@@ -206,11 +226,18 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const worker = new Worker(new URL('./sim/matchWorker.ts', import.meta.url), { type: 'module' })
-    const runId = runIdRef.current + 1
+    const standby = standbyRef.current
+    const adopting = standby && standby.seed === matchSeed ? standby : undefined
+    if (standby) {
+      standbyRef.current = undefined
+      if (!adopting) standby.worker.terminate()
+    }
+
+    const worker = adopting ? adopting.worker : new Worker(new URL('./sim/matchWorker.ts', import.meta.url), { type: 'module' })
+    const runId = adopting ? adopting.runId : (runSeqRef.current += 1)
     runIdRef.current = runId
-    workerDoneRef.current = false
-    frameBufferRef.current = []
+    workerDoneRef.current = adopting?.workerDone ?? false
+    frameBufferRef.current = adopting?.frames ?? []
     frameIndexRef.current = 0
     playbackCursorRef.current = 0
     lastPlaybackTick.current = null
@@ -222,15 +249,72 @@ function App() {
     stateRef.current = undefined
     setState(undefined)
     setLoadingError(undefined)
-    setPlaybackStatus('loading')
-    setStartupWaitDone(false)
-    setStartupWaitProgress(0)
-    setBufferInfo({ simTime: 0, frameCount: 0, bufferAhead: 0 })
+
+    // Standby com buffer de largada completo: entra direto no playback,
+    // sem tela de loading nem espera mínima.
+    const adoptedReady = Boolean(adopting && adopting.frames.length > 0 &&
+      (adopting.workerDone || adopting.simTime >= startupBufferSeconds))
+    if (adopting && adoptedReady) {
+      const firstFrame = adopting.frames[0]
+      stateRef.current = firstFrame
+      currentFrameKeyRef.current = getFrameKey(firstFrame)
+      setState(firstFrame)
+      setPlaybackStatus('ready')
+      setStartupWaitDone(true)
+      setStartupWaitProgress(1)
+      setBufferInfo({ simTime: adopting.simTime, frameCount: adopting.frames.length, bufferAhead: adopting.simTime })
+    } else {
+      setPlaybackStatus('loading')
+      setStartupWaitDone(false)
+      setStartupWaitProgress(0)
+      setBufferInfo({
+        simTime: adopting?.simTime ?? 0,
+        frameCount: adopting?.frames.length ?? 0,
+        bufferAhead: adopting?.simTime ?? 0,
+      })
+    }
     const startupStartedAt = performance.now()
-    const startupTimer = window.setTimeout(() => setStartupWaitDone(true), minimumStartupWaitMs)
-    const startupProgressTimer = window.setInterval(() => {
-      setStartupWaitProgress(Math.min(1, (performance.now() - startupStartedAt) / minimumStartupWaitMs))
-    }, 100)
+    const startupTimer = adoptedReady ? undefined : window.setTimeout(() => setStartupWaitDone(true), minimumStartupWaitMs)
+    const startupProgressTimer = adoptedReady
+      ? undefined
+      : window.setInterval(() => {
+          setStartupWaitProgress(Math.min(1, (performance.now() - startupStartedAt) / minimumStartupWaitMs))
+        }, 100)
+
+    const startStandbyPrefetch = () => {
+      if (standbyRef.current) return
+      const seed = createBrowserMatchSeed()
+      const standbyWorker = new Worker(new URL('./sim/matchWorker.ts', import.meta.url), { type: 'module' })
+      const standbyRunId = (runSeqRef.current += 1)
+      const nextStandby: StandbyMatch = {
+        seed,
+        worker: standbyWorker,
+        runId: standbyRunId,
+        frames: [],
+        workerDone: false,
+        simTime: 0,
+      }
+      standbyWorker.onmessage = (event: MessageEvent<MatchWorkerResponse>) => {
+        const message = event.data
+        if (message.runId !== standbyRunId) return
+        if (message.type === 'error') {
+          standbyWorker.terminate()
+          if (standbyRef.current === nextStandby) standbyRef.current = undefined
+          return
+        }
+        if (message.type === 'frame' || message.type === 'frames') {
+          const incomingFrames = message.type === 'frame' ? [message.frame] : message.frames
+          nextStandby.frames.push(...incomingFrames)
+          const latestFrame = incomingFrames[incomingFrames.length - 1]
+          if (latestFrame) nextStandby.simTime = Math.max(nextStandby.simTime, latestFrame.time)
+          return
+        }
+        nextStandby.simTime = Math.max(nextStandby.simTime, message.simTime)
+        nextStandby.workerDone = message.type === 'done' || (message.type === 'progress' && message.done)
+      }
+      standbyWorker.postMessage({ type: 'start', seed, runId: standbyRunId })
+      standbyRef.current = nextStandby
+    }
 
     worker.onmessage = (event: MessageEvent<MatchWorkerResponse>) => {
       const message = event.data
@@ -288,6 +372,9 @@ function App() {
         if (stateRef.current && playbackStatusRef.current === 'buffering' && (bufferAhead >= requiredBufferAhead || message.done)) {
           setPlaybackStatus('ready')
         }
+        if (stateRef.current && (message.done || bufferAhead >= prefetchBufferAheadSeconds)) {
+          startStandbyPrefetch()
+        }
         return
       }
 
@@ -305,9 +392,16 @@ function App() {
         setState(firstFrame)
       }
       setPlaybackStatus((status) => status === 'loading' || status === 'buffering' ? 'ready' : status)
+      startStandbyPrefetch()
     }
 
-    worker.postMessage({ type: 'start', seed: matchSeed, runId })
+    if (!adopting) {
+      worker.postMessage({ type: 'start', seed: matchSeed, runId })
+    } else if (adoptedReady) {
+      // O worker standby terminou de simular? Então não haverá mais mensagens
+      // de progresso; dispara a pré-simulação da próxima já na adoção.
+      if (workerDoneRef.current) startStandbyPrefetch()
+    }
 
     return () => {
       window.clearTimeout(startupTimer)
@@ -317,6 +411,11 @@ function App() {
       if (workerRef.current === worker) workerRef.current = undefined
     }
   }, [matchSeed])
+
+  useEffect(() => () => {
+    standbyRef.current?.worker.terminate()
+    standbyRef.current = undefined
+  }, [])
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -486,7 +585,7 @@ function App() {
               onClick={() => {
                 setRunning(true)
                 setSelected({ kind: 'arcane', id: 'd-quasar' })
-                setMatchSeed(createBrowserMatchSeed())
+                setMatchSeed(standbyRef.current?.seed ?? createBrowserMatchSeed())
               }}
               title="Reiniciar partida"
             >
