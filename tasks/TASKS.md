@@ -22,7 +22,9 @@ Este arquivo é a **fila única de trabalho** do projeto. Um agente (Codex) roda
 
 ## Fila
 
-### [ ] T1 — Completar micro-otimizações de CPU da rodada 2
+### [x] T1 — Completar micro-otimizações de CPU da rodada 2
+
+> Concluída em 2026-07-07 — Reduzi churn no tick ao fundir visão/respawn, reutilizar o buffer de hitboxes e adicionar culling barato de torres/camps nos cálculos de perigo.
 
 **Objetivo**: fechar os itens de custo que a rodada 2 não cobriu por completo.
 

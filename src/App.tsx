@@ -1363,14 +1363,16 @@ function tick(state: SimulationState, delta: number, shouldDecide: boolean): Sim
     Object.entries(next.teamAuras).filter(([, aura]) => aura && aura.expiresAt > next.time),
   ) as Partial<Record<TeamId, TeamAura>>
   const dayCycle = getDayCycle(next.time)
-  if (dayCycle !== previousDayCycle) {
-    next.arcanes = next.arcanes.map((arcane) => ({
-      ...arcane,
-      visionRange: getArcaneDefinitionVisionRange(arcane.heroDefinitionId, dayCycle),
-    }))
-  }
   applyItemAuraEffects(next)
-  next.arcanes = next.arcanes.map((arcane, index) => respawnArcaneIfReady(arcane, next.time, index))
+  next.arcanes = next.arcanes.map((arcane, index) => {
+    const current = dayCycle !== previousDayCycle
+      ? {
+          ...arcane,
+          visionRange: getArcaneDefinitionVisionRange(arcane.heroDefinitionId, dayCycle),
+        }
+      : arcane
+    return respawnArcaneIfReady(current, next.time, index)
+  })
 
   next.camps = next.camps.map((camp) => {
     if (camp.hp > 0 || camp.respawn > next.time) return camp
@@ -4906,44 +4908,54 @@ type UnitHitboxBody = {
 const unitHitboxGridSize = 4
 const proximityGridCellSize = 10
 const maxHitboxResolutionPasses = 2
+const unitHitboxBodyBuffer: UnitHitboxBody[] = []
 
 function resolveUnitHitboxes(state: SimulationState) {
-  const bodies: UnitHitboxBody[] = [
-    ...state.arcanes
-      .filter((arcane) => arcane.stats.hp > 0 && arcane.respawn <= state.time)
-      .map((arcane) => ({
-        id: arcane.id,
-        pos: arcane.pos,
-        radius: getUnitHitboxRadius(arcane),
-        movable: true,
-        mass: 1.25,
-      })),
-    ...state.creeps
-      .filter((creep) => creep.hp > 0)
-      .map((creep) => ({
-        id: creep.id,
-        pos: creep.pos,
-        radius: getUnitHitboxRadius(creep),
-        movable: true,
-        mass: creep.type === 'siege' ? 1.1 : 0.72,
-      })),
-    ...(state.boss.hp > 0 && state.boss.respawn <= state.time ? [{
+  const bodies = unitHitboxBodyBuffer
+  bodies.length = 0
+
+  for (const arcane of state.arcanes) {
+    if (arcane.stats.hp <= 0 || arcane.respawn > state.time) continue
+    bodies.push({
+      id: arcane.id,
+      pos: arcane.pos,
+      radius: getUnitHitboxRadius(arcane),
+      movable: true,
+      mass: 1.25,
+    })
+  }
+
+  for (const creep of state.creeps) {
+    if (creep.hp <= 0) continue
+    bodies.push({
+      id: creep.id,
+      pos: creep.pos,
+      radius: getUnitHitboxRadius(creep),
+      movable: true,
+      mass: creep.type === 'siege' ? 1.1 : 0.72,
+    })
+  }
+
+  if (state.boss.hp > 0 && state.boss.respawn <= state.time) {
+    bodies.push({
       id: state.boss.id,
       pos: state.boss.pos,
       radius: getUnitHitboxRadius(state.boss),
       movable: true,
       mass: 2.5,
-    }] : []),
-    ...state.camps
-      .filter((camp) => camp.hp > 0)
-      .map((camp) => ({
-        id: camp.id,
-        pos: camp.pos,
-        radius: getUnitHitboxRadius(camp),
-        movable: false,
-        mass: 99,
-      })),
-  ]
+    })
+  }
+
+  for (const camp of state.camps) {
+    if (camp.hp <= 0) continue
+    bodies.push({
+      id: camp.id,
+      pos: camp.pos,
+      radius: getUnitHitboxRadius(camp),
+      movable: false,
+      mass: 99,
+    })
+  }
 
   if (bodies.length < 2) return
 
@@ -9284,7 +9296,10 @@ function getDangerScore(state: SimulationState, arcane: Arcane, visibleEnemies =
   const towerPressure = state.towers
     .filter((tower) => tower.team !== arcane.team && tower.hp > 0)
     .reduce((score, tower) => {
-      const proximity = Math.max(0, 1 - distance(arcane.pos, tower.pos) / (tower.range + 2))
+      const radius = tower.range + 2
+      const distanceSq = distanceSquared(arcane.pos, tower.pos)
+      if (distanceSq > radius * radius) return score
+      const proximity = 1 - Math.sqrt(distanceSq) / radius
       return score + proximity * 38
     }, 0)
   const creepPressure = nearbyEnemyCreeps
@@ -9296,7 +9311,10 @@ function getDangerScore(state: SimulationState, arcane: Arcane, visibleEnemies =
   const neutralPressure = state.camps
     .filter((camp) => camp.hp > 0)
     .reduce((score, camp) => {
-      const proximity = Math.max(0, 1 - distance(arcane.pos, camp.pos) / (camp.range + 3))
+      const radius = camp.range + 3
+      const distanceSq = distanceSquared(arcane.pos, camp.pos)
+      if (distanceSq > radius * radius) return score
+      const proximity = 1 - Math.sqrt(distanceSq) / radius
       return score + proximity * (camp.strength === 'strong' ? 16 : camp.strength === 'medium' ? 11 : 7)
     }, 0)
   const bossPressure = state.boss.hp > 0 && state.boss.aggroTargetId === arcane.id && state.boss.aggroUntil && state.boss.aggroUntil > state.time
@@ -9326,7 +9344,7 @@ function getEnemyActionThreatScore(
     .filter((tower) => tower.team !== arcane.team && tower.hp > 0)
     .reduce((score, tower) => {
       const radius = tower.range + 1.2
-      if (distance(point, tower.pos) > radius) return score
+      if (distanceSquared(point, tower.pos) > radius * radius) return score
       return score + 42
     }, 0)
   const visibleArcaneThreat = visibleEnemies.reduce((score, enemy) => {
@@ -9345,7 +9363,7 @@ function getEnemyActionThreatScore(
     .filter((camp) => camp.hp > 0)
     .reduce((score, camp) => {
       const radius = camp.range + 1.5
-      if (distance(point, camp.pos) > radius) return score
+      if (distanceSquared(point, camp.pos) > radius * radius) return score
       return score + (camp.strength === 'strong' ? 22 : camp.strength === 'medium' ? 15 : 9)
     }, 0)
   const bossThreat = state.boss.hp > 0 && state.boss.aggroTargetId === arcane.id && state.boss.aggroUntil && state.boss.aggroUntil > state.time && distance(point, state.boss.pos) <= state.boss.range + 2
