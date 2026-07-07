@@ -96,7 +96,8 @@ import './App.css'
 
 type PlaybackStatus = 'loading' | 'ready' | 'buffering' | 'ended' | 'error'
 
-const startupBufferSeconds = 5
+const startupBufferSeconds = 120
+const minimumStartupWaitMs = 10_000
 const resumeBufferSeconds = 1.5
 
 function createBrowserMatchSeed() {
@@ -156,6 +157,7 @@ function App() {
   const [matchSeed, setMatchSeed] = useState(() => createBrowserMatchSeed())
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('loading')
   const [uiDataReady, setUiDataReady] = useState(false)
+  const [startupWaitDone, setStartupWaitDone] = useState(false)
   const [bufferInfo, setBufferInfo] = useState({ simTime: 0, frameCount: 0, bufferAhead: 0 })
   const [selected, setSelected] = useState<Selected>({ kind: 'arcane', id: 'd-quasar' })
   const [dataPanelOpen, setDataPanelOpen] = useState(false)
@@ -209,7 +211,9 @@ function App() {
     setState(undefined)
     setLoadingError(undefined)
     setPlaybackStatus('loading')
+    setStartupWaitDone(false)
     setBufferInfo({ simTime: 0, frameCount: 0, bufferAhead: 0 })
+    const startupTimer = window.setTimeout(() => setStartupWaitDone(true), minimumStartupWaitMs)
 
     worker.onmessage = (event: MessageEvent<MatchWorkerResponse>) => {
       const message = event.data
@@ -242,7 +246,11 @@ function App() {
             bufferAhead,
           }, true)
           setPlaybackStatus(latestTime >= startupBufferSeconds || workerDoneRef.current ? 'ready' : 'buffering')
-        } else if (stateRef.current && playbackStatusRef.current === 'buffering' && bufferAhead >= resumeBufferSeconds) {
+        } else if (
+          stateRef.current &&
+          playbackStatusRef.current === 'buffering' &&
+          bufferAhead >= (playbackCursorRef.current <= 0.001 ? startupBufferSeconds : resumeBufferSeconds)
+        ) {
           setPlaybackStatus('ready')
         }
         return
@@ -256,7 +264,8 @@ function App() {
           frameCount: message.frameCount,
           bufferAhead,
         }, message.done)
-        if (stateRef.current && playbackStatusRef.current === 'buffering' && (bufferAhead >= resumeBufferSeconds || message.done)) {
+        const requiredBufferAhead = playbackCursorRef.current <= 0.001 ? startupBufferSeconds : resumeBufferSeconds
+        if (stateRef.current && playbackStatusRef.current === 'buffering' && (bufferAhead >= requiredBufferAhead || message.done)) {
           setPlaybackStatus('ready')
         }
         return
@@ -281,6 +290,7 @@ function App() {
     worker.postMessage({ type: 'start', seed: matchSeed, runId })
 
     return () => {
+      window.clearTimeout(startupTimer)
       worker.postMessage({ type: 'cancel', runId })
       worker.terminate()
       if (workerRef.current === worker) workerRef.current = undefined
@@ -300,7 +310,7 @@ function App() {
   playbackStatusRef.current = playbackStatus
 
   useEffect(() => {
-    if (!hasState || playbackStatus === 'loading' || playbackStatus === 'error') return undefined
+    if (!hasState || !startupWaitDone || playbackStatus === 'loading' || playbackStatus === 'error') return undefined
 
     let frame = 0
     const playbackTick = () => {
@@ -359,7 +369,7 @@ function App() {
 
     frame = window.requestAnimationFrame(playbackTick)
     return () => window.cancelAnimationFrame(frame)
-  }, [running, speed, hasState, playbackStatus])
+  }, [running, speed, hasState, startupWaitDone, playbackStatus])
 
   const selectedEntity = useMemo(() => state ? findSelected(state, selected) : undefined, [selected, state])
   const teamNetWorth = useMemo(() => ({
@@ -367,13 +377,22 @@ function App() {
     dusk: state ? getTeamNetWorth(state, 'dusk') : 0,
   }), [state])
 
-  if (!state || !uiDataReady) {
+  const isInitialBuffering = playbackCursorRef.current <= 0.001 && playbackStatus === 'buffering'
+
+  if (!state || !uiDataReady || !startupWaitDone || playbackStatus === 'loading' || isInitialBuffering) {
+    const startupProgress = Math.min(startupBufferSeconds, bufferInfo.bufferAhead)
     return (
       <main className="sim-shell loading-shell">
         <div className="loading-panel">
           <strong>{loadingError ? 'Erro ao carregar LOTA' : 'Carregando LOTA'}</strong>
-          <span>{loadingError ?? (!uiDataReady ? 'Carregando herois e itens...' : `Preparando partida... ${Math.min(startupBufferSeconds, bufferInfo.simTime).toFixed(1)}s / ${startupBufferSeconds}s de buffer`)}</span>
-          {!loadingError && <progress value={Math.min(startupBufferSeconds, bufferInfo.simTime)} max={startupBufferSeconds} />}
+          <span>
+            {loadingError ?? (
+              !uiDataReady
+                ? 'Carregando herois e itens...'
+                : `Preparando partida... ${startupProgress.toFixed(1)}s / ${startupBufferSeconds}s de buffer, minimo 10s`
+            )}
+          </span>
+          {!loadingError && <progress value={startupProgress} max={startupBufferSeconds} />}
         </div>
       </main>
     )
