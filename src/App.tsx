@@ -965,6 +965,38 @@ if (import.meta.env.DEV) {
   ;(window as unknown as { __lotaDrawStats?: typeof drawStats }).__lotaDrawStats = drawStats
 }
 
+// Idle sem redraw (T4): cada camada continua desenhando enquanto seu drawKey
+// mudou há menos de drawIdleSettleMs — janela para a interpolação visual
+// (delay de 250ms + extrapolação) e os fades de FX assentarem — e depois pula
+// o clear/redraw até o key mudar de novo (pausa, fim de partida, aba parada).
+// CUIDADO: com o playback rodando, state.time muda a cada 0.2s (< janela),
+// então a animação nunca é bloqueada — não encurtar a janela para menos que
+// o intervalo de frames + delay de interpolação (ver aviso na T4 do TASKS.md).
+const drawIdleSettleMs = 600
+
+function createDrawGate() {
+  let lastKey = ''
+  let lastChangeAt = 0
+  return (key: string) => {
+    const now = performance.now()
+    if (key !== lastKey) {
+      lastKey = key
+      lastChangeAt = now
+      return true
+    }
+    return now - lastChangeAt <= drawIdleSettleMs
+  }
+}
+
+function getCanvasDrawKey(canvas: HTMLCanvasElement, ...parts: Array<string | number | undefined>) {
+  return [
+    canvas.clientWidth,
+    canvas.clientHeight,
+    Math.min(maxCanvasDevicePixelRatio, window.devicePixelRatio || 1),
+    ...parts,
+  ].join('|')
+}
+
 function timeDraw(name: string, draw: () => void) {
   if (!import.meta.env.DEV) {
     draw()
@@ -995,9 +1027,7 @@ function CreepCanvasLayer({
     if (!canvas) return undefined
 
     let frame = 0
-    // Desenha a cada rAF: a interpolação visual (getBufferedVisualPosition)
-    // gera posições novas entre os frames de 0.2s do worker — qualquer gate
-    // por "frame novo" derruba o movimento para 5 FPS.
+    const shouldDraw = createDrawGate()
     const draw = () => {
       const current = latest.current
       const currentState = stateRef.current
@@ -1006,6 +1036,10 @@ function CreepCanvasLayer({
         return
       }
       const selectedId = current.selected?.kind === 'creep' ? current.selected.id : undefined
+      if (!shouldDraw(getCanvasDrawKey(canvas, currentState.time, selectedId ?? 'none', currentState.creeps.length))) {
+        frame = window.requestAnimationFrame(draw)
+        return
+      }
       timeDraw('creep', () => drawCreepCanvas(
         canvas,
         currentState.creeps,
@@ -1177,7 +1211,7 @@ function ArcaneCanvasLayer({
     if (!canvas) return undefined
 
     let frame = 0
-    // Sem gate por frame: ver comentário no CreepCanvasLayer.
+    const shouldDraw = createDrawGate()
     const draw = () => {
       const current = latest.current
       const currentState = stateRef.current
@@ -1186,6 +1220,10 @@ function ArcaneCanvasLayer({
         return
       }
       const selectedId = current.selected?.kind === 'arcane' ? current.selected.id : undefined
+      if (!shouldDraw(getCanvasDrawKey(canvas, currentState.time, selectedId ?? 'none', currentState.arcanes.length, currentState.timedEffects.length))) {
+        frame = window.requestAnimationFrame(draw)
+        return
+      }
       timeDraw('arcane', () => drawArcaneCanvas(
         canvas,
         currentState.arcanes,
@@ -1431,10 +1469,15 @@ function BossCanvasLayer({
     if (!canvas) return undefined
 
     let frame = 0
-    // Sem gate por frame: ver comentário no CreepCanvasLayer.
+    const shouldDraw = createDrawGate()
     const draw = () => {
       const currentState = stateRef.current
       if (currentState) {
+        const selectedId = latest.current.selected?.kind === 'boss' ? latest.current.selected.id : 'none'
+        if (!shouldDraw(getCanvasDrawKey(canvas, currentState.time, selectedId, currentState.boss.hp, currentState.boss.respawn))) {
+          frame = window.requestAnimationFrame(draw)
+          return
+        }
         timeDraw('boss', () => drawBossCanvas(
           canvas,
           currentState.boss,
@@ -1532,10 +1575,23 @@ function FxCanvasLayer({ stateRef }: { stateRef: React.RefObject<SimulationState
     if (!canvas) return undefined
 
     let frame = 0
-    // Sem gate por frame: ver comentário no CreepCanvasLayer.
+    const shouldDraw = createDrawGate()
     const draw = () => {
       const currentState = stateRef.current
       if (currentState) {
+        const fxKey = getCanvasDrawKey(
+          canvas,
+          currentState.time,
+          currentState.effects.length,
+          currentState.deathMarkers.length,
+          currentState.denyMarkers.length,
+          currentState.goldMarkers.length,
+          currentState.skillMarkers.length,
+        )
+        if (!shouldDraw(fxKey)) {
+          frame = window.requestAnimationFrame(draw)
+          return
+        }
         timeDraw('fx', () => drawFxCanvas(
           canvas,
           currentState.effects,
@@ -1688,10 +1744,15 @@ function AttackRangeCanvasLayer({
     if (!canvas) return undefined
 
     let frame = 0
-    // Sem gate por frame: ver comentário no CreepCanvasLayer.
+    const shouldDraw = createDrawGate()
     const draw = () => {
       const currentState = stateRef.current
       if (currentState) {
+        const selectedKey = latest.current.selected ? `${latest.current.selected.kind}:${latest.current.selected.id}` : 'none'
+        if (!shouldDraw(getCanvasDrawKey(canvas, currentState.time, selectedKey))) {
+          frame = window.requestAnimationFrame(draw)
+          return
+        }
         timeDraw('range', () => drawAttackRangeCanvas(canvas, currentState, latest.current.selected, visualPositions.current))
       }
       frame = window.requestAnimationFrame(draw)

@@ -89,7 +89,9 @@ Itens restantes (checar um a um se já existem antes de implementar):
 
 ---
 
-### [ ] T4 — Parar de redesenhar quando nada muda
+### [x] T4 — Parar de redesenhar quando nada muda
+
+> Concluída em 2026-07-07 — Gate por camada com janela de assentamento de 600ms (`createDrawGate` + `getCanvasDrawKey`): pausado, as 5 camadas caem a 0 redraws/s; rodando, seguem a ~60fps; medido via `__lotaDrawStats` (152 draws/2s rodando, 0 pausado, burst curto ao mudar seleção).
 
 **Objetivo**: com o playback pausado (ou sem frame novo + sem mudança de seleção/resize), as camadas de canvas não devem limpar/redesenhar a cada rAF.
 
