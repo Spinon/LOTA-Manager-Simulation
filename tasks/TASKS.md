@@ -40,7 +40,9 @@ Itens restantes (checar um a um se já existem antes de implementar):
 
 ---
 
-### [ ] T2 — Extrair a simulação de App.tsx para `src/sim/` (sem React)
+### [x] T2 — Extrair a simulação de App.tsx para `src/sim/` (sem React)
+
+> Concluída em 2026-07-07 — Extraí o motor de simulação para `src/sim/simulation.ts`, removi dependências de React/DOM/lucide da camada de sim e adicionei smoke test Node para rodar 600 ticks com invariantes básicas.
 
 **Objetivo**: separar de vez cálculo e render. Todo o código de simulação sai de `src/App.tsx` (~9400 linhas) para módulos puros em `src/sim/`, sem NENHUM import de React/DOM/lucide. É pré-requisito da T3 (Worker) e permite rodar a sim em Node.
 
