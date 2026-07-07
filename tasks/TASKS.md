@@ -64,7 +64,9 @@ Itens restantes (checar um a um se já existem antes de implementar):
 
 ---
 
-### [ ] T3 — Partida pré-computada: Worker simula, jogador assiste sem lag
+### [x] T3 — Partida pré-computada: Worker simula, jogador assiste sem lag
+
+> Concluída em 2026-07-07 — Adicionei `matchWorker.ts`, playback por cursor com buffer inicial, backpressure/poda de frames, seeds determinísticas e auditoria removendo `Math.random` dos caminhos de simulação.
 
 **Objetivo**: ao iniciar a partida, um Web Worker roda a simulação em fast-forward e o jogador assiste um playback fluido — sem lag, sem acoplamento com FPS, funcionando até com a aba oculta. O jogador não interage com a partida (só pausar/velocidade/pular, que são controles do player, não da sim). Depende da T2.
 

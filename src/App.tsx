@@ -2,10 +2,7 @@ import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode }
 import { Brain, Coins, Eye, Gauge, HeartPulse, Package, Pause, Play, RotateCcw, Swords, Target, TowerControl, Zap } from 'lucide-react'
 import {
   campStrengthLabel,
-  cloneSimulationStateForTick,
   convertImportedSkillRange,
-  createInitialState,
-  decisionGateSeconds,
   formatCompactGold,
   getArcaneBarrierAmount,
   getArcaneDamageRangeLabel,
@@ -28,7 +25,6 @@ import {
   getItemTimingUrgency,
   getLaneWinAssessment,
   getLevelProgress,
-  getMaxSimulationStepsPerFrame,
   getRuneGlyph,
   getRuneInspectorSubtitle,
   getRuneKindLabel,
@@ -47,7 +43,6 @@ import {
   laneNames,
   lanePaths,
   nearest,
-  loadGameData,
   getTeamMemoryDanger,
   getEntityPosition,
   getEntityAttackRange,
@@ -57,15 +52,11 @@ import {
   clampNumber,
   calculateHeroStats,
   maxCanvasDevicePixelRatio,
-  maxSimulationStepsPerTimer,
-  maxSimulationTimerElapsedSeconds,
   nextShopItem,
   shopCatalog,
-  simulationFrameSeconds,
   teamInfo,
   teleportManaCost,
   teleportScrollCost,
-  tick,
   type Arcane,
   type AttackEffect,
   type Base,
@@ -97,22 +88,72 @@ import {
   type TeamPlan,
   type TimedEffect,
   type Tower,
-  uiSnapshotIntervalSeconds,
   XP_TO_REACH_LEVEL
 } from './sim/simulation'
+import type { MatchWorkerResponse } from './sim/matchWorker'
 import './App.css'
+
+type PlaybackStatus = 'loading' | 'ready' | 'buffering' | 'ended' | 'error'
+
+const startupBufferSeconds = 5
+const resumeBufferSeconds = 1.5
+
+function createBrowserMatchSeed() {
+  const values = new Uint32Array(2)
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(values)
+  } else {
+    values[0] = Math.floor(Math.random() * 0xffffffff)
+    values[1] = Math.floor(Math.random() * 0xffffffff)
+  }
+  return `lota-${values[0].toString(36)}-${values[1].toString(36)}`
+}
+
+function getFrameKey(frame: SimulationState) {
+  return `${frame.matchSeed}:${frame.time}:${frame.events.length}:${frame.effects.length}:${frame.winner ?? 'playing'}`
+}
+
+function getPlaybackStatusLabel(status: PlaybackStatus) {
+  if (status === 'loading') return 'Preparando'
+  if (status === 'buffering') return 'Buffer'
+  if (status === 'ended') return 'Encerrado'
+  if (status === 'error') return 'Erro'
+  return 'Playback'
+}
+
+function prunePlaybackFrames(
+  frames: SimulationState[],
+  frameIndexRef: React.MutableRefObject<number>,
+  olderThan: number,
+) {
+  let removeCount = 0
+  while (removeCount < frames.length - 2 && frames[removeCount + 1].time < olderThan) {
+    removeCount += 1
+  }
+  if (removeCount <= 0) return
+  frames.splice(0, removeCount)
+  frameIndexRef.current = Math.max(0, frameIndexRef.current - removeCount)
+}
 
 function App() {
   const [state, setState] = useState<SimulationState | undefined>(undefined)
   const [loadingError, setLoadingError] = useState<string | undefined>(undefined)
   const [running, setRunning] = useState(true)
   const [speed, setSpeed] = useState(1)
+  const [matchSeed, setMatchSeed] = useState(() => createBrowserMatchSeed())
+  const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('loading')
+  const [bufferInfo, setBufferInfo] = useState({ simTime: 0, frameCount: 0, bufferAhead: 0 })
   const [selected, setSelected] = useState<Selected>({ kind: 'arcane', id: 'd-quasar' })
   const [dataPanelOpen, setDataPanelOpen] = useState(false)
-  const lastSimulationTick = useRef<number | null>(null)
-  const simulationAccumulator = useRef(0)
-  const decisionAccumulator = useRef(0)
-  const uiSnapshotAccumulator = useRef(0)
+  const frameBufferRef = useRef<SimulationState[]>([])
+  const frameIndexRef = useRef(0)
+  const playbackCursorRef = useRef(0)
+  const lastPlaybackTick = useRef<number | null>(null)
+  const lastCursorPostRef = useRef(0)
+  const runIdRef = useRef(0)
+  const workerRef = useRef<Worker | undefined>(undefined)
+  const workerDoneRef = useRef(false)
+  const currentFrameKeyRef = useRef('')
   const stateRef = useRef<SimulationState | undefined>(undefined)
   if (import.meta.env.DEV) {
     ;(window as unknown as { __lotaStateRef?: typeof stateRef }).__lotaStateRef = stateRef
@@ -122,23 +163,82 @@ function App() {
   const dayCycle = state ? getDayCycle(state.time) : 'day'
 
   useEffect(() => {
-    let cancelled = false
-    loadGameData()
-      .then(() => {
-        if (cancelled) return
-        const initialState = createInitialState()
-        stateRef.current = initialState
-        setState(cloneSimulationStateForTick(initialState))
-      })
-      .catch((error: unknown) => {
-        if (cancelled) return
-        setLoadingError(error instanceof Error ? error.message : 'Falha ao carregar dados do jogo')
-      })
+    const worker = new Worker(new URL('./sim/matchWorker.ts', import.meta.url), { type: 'module' })
+    const runId = runIdRef.current + 1
+    runIdRef.current = runId
+    workerDoneRef.current = false
+    frameBufferRef.current = []
+    frameIndexRef.current = 0
+    playbackCursorRef.current = 0
+    lastPlaybackTick.current = null
+    currentFrameKeyRef.current = ''
+    lastCursorPostRef.current = 0
+    workerRef.current = worker
+    stateRef.current = undefined
+    setState(undefined)
+    setLoadingError(undefined)
+    setPlaybackStatus('loading')
+    setBufferInfo({ simTime: 0, frameCount: 0, bufferAhead: 0 })
+
+    worker.onmessage = (event: MessageEvent<MatchWorkerResponse>) => {
+      const message = event.data
+      if (message.runId !== runIdRef.current) return
+
+      if (message.type === 'error') {
+        setLoadingError(message.message)
+        setPlaybackStatus('error')
+        return
+      }
+
+      if (message.type === 'frame') {
+        frameBufferRef.current.push(message.frame)
+        const latestTime = message.frame.time
+        const bufferAhead = Math.max(0, latestTime - playbackCursorRef.current)
+        setBufferInfo({ simTime: latestTime, frameCount: frameBufferRef.current.length, bufferAhead })
+
+        const hasStartupBuffer = latestTime >= startupBufferSeconds || workerDoneRef.current
+        if (!stateRef.current && hasStartupBuffer) {
+          const firstFrame = frameBufferRef.current[0]
+          stateRef.current = firstFrame
+          currentFrameKeyRef.current = getFrameKey(firstFrame)
+          setState(firstFrame)
+          setPlaybackStatus('ready')
+        } else if (stateRef.current && playbackStatusRef.current === 'buffering' && bufferAhead >= resumeBufferSeconds) {
+          setPlaybackStatus('ready')
+        }
+        return
+      }
+
+      if (message.type === 'progress') {
+        workerDoneRef.current = message.done
+        const bufferAhead = Math.max(0, message.simTime - playbackCursorRef.current)
+        setBufferInfo({ simTime: message.simTime, frameCount: message.frameCount, bufferAhead })
+        if (stateRef.current && playbackStatusRef.current === 'buffering' && (bufferAhead >= resumeBufferSeconds || message.done)) {
+          setPlaybackStatus('ready')
+        }
+        return
+      }
+
+      workerDoneRef.current = true
+      const bufferAhead = Math.max(0, message.simTime - playbackCursorRef.current)
+      setBufferInfo({ simTime: message.simTime, frameCount: message.frameCount, bufferAhead })
+      if (!stateRef.current && frameBufferRef.current[0]) {
+        const firstFrame = frameBufferRef.current[0]
+        stateRef.current = firstFrame
+        currentFrameKeyRef.current = getFrameKey(firstFrame)
+        setState(firstFrame)
+      }
+      setPlaybackStatus((status) => status === 'loading' || status === 'buffering' ? 'ready' : status)
+    }
+
+    worker.postMessage({ type: 'start', seed: matchSeed, runId })
 
     return () => {
-      cancelled = true
+      worker.postMessage({ type: 'cancel', runId })
+      worker.terminate()
+      if (workerRef.current === worker) workerRef.current = undefined
     }
-  }, [])
+  }, [matchSeed])
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -149,63 +249,70 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  useEffect(() => {
-    if (!running || !hasState) {
-      if (!running && stateRef.current) {
-        setState(cloneSimulationStateForTick(stateRef.current))
-      }
-      lastSimulationTick.current = null
-      simulationAccumulator.current = 0
-      decisionAccumulator.current = 0
-      uiSnapshotAccumulator.current = 0
-      return undefined
-    }
+  const playbackStatusRef = useRef(playbackStatus)
+  playbackStatusRef.current = playbackStatus
 
-    const runSimulationStep = () => {
+  useEffect(() => {
+    if (!hasState || playbackStatus === 'loading' || playbackStatus === 'error') return undefined
+
+    let frame = 0
+    const playbackTick = () => {
       const now = performance.now()
-      if (lastSimulationTick.current === null) {
-        lastSimulationTick.current = now
+      if (lastPlaybackTick.current === null) {
+        lastPlaybackTick.current = now
+        frame = window.requestAnimationFrame(playbackTick)
         return
       }
 
-      const elapsed = Math.min(maxSimulationTimerElapsedSeconds, (now - lastSimulationTick.current) / 1000)
-      lastSimulationTick.current = now
-      simulationAccumulator.current += elapsed * speed
-      const elapsedStepBudget = Math.ceil((elapsed * speed) / simulationFrameSeconds)
-      const maxStepsThisTick = Math.min(
-        maxSimulationStepsPerTimer,
-        Math.max(getMaxSimulationStepsPerFrame(speed), elapsedStepBudget),
-      )
-      simulationAccumulator.current = Math.min(simulationAccumulator.current, simulationFrameSeconds * maxStepsThisTick)
+      const elapsed = Math.min(0.25, (now - lastPlaybackTick.current) / 1000)
+      lastPlaybackTick.current = now
 
-      if (simulationAccumulator.current < simulationFrameSeconds) return
+      if (running && playbackStatusRef.current !== 'buffering' && playbackStatusRef.current !== 'ended') {
+        const frames = frameBufferRef.current
+        const latestFrame = frames[frames.length - 1]
+        if (latestFrame) {
+          const targetCursor = playbackCursorRef.current + elapsed * speed
+          const hasBufferedTarget = targetCursor <= latestFrame.time || workerDoneRef.current
 
-      const steps = Math.min(maxStepsThisTick, Math.floor(simulationAccumulator.current / simulationFrameSeconds))
-      simulationAccumulator.current -= steps * simulationFrameSeconds
+          if (!hasBufferedTarget) {
+            setPlaybackStatus('buffering')
+          } else {
+            playbackCursorRef.current = Math.min(targetCursor, latestFrame.time)
+            while (
+              frameIndexRef.current < frames.length - 1 &&
+              frames[frameIndexRef.current + 1].time <= playbackCursorRef.current
+            ) {
+              frameIndexRef.current += 1
+            }
 
-      const currentState = stateRef.current
-      if (!currentState) return
+            const currentFrame = frames[frameIndexRef.current]
+            if (currentFrame) {
+              stateRef.current = currentFrame
+              const frameKey = getFrameKey(currentFrame)
+              if (frameKey !== currentFrameKeyRef.current) {
+                currentFrameKeyRef.current = frameKey
+                setState(currentFrame)
+              }
+              if (workerDoneRef.current && frameIndexRef.current >= frames.length - 1 && currentFrame.winner) {
+                setPlaybackStatus('ended')
+              }
+            }
 
-      let next = currentState
-      for (let step = 0; step < steps; step += 1) {
-        decisionAccumulator.current += simulationFrameSeconds
-        const shouldDecide = decisionAccumulator.current >= decisionGateSeconds
-        if (shouldDecide) {
-          decisionAccumulator.current %= decisionGateSeconds
+            prunePlaybackFrames(frameBufferRef.current, frameIndexRef, playbackCursorRef.current - 2)
+            if (now - lastCursorPostRef.current >= 500) {
+              lastCursorPostRef.current = now
+              workerRef.current?.postMessage({ type: 'cursor', runId: runIdRef.current, cursor: playbackCursorRef.current })
+            }
+          }
         }
-        next = tick(next, simulationFrameSeconds, shouldDecide)
-        uiSnapshotAccumulator.current += simulationFrameSeconds
       }
-      stateRef.current = next
-      if (uiSnapshotAccumulator.current >= uiSnapshotIntervalSeconds || next.winner) {
-        uiSnapshotAccumulator.current %= uiSnapshotIntervalSeconds
-        setState(cloneSimulationStateForTick(next))
-      }
+
+      frame = window.requestAnimationFrame(playbackTick)
     }
 
-    const timerId = window.setInterval(runSimulationStep, Math.floor(simulationFrameSeconds * 1000))
-    return () => window.clearInterval(timerId)
-  }, [running, speed, hasState])
+    frame = window.requestAnimationFrame(playbackTick)
+    return () => window.cancelAnimationFrame(frame)
+  }, [running, speed, hasState, playbackStatus])
 
   const selectedEntity = useMemo(() => state ? findSelected(state, selected) : undefined, [selected, state])
   const teamNetWorth = useMemo(() => ({
@@ -218,7 +325,8 @@ function App() {
       <main className="sim-shell loading-shell">
         <div className="loading-panel">
           <strong>{loadingError ? 'Erro ao carregar LOTA' : 'Carregando LOTA'}</strong>
-          <span>{loadingError ?? 'Preparando herois, itens e simulacao...'}</span>
+          <span>{loadingError ?? `Preparando partida... ${Math.min(startupBufferSeconds, bufferInfo.simTime).toFixed(1)}s / ${startupBufferSeconds}s de buffer`}</span>
+          {!loadingError && <progress value={Math.min(startupBufferSeconds, bufferInfo.simTime)} max={startupBufferSeconds} />}
         </div>
       </main>
     )
@@ -278,9 +386,9 @@ function App() {
             <button
               type="button"
               onClick={() => {
-                const initialState = createInitialState()
-                stateRef.current = initialState
-                setState(cloneSimulationStateForTick(initialState))
+                setRunning(true)
+                setSelected({ kind: 'arcane', id: 'd-quasar' })
+                setMatchSeed(createBrowserMatchSeed())
               }}
               title="Reiniciar partida"
             >
@@ -294,8 +402,12 @@ function App() {
               <option value={2}>2x</option>
               <option value={4}>4x</option>
               <option value={8}>8x</option>
+              <option value={16}>16x</option>
             </select>
           </label>
+          <span className={`playback-chip ${playbackStatus}`} title={`Seed ${matchSeed} / ${bufferInfo.frameCount} frames`}>
+            {getPlaybackStatusLabel(playbackStatus)} · buffer {bufferInfo.bufferAhead.toFixed(1)}s
+          </span>
           <button
             className={dataPanelOpen ? 'data-toggle active' : 'data-toggle'}
             type="button"
@@ -707,7 +819,7 @@ type VisualPosition = {
   samples: Array<{ pos: Point; at: number }>
 }
 
-const visualInterpolationDelayMs = 120
+const visualInterpolationDelayMs = 250
 const visualExtrapolationLimitMs = 90
 const visualPruneSchedule = new WeakMap<Map<string, VisualPosition>, number>()
 

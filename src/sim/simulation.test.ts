@@ -24,7 +24,15 @@ function assertFiniteHealth(entity: { id: string; hp: number; maxHp: number }) {
 
 await loadGameData()
 
-const initialState = createInitialState()
+const seededA = createInitialState('simulation-smoke-seed')
+const seededB = createInitialState('simulation-smoke-seed')
+assert.deepEqual(
+  seededA.arcanes.map((arcane) => arcane.heroDefinitionId),
+  seededB.arcanes.map((arcane) => arcane.heroDefinitionId),
+  'same seed should produce the same test roster',
+)
+
+const initialState = seededA
 let state: SimulationState = initialState
 
 for (let step = 0; step < 600; step += 1) {

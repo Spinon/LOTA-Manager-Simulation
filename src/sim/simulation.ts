@@ -825,8 +825,8 @@ export const rosterSeed: Omit<Arcane, 'pos' | 'target' | 'pathIndex' | 'respawn'
   { id: 'r-cinder', team: 'dusk', player: 'Cinder', name: 'Winter Controller', heroDefinitionId: 'h104_winter_controller', role: 'Dedicated Support', lane: 'top', portrait: 'WC', items: ['Ward'] },
 ]
 
-export function createInitialState(): SimulationState {
-  const randomizedRoster = createRandomizedTestRoster()
+export function createInitialState(seed = 'lota-default-seed'): SimulationState {
+  const randomizedRoster = createRandomizedTestRoster(seed)
   const arcanes = randomizedRoster.map((arcane, index) => {
     const spawn = teamInfo[arcane.team].base
     const pos = spreadPoint(spawn, index)
@@ -871,7 +871,7 @@ export function createInitialState(): SimulationState {
   })
 
   return {
-    matchSeed: createMatchSeed(),
+    matchSeed: seed,
     time: 0,
     nextWave: 0,
     kills: { dawn: 0, dusk: 0 },
@@ -906,10 +906,10 @@ export function createInitialState(): SimulationState {
   }
 }
 
-export function createRandomizedTestRoster() {
+export function createRandomizedTestRoster(seed = 'lota-default-seed') {
   const usedHeroIds = new Set<string>()
-  return rosterSeed.map((slot) => {
-    const hero = pickRandomHeroForSlot(slot.role, usedHeroIds)
+  return rosterSeed.map((slot, index) => {
+    const hero = pickRandomHeroForSlot(slot.role, usedHeroIds, `${seed}:roster:${index}:${slot.id}`)
     if (!hero) return slot
     usedHeroIds.add(hero.id)
 
@@ -922,10 +922,10 @@ export function createRandomizedTestRoster() {
   })
 }
 
-export function pickRandomHeroForSlot(role: string, usedHeroIds: Set<string>) {
+export function pickRandomHeroForSlot(role: string, usedHeroIds: Set<string>, seed = 'lota-default-seed') {
   const pool = getRandomHeroPool().filter((hero) => !usedHeroIds.has(hero.id))
   const preferredPool = pool.filter((hero) => isHeroPreferredForSlot(hero, role))
-  return pickRandom(preferredPool.length > 0 ? preferredPool : pool)
+  return pickRandom(preferredPool.length > 0 ? preferredPool : pool, seed)
 }
 
 export function getRandomHeroPool() {
@@ -934,7 +934,22 @@ export function getRandomHeroPool() {
 }
 
 export function createMatchSeed() {
-  return Math.floor(Math.random() * 1_000_000_000).toString(36)
+  return 'lota-default-seed'
+}
+
+export function seededRandomUnit(seed: string, salt: string) {
+  const input = `${seed}:${salt}`
+  let hash = 2166136261
+  for (let index = 0; index < input.length; index += 1) {
+    hash ^= input.charCodeAt(index)
+    hash = Math.imul(hash, 16777619)
+  }
+  hash += hash << 13
+  hash ^= hash >>> 7
+  hash += hash << 3
+  hash ^= hash >>> 17
+  hash += hash << 5
+  return (hash >>> 0) / 4294967296
 }
 
 export function isHeroPreferredForSlot(hero: HeroDefinition, role: string) {
@@ -945,9 +960,9 @@ export function isHeroPreferredForSlot(hero: HeroDefinition, role: string) {
   return hero.roles.includes('support') || hero.roles.includes('disabler')
 }
 
-export function pickRandom<T>(items: T[]) {
+export function pickRandom<T>(items: T[], seed = 'lota-default-seed') {
   if (items.length === 0) return undefined
-  return items[Math.floor(Math.random() * items.length)]
+  return items[Math.floor(seededRandomUnit(seed, 'pick') * items.length)]
 }
 
 export function getHeroPortraitCode(hero: HeroDefinition) {
@@ -1455,6 +1470,12 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
       lastHitBy: state.boss.lastHitBy ? { ...state.boss.lastHitBy } : undefined,
     },
   }
+}
+
+export type MatchRenderFrame = SimulationState
+
+export function createMatchRenderFrame(state: SimulationState): MatchRenderFrame {
+  return cloneSimulationStateForTick(state)
 }
 
 export function spawnRunesForTick(state: SimulationState, previousTime: number) {
@@ -5765,14 +5786,14 @@ export function resolveArcaneItemAttackEffects(state: SimulationState, arcane: A
 
   for (const effect of effects) {
     const tags = effect.tags
-    if (hasAnyItemTag(tags, ['critical', 'critical_scaling']) && rollChance(getItemEffectChance(effect, arcane))) {
+    if (hasAnyItemTag(tags, ['critical', 'critical_scaling']) && rollChance(state, getItemEffectChance(effect, arcane), `${arcane.id}:${target.id}:${effect.effectId}:critical`)) {
       const multiplier = (getActiveItemNumber(effect.values, 'critMultiplier') ?? 160) / 100
       physicalDamage *= multiplier
     }
-    if (hasAnyItemTag(tags, ['attack_proc', 'magic_damage', 'magical', 'chain_lightning']) && rollChance(getItemEffectChance(effect, arcane))) {
+    if (hasAnyItemTag(tags, ['attack_proc', 'magic_damage', 'magical', 'chain_lightning']) && rollChance(state, getItemEffectChance(effect, arcane), `${arcane.id}:${target.id}:${effect.effectId}:magic-proc`)) {
       magicDamage += getItemProcDamage(arcane, effect)
     }
-    if (hasAnyItemTag(tags, ['bash']) && rollChance(getItemEffectChance(effect, arcane))) {
+    if (hasAnyItemTag(tags, ['bash']) && rollChance(state, getItemEffectChance(effect, arcane), `${arcane.id}:${target.id}:${effect.effectId}:bash-damage`)) {
       magicDamage += getActiveItemNumber(effect.values, 'bonusDamage') ?? 60
     }
     if (hasAnyItemTag(tags, ['mana_burn']) && 'player' in target) {
@@ -5783,7 +5804,7 @@ export function resolveArcaneItemAttackEffects(state: SimulationState, arcane: A
     if (hasAnyItemTag(tags, ['cleave']) && arcane.stats.attackType === 'melee') {
       cleavePct = Math.max(cleavePct, getActiveItemNumber(effect.values, 'cleavePct') ?? 35)
     }
-    if (hasAnyItemTag(tags, ['multi_target_attack', 'extra_projectiles']) && arcane.stats.attackType === 'ranged' && rollChance(getItemEffectChance(effect, arcane))) {
+    if (hasAnyItemTag(tags, ['multi_target_attack', 'extra_projectiles']) && arcane.stats.attackType === 'ranged' && rollChance(state, getItemEffectChance(effect, arcane), `${arcane.id}:${target.id}:${effect.effectId}:multi-target`)) {
       multiTargetPct = Math.max(multiTargetPct, getActiveItemNumber(effect.values, 'damagePct') ?? 55)
     }
   }
@@ -5882,7 +5903,7 @@ export function applyItemAttackDebuffs(state: SimulationState, arcane: Arcane, t
         })
       }
     }
-    if (hasAnyItemTag(tags, ['bash']) && rollChance(getItemEffectChance(effect, arcane))) {
+    if (hasAnyItemTag(tags, ['bash']) && rollChance(state, getItemEffectChance(effect, arcane), `${arcane.id}:${target.id}:${effect.effectId}:bash-stun`)) {
       addTimedEffect(state, target, {
         sourceId: effect.effectId,
         sourceName: `${arcane.player} item`,
@@ -5952,8 +5973,8 @@ export function getItemProcDamage(arcane: Arcane, effect: RuntimeItemEffect) {
   return baseDamage + calculated.attributes.intelligence * (intPct / 100)
 }
 
-export function rollChance(chancePct: number) {
-  return Math.random() * 100 < chancePct
+export function rollChance(state: SimulationState, chancePct: number, salt: string) {
+  return seededRandomUnit(state.matchSeed, `${salt}:${state.time.toFixed(3)}`) * 100 < chancePct
 }
 
 export function applyTowerAggro(state: SimulationState, defendingTeam: TeamId, attackerId: string) {
