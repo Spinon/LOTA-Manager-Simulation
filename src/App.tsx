@@ -6,6 +6,7 @@ import {
   formatCompactGold,
   getArcaneBarrierAmount,
   getArcaneDamageRangeLabel,
+  getArcaneNetWorth,
   getArcaneSlowPercent,
   getAuraMultiplier,
   getBossStats,
@@ -75,6 +76,7 @@ import {
   type HeroSkillDefinition,
   type LaneId,
   type MapRune,
+  type MatchRenderFrame,
   type MatchEvent,
   type PlayerModeType,
   type Point,
@@ -95,6 +97,7 @@ import type { MatchWorkerResponse } from './sim/matchWorker'
 import './App.css'
 
 type PlaybackStatus = 'loading' | 'ready' | 'buffering' | 'ended' | 'error'
+const maxMatchSimulationSeconds = 50 * 60
 
 // Partida standby: enquanto o jogador assiste a atual, um segundo worker
 // pré-simula a próxima seed até o teto de buffer. No restart, o worker e os
@@ -103,14 +106,15 @@ type StandbyMatch = {
   seed: string
   worker: Worker
   runId: number
-  frames: SimulationState[]
+  frames: MatchRenderFrame[]
   workerDone: boolean
   simTime: number
 }
 
-const startupBufferSeconds = 100
-const minimumStartupWaitMs = 10_000
-const resumeBufferSeconds = 1.5
+// O espectador só recebe a partida depois que o worker fecha o replay inteiro.
+// Assim o playback não concorre com a simulação e nunca entra em buffering.
+const startupBufferSeconds = Number.POSITIVE_INFINITY
+const minimumStartupWaitMs = 0
 // Começa a pré-simular a próxima partida quando o buffer da atual está quase
 // no teto (worker ativo já ocioso) ou quando a partida atual terminou de simular.
 const prefetchBufferAheadSeconds = 150
@@ -129,30 +133,8 @@ function createBrowserMatchSeed() {
   return `lota-${values[0].toString(36)}-${values[1].toString(36)}`
 }
 
-function getFrameKey(frame: SimulationState) {
+function getFrameKey(frame: MatchRenderFrame) {
   return `${frame.matchSeed}:${frame.time}:${frame.events.length}:${frame.effects.length}:${frame.winner ?? 'playing'}`
-}
-
-function getPlaybackStatusLabel(status: PlaybackStatus) {
-  if (status === 'loading') return 'Preparando'
-  if (status === 'buffering') return 'Buffer'
-  if (status === 'ended') return 'Encerrado'
-  if (status === 'error') return 'Erro'
-  return 'Playback'
-}
-
-function prunePlaybackFrames(
-  frames: SimulationState[],
-  frameIndexRef: React.MutableRefObject<number>,
-  olderThan: number,
-) {
-  let removeCount = 0
-  while (removeCount < frames.length - 2 && frames[removeCount + 1].time < olderThan) {
-    removeCount += 1
-  }
-  if (removeCount <= 0) return
-  frames.splice(0, removeCount)
-  frameIndexRef.current = Math.max(0, frameIndexRef.current - removeCount)
 }
 
 function paintBufferInfoThrottled(
@@ -168,7 +150,7 @@ function paintBufferInfoThrottled(
 }
 
 function App() {
-  const [state, setState] = useState<SimulationState | undefined>(undefined)
+  const [state, setState] = useState<MatchRenderFrame | undefined>(undefined)
   const [loadingError, setLoadingError] = useState<string | undefined>(undefined)
   const [running, setRunning] = useState(true)
   const [speed, setSpeed] = useState(1)
@@ -180,11 +162,13 @@ function App() {
   const [bufferInfo, setBufferInfo] = useState({ simTime: 0, frameCount: 0, bufferAhead: 0 })
   const [selected, setSelected] = useState<Selected>({ kind: 'arcane', id: 'd-quasar' })
   const [dataPanelOpen, setDataPanelOpen] = useState(false)
-  const frameBufferRef = useRef<SimulationState[]>([])
+  const [matchWinner, setMatchWinner] = useState<TeamId | undefined>(undefined)
+  const [winnerRevealed, setWinnerRevealed] = useState(false)
+  const [precomputeDone, setPrecomputeDone] = useState(false)
+  const frameBufferRef = useRef<MatchRenderFrame[]>([])
   const frameIndexRef = useRef(0)
   const playbackCursorRef = useRef(0)
   const lastPlaybackTick = useRef<number | null>(null)
-  const lastCursorPostRef = useRef(0)
   const lastStatePaintRef = useRef(0)
   const lastBufferInfoPaintRef = useRef(0)
   const runIdRef = useRef(0)
@@ -193,7 +177,7 @@ function App() {
   const workerDoneRef = useRef(false)
   const standbyRef = useRef<StandbyMatch | undefined>(undefined)
   const currentFrameKeyRef = useRef('')
-  const stateRef = useRef<SimulationState | undefined>(undefined)
+  const stateRef = useRef<MatchRenderFrame | undefined>(undefined)
   if (import.meta.env.DEV) {
     ;(window as unknown as { __lotaStateRef?: typeof stateRef }).__lotaStateRef = stateRef
     ;(window as unknown as { __lotaPlayback?: unknown }).__lotaPlayback = {
@@ -230,6 +214,7 @@ function App() {
 
   useEffect(() => {
     const standby = standbyRef.current
+    let completionTimer: number | undefined
     const adopting = standby && standby.seed === matchSeed ? standby : undefined
     if (standby) {
       standbyRef.current = undefined
@@ -245,13 +230,15 @@ function App() {
     playbackCursorRef.current = 0
     lastPlaybackTick.current = null
     currentFrameKeyRef.current = ''
-    lastCursorPostRef.current = 0
     lastStatePaintRef.current = 0
     lastBufferInfoPaintRef.current = 0
     workerRef.current = worker
     stateRef.current = undefined
     resetAdaptiveDpr()
     setState(undefined)
+    setMatchWinner(undefined)
+    setWinnerRevealed(false)
+    setPrecomputeDone(adopting?.workerDone ?? false)
     setLoadingError(undefined)
 
     // Standby com buffer de largada completo: entra direto no playback,
@@ -306,6 +293,7 @@ function App() {
           if (standbyRef.current === nextStandby) standbyRef.current = undefined
           return
         }
+        if (message.type === 'static') return
         if (message.type === 'frame' || message.type === 'frames') {
           const incomingFrames = message.type === 'frame' ? [message.frame] : message.frames
           nextStandby.frames.push(...incomingFrames)
@@ -329,6 +317,10 @@ function App() {
         setPlaybackStatus('error')
         return
       }
+
+      // O catálogo estático será usado pela materialização dos frames compactos.
+      // Por enquanto o frame compatível segue completo durante a migração.
+      if (message.type === 'static') return
 
       if (message.type === 'frame' || message.type === 'frames') {
         const incomingFrames = message.type === 'frame' ? [message.frame] : message.frames
@@ -354,11 +346,7 @@ function App() {
             bufferAhead,
           }, true)
           setPlaybackStatus(workerDoneRef.current ? 'ready' : 'buffering')
-        } else if (
-          stateRef.current &&
-          playbackStatusRef.current === 'buffering' &&
-          bufferAhead >= (playbackCursorRef.current <= 0.001 ? startupBufferSeconds : resumeBufferSeconds)
-        ) {
+        } else if (stateRef.current && playbackStatusRef.current === 'buffering' && workerDoneRef.current) {
           setPlaybackStatus('ready')
         }
         return
@@ -366,15 +354,15 @@ function App() {
 
       if (message.type === 'progress') {
         workerDoneRef.current = message.done
+        if (message.done) setPrecomputeDone(true)
         const bufferAhead = Math.max(0, message.simTime - playbackCursorRef.current)
         paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
           simTime: message.simTime,
           frameCount: message.frameCount,
           bufferAhead,
         }, message.done)
-        const requiredBufferAhead = playbackCursorRef.current <= 0.001 ? startupBufferSeconds : resumeBufferSeconds
-        if (stateRef.current && playbackStatusRef.current === 'buffering' && (bufferAhead >= requiredBufferAhead || message.done)) {
-          setPlaybackStatus('ready')
+        if (stateRef.current && playbackStatusRef.current === 'buffering' && message.done) {
+          completionTimer = window.setTimeout(() => setPlaybackStatus('ready'), 450)
         }
         if (stateRef.current && (message.done || bufferAhead >= prefetchBufferAheadSeconds)) {
           startStandbyPrefetch()
@@ -383,6 +371,8 @@ function App() {
       }
 
       workerDoneRef.current = true
+      setPrecomputeDone(true)
+      setMatchWinner(message.winner)
       const bufferAhead = Math.max(0, message.simTime - playbackCursorRef.current)
       paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
         simTime: message.simTime,
@@ -395,7 +385,9 @@ function App() {
         currentFrameKeyRef.current = getFrameKey(firstFrame)
         setState(firstFrame)
       }
-      setPlaybackStatus((status) => status === 'loading' || status === 'buffering' ? 'ready' : status)
+      completionTimer = window.setTimeout(() => {
+        setPlaybackStatus((status) => status === 'loading' || status === 'buffering' ? 'ready' : status)
+      }, 450)
       startStandbyPrefetch()
     }
 
@@ -410,6 +402,7 @@ function App() {
     return () => {
       window.clearTimeout(startupTimer)
       window.clearInterval(startupProgressTimer)
+      window.clearTimeout(completionTimer)
       worker.postMessage({ type: 'cancel', runId })
       worker.terminate()
       if (workerRef.current === worker) workerRef.current = undefined
@@ -435,7 +428,7 @@ function App() {
       stateRef.current &&
       startupWaitDone &&
       playbackStatus === 'buffering' &&
-      (workerDoneRef.current || bufferInfo.bufferAhead >= startupBufferSeconds)
+      workerDoneRef.current
     ) {
       setPlaybackStatus('ready')
     }
@@ -494,15 +487,11 @@ function App() {
                 startTransition(() => setState(currentFrame))
               }
               if (reachedEnd) {
+                setWinnerRevealed(true)
                 setPlaybackStatus('ended')
               }
             }
 
-            prunePlaybackFrames(frameBufferRef.current, frameIndexRef, playbackCursorRef.current - 2)
-            if (now - lastCursorPostRef.current >= 500) {
-              lastCursorPostRef.current = now
-              workerRef.current?.postMessage({ type: 'cursor', runId: runIdRef.current, cursor: playbackCursorRef.current })
-            }
           }
         }
       }
@@ -521,13 +510,36 @@ function App() {
   }), [state])
 
   const isInitialBuffering = playbackCursorRef.current <= 0.001 && playbackStatus === 'buffering'
+  const precomputeProgress = precomputeDone ? 1 : Math.min(0.99, bufferInfo.simTime / maxMatchSimulationSeconds)
+  const replayDuration = Math.max(1, bufferInfo.simTime)
+  const displayedWinner = winnerRevealed ? (matchWinner ?? state?.winner) : undefined
+  const seekPlayback = (requestedTime: number) => {
+    const frames = frameBufferRef.current
+    if (frames.length === 0) return
+    const targetTime = Math.max(0, Math.min(requestedTime, frames[frames.length - 1].time))
+    let low = 0
+    let high = frames.length - 1
+    while (low < high) {
+      const middle = Math.ceil((low + high) / 2)
+      if (frames[middle].time <= targetTime) low = middle
+      else high = middle - 1
+    }
+    frameIndexRef.current = low
+    playbackCursorRef.current = targetTime
+    setWinnerRevealed(targetTime >= frames[frames.length - 1].time)
+    const frame = frames[low]
+    stateRef.current = frame
+    currentFrameKeyRef.current = getFrameKey(frame)
+    setState(frame)
+  }
 
   if (!state || !uiDataReady || !startupWaitDone || playbackStatus === 'loading' || isInitialBuffering) {
     return (
       <main className="sim-shell loading-shell">
         <div className="loading-panel">
-          <strong>{loadingError ? 'Erro ao carregar LOTA' : 'Carregando'}</strong>
-          {!loadingError && <progress value={startupWaitProgress} max={1} />}
+          <strong>{loadingError ? 'Erro ao carregar LOTA' : 'Calculando partida'}</strong>
+          {!loadingError && <progress value={precomputeProgress} max={1} />}
+          {!loadingError && <span>{Math.round(precomputeProgress * 100)}% / {formatTime(bufferInfo.simTime)}</span>}
         </div>
       </main>
     )
@@ -545,7 +557,7 @@ function App() {
             <small>{getGamePhaseLabel(phase)}</small>
             <small className={`cycle-label ${dayCycle}`}>{getDayCycleLabel(dayCycle)}</small>
           </div>
-          {state.winner && <em>{teamInfo[state.winner].name} venceu</em>}
+          {displayedWinner && <em>{teamInfo[displayedWinner].name} venceu</em>}
         </div>
         <ScoreStat team="dusk" icon="kills" value={state.kills.dusk} label="Eliminações Crimson Veil" reverse />
         <ScoreStat team="dusk" icon="gold" value={formatCompactGold(teamNetWorth.dusk)} label="Net worth Crimson Veil" reverse />
@@ -565,6 +577,7 @@ function App() {
           dayCycle={dayCycle}
           state={state}
           stateRef={stateRef}
+          playbackTimeRef={playbackCursorRef}
           selected={selected}
           onSelect={setSelected}
         />
@@ -604,11 +617,16 @@ function App() {
               <option value={4}>4x</option>
               <option value={8}>8x</option>
               <option value={16}>16x</option>
+              <option value={32}>32x</option>
             </select>
           </label>
-          <span className={`playback-chip ${playbackStatus}`} title={`Seed ${matchSeed} / ${bufferInfo.frameCount} frames`}>
-            {getPlaybackStatusLabel(playbackStatus)} · buffer {bufferInfo.bufferAhead.toFixed(1)}s
-          </span>
+          <label className="replay-progress" title={`Seed ${matchSeed} / ${bufferInfo.frameCount} frames`}>
+            <span>{formatTime(state.time)} / {formatTime(replayDuration)}</span>
+            <input type="range" min={0} max={replayDuration} step={0.2} value={Math.min(replayDuration, state.time)} onChange={(event) => seekPlayback(Number(event.target.value))} aria-label="Progresso do replay" />
+          </label>
+          <button className="skip-to-end" type="button" onClick={() => { seekPlayback(replayDuration); setRunning(false); setWinnerRevealed(true); setPlaybackStatus('ended') }} title="Pular para o resultado">
+            Resultado
+          </button>
           <button
             className={dataPanelOpen ? 'data-toggle active' : 'data-toggle'}
             type="button"
@@ -629,6 +647,15 @@ function App() {
         </div>
       </div>
 
+      {playbackStatus === 'ended' && (
+        <EndScreen
+          state={state}
+          winner={displayedWinner}
+          onReview={() => setPlaybackStatus('ready')}
+          onRestart={() => setMatchSeed(createBrowserMatchSeed())}
+        />
+      )}
+
       <footer className={dataPanelOpen ? 'inspector open' : 'inspector'} aria-hidden={!dataPanelOpen}>
         <div className="inspector-layout">
           <Inspector entity={selectedEntity} state={state} />
@@ -637,6 +664,105 @@ function App() {
       </footer>
     </main>
   )
+}
+
+type EndScreenTab = 'scoreboard' | 'combat' | 'economy'
+
+function EndScreen({ state, winner, onReview, onRestart }: { state: SimulationState; winner?: TeamId; onReview: () => void; onRestart: () => void }) {
+  const [activeTab, setActiveTab] = useState<EndScreenTab>('scoreboard')
+  const matchMinutes = Math.max(1 / 60, state.time / 60)
+  const teams = ['dawn', 'dusk'] as TeamId[]
+
+  return (
+    <section className="end-screen" role="dialog" aria-modal="true" aria-label="Resultado da partida">
+      <header className="end-header">
+        <div className={`end-victor-mark ${winner ?? 'draw'}`}><Swords size={22} /></div>
+        <div>
+          <span>Resultado da partida</span>
+          <strong>{winner ? `${teamInfo[winner].name} venceu` : 'Partida encerrada'}</strong>
+          <small>{formatTime(state.time)} de partida</small>
+        </div>
+        <div className="end-final-score" aria-label={`Placar ${state.kills.dawn} a ${state.kills.dusk}`}>
+          <b className="dawn">{state.kills.dawn}</b><i>:</i><b className="dusk">{state.kills.dusk}</b>
+        </div>
+      </header>
+
+      <nav className="end-tabs" aria-label="Dados do pós-jogo">
+        <button type="button" className={activeTab === 'scoreboard' ? 'active' : ''} onClick={() => setActiveTab('scoreboard')}>Placar</button>
+        <button type="button" className={activeTab === 'combat' ? 'active' : ''} onClick={() => setActiveTab('combat')}>Combate</button>
+        <button type="button" className={activeTab === 'economy' ? 'active' : ''} onClick={() => setActiveTab('economy')}>Economia</button>
+      </nav>
+
+      <div className="end-teams">
+        {teams.map((team) => {
+          const arcanes = state.arcanes.filter((arcane) => arcane.team === team)
+          const teamDamage = arcanes.reduce((total, arcane) => total + arcane.damageDealt, 0)
+          const teamHeroDamage = arcanes.reduce((total, arcane) => total + arcane.heroDamageDealt, 0)
+          const teamHealing = arcanes.reduce((total, arcane) => total + arcane.healingDone, 0)
+          const teamNetWorth = getTeamNetWorth(state, team)
+          return (
+            <section className={`end-team ${team} ${winner === team ? 'winner' : ''}`} key={team}>
+              <header className="end-team-header">
+                <div><strong>{teamInfo[team].name}</strong><span>{winner === team ? 'Vencedor' : 'Derrotado'}</span></div>
+                <dl>
+                  <div><dt>Eliminações</dt><dd>{state.kills[team]}</dd></div>
+                  <div><dt>Net worth</dt><dd>{formatCompactGold(teamNetWorth)}</dd></div>
+                  <div><dt>Dano total</dt><dd>{formatCompactMetric(teamDamage)}</dd></div>
+                  <div><dt>Dano em Arcanes</dt><dd>{formatCompactMetric(teamHeroDamage)}</dd></div>
+                  <div><dt>Cura</dt><dd>{formatCompactMetric(teamHealing)}</dd></div>
+                </dl>
+              </header>
+              <EndTableHeader tab={activeTab} />
+              {arcanes.map((arcane) => <EndArcaneRow key={arcane.id} arcane={arcane} tab={activeTab} matchMinutes={matchMinutes} />)}
+            </section>
+          )
+        })}
+      </div>
+
+      <footer className="end-actions">
+        <button type="button" onClick={onReview}><Play size={15} /> Rever replay</button>
+        <button type="button" onClick={onRestart}><RotateCcw size={15} /> Nova partida</button>
+      </footer>
+    </section>
+  )
+}
+
+function EndTableHeader({ tab }: { tab: EndScreenTab }) {
+  const labels = tab === 'scoreboard'
+    ? ['Arcane', 'K / D / A', 'Nível', 'Net worth', 'GPM / XPM', 'LH / DN', 'Itens finais']
+    : tab === 'combat'
+      ? ['Arcane', 'Dano em Arcanes', 'Dano total', 'Estruturas', 'Recebido', 'Cura', 'K / D / A']
+      : ['Arcane', 'Net worth', 'Ouro ganho', 'GPM', 'XPM', 'LH / DN', 'Neutros / Obj.']
+  return <div className="end-table-head">{labels.map((label) => <span key={label}>{label}</span>)}</div>
+}
+
+function EndArcaneRow({ arcane, tab, matchMinutes }: { arcane: Arcane; tab: EndScreenTab; matchMinutes: number }) {
+  const identity = (
+    <div className="end-arcane">
+      <Portrait arcane={arcane} />
+      <span><strong>{arcane.player}</strong><small>{arcane.name} · {arcane.role}</small></span>
+    </div>
+  )
+  const kda = <b className="end-kda"><em>{arcane.kills}</em> / {arcane.deaths} / {arcane.assists}</b>
+  if (tab === 'combat') {
+    return <div className="end-row">{identity}<b>{formatCompactMetric(arcane.heroDamageDealt)}</b><b>{formatCompactMetric(arcane.damageDealt)}</b><b>{formatCompactMetric(arcane.structureDamageDealt)}</b><b>{formatCompactMetric(arcane.damageTaken)}</b><b className="end-heal">{formatCompactMetric(arcane.healingDone)}</b>{kda}</div>
+  }
+  if (tab === 'economy') {
+    return <div className="end-row">{identity}<b className="end-gold">{formatCompactGold(getArcaneNetWorth(arcane))}</b><b>{formatCompactGold(arcane.earnedGold)}</b><b>{Math.round(arcane.earnedGold / matchMinutes)}</b><b>{Math.round(arcane.stats.xp / matchMinutes)}</b><b>{arcane.laneCreepKills} / {arcane.denies}</b><b>{arcane.neutralKills} / {arcane.objectiveKills}</b></div>
+  }
+  return (
+    <div className="end-row">
+      {identity}{kda}<b>{arcane.stats.level}</b><b className="end-gold">{formatCompactGold(getArcaneNetWorth(arcane))}</b><b>{Math.round(arcane.earnedGold / matchMinutes)} / {Math.round(arcane.stats.xp / matchMinutes)}</b><b>{arcane.laneCreepKills} / {arcane.denies}</b>
+      <div className="end-items">{Array.from({ length: 6 }, (_, index) => <i key={index} title={arcane.items[index] ?? 'Slot vazio'}>{getInventoryGlyph(arcane.items[index])}</i>)}</div>
+    </div>
+  )
+}
+
+function formatCompactMetric(value: number) {
+  const absolute = Math.abs(value)
+  if (absolute >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}m`
+  if (absolute >= 1_000) return `${(value / 1_000).toFixed(1)}k`
+  return `${Math.round(value)}`
 }
 
 function TeamBadge({ team, side }: { team: TeamId; side: 'left' | 'right' }) {
@@ -735,6 +861,7 @@ function TeamPanel({
                   <em>{arcane.role}</em>
                   <span title={`Macro: ${arcane.macroDecision}`}>{getShortDecision(arcane.macroDecision)}</span>
                 </div>
+                <div className="arcane-kda">K / D / A&nbsp; {arcane.kills} / {arcane.deaths} / {arcane.assists}</div>
                 <Meter value={arcane.stats.hp} max={arcane.stats.maxHp} tone="hp" />
                 <Meter value={arcane.stats.mana} max={arcane.stats.maxMana} tone="mana" />
                 <div className="slot-row" aria-label="Inventario">
@@ -764,12 +891,14 @@ function MapPanel({
   dayCycle,
   state,
   stateRef,
+  playbackTimeRef,
   selected,
   onSelect,
 }: {
   dayCycle: DayCycle
   state: SimulationState
   stateRef: React.RefObject<SimulationState | undefined>
+  playbackTimeRef: React.RefObject<number>
   selected: Selected
   onSelect: (selected: Selected) => void
 }) {
@@ -829,6 +958,7 @@ function MapPanel({
 
       <FxCanvasLayer
         stateRef={stateRef}
+        playbackTimeRef={playbackTimeRef}
       />
 
       {state.bases.map((base) => (
@@ -1612,7 +1742,13 @@ function drawBossCanvas(
   context.restore()
 }
 
-function FxCanvasLayer({ stateRef }: { stateRef: React.RefObject<SimulationState | undefined> }) {
+function FxCanvasLayer({
+  stateRef,
+  playbackTimeRef,
+}: {
+  stateRef: React.RefObject<SimulationState | undefined>
+  playbackTimeRef: React.RefObject<number>
+}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
 
   useEffect(() => {
@@ -1624,9 +1760,10 @@ function FxCanvasLayer({ stateRef }: { stateRef: React.RefObject<SimulationState
     const draw = () => {
       const currentState = stateRef.current
       if (currentState) {
+        const renderTime = playbackTimeRef.current
         const fxKey = getCanvasDrawKey(
           canvas,
-          currentState.time,
+          Math.floor(renderTime * 60),
           currentState.effects.length,
           currentState.deathMarkers.length,
           currentState.denyMarkers.length,
@@ -1644,7 +1781,7 @@ function FxCanvasLayer({ stateRef }: { stateRef: React.RefObject<SimulationState
           currentState.denyMarkers,
           currentState.goldMarkers,
           currentState.skillMarkers ?? [],
-          currentState.time,
+          renderTime,
         ))
       }
       frame = window.requestAnimationFrame(draw)
@@ -1652,7 +1789,7 @@ function FxCanvasLayer({ stateRef }: { stateRef: React.RefObject<SimulationState
 
     frame = window.requestAnimationFrame(draw)
     return () => window.cancelAnimationFrame(frame)
-  }, [stateRef])
+  }, [stateRef, playbackTimeRef])
 
   return <canvas ref={canvasRef} className="fx-canvas" aria-hidden="true" />
 }

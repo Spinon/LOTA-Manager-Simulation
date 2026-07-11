@@ -1,0 +1,997 @@
+// moba_hero_skills_official_import_codex.txt
+//
+// CORREÇÃO DA BASE DE HABILIDADES DOS HERÓIS
+//
+// O arquivo anterior moba_complete_hero_skill_kits.txt NÃO deve ser usado como fonte canônica.
+// Ele gerou habilidades a partir de designTags e arquétipos, portanto vários kits ficaram diferentes
+// dos heróis que serviam de referência.
+//
+// Este documento orienta o Codex a reconstruir a camada de habilidades usando o Datafeed oficial
+// e atual do Dota 2, preservando a mecânica real e adaptando apenas nomes/identidade visual.
+//
+// FONTES OFICIAIS:
+// https://www.dota2.com/datafeed/herolist?language=english
+// https://www.dota2.com/datafeed/herodata?language=english&hero_id={HERO_ID}
+//
+// PRINCÍPIOS:
+// 1. Nunca inventar uma skill para preencher Q/W/E/R.
+// 2. Nunca assumir que todo herói possui exatamente quatro habilidades.
+// 3. Separar habilidades normais, inatas, concedidas por Scepter e concedidas por Shard.
+// 4. Preservar números oficiais retornados: cooldown, mana, cast range, duração, dano e special_values.
+// 5. Preservar facets e modificações de Scepter/Shard.
+// 6. Adaptar nomes apenas no arquivo público do jogo.
+// 7. Manter sourceHeroId/sourceAbilityId em metadata de desenvolvimento.
+// 8. Se a Valve adicionar um herói, gerar relatório de não mapeado; nunca atribuir automaticamente
+//    ao próximo heroId legado.
+// 9. h094_dark_paladin_2 é duplicata antiga de Abaddon e deve ser descontinuado.
+// 10. Este mapeamento tem 127 referências oficiais únicas. O arquivo antigo tinha 128 seeds por conter
+//     uma duplicata de Abaddon.
+//
+// ============================================================================
+// 1. MIGRAÇÃO DOS IDS LEGADOS
+// ============================================================================
+
+export const LEGACY_HERO_TO_OFFICIAL_SOURCE = {
+  "h001_anti_magic_mobile_carry": { sourceHeroId: 1, expectedSourceName: "Anti-Mage" },
+  "h002_taunt_berserker_tank": { sourceHeroId: 2, expectedSourceName: "Axe" },
+  "h003_nightmare_controller": { sourceHeroId: 3, expectedSourceName: "Bane" },
+  "h004_blood_duelist": { sourceHeroId: 4, expectedSourceName: "Bloodseeker" },
+  "h005_frost_marksman": { sourceHeroId: 6, expectedSourceName: "Drow Ranger" },
+  "h006_quake_initiator": { sourceHeroId: 7, expectedSourceName: "Earthshaker" },
+  "h007_sword_tempest": { sourceHeroId: 8, expectedSourceName: "Juggernaut" },
+  "h008_moon_huntress": { sourceHeroId: 9, expectedSourceName: "Mirana" },
+  "h009_fluid_shifter": { sourceHeroId: 10, expectedSourceName: "Morphling" },
+  "h010_shadow_bomber": { sourceHeroId: 11, expectedSourceName: "Shadow Fiend" },
+  "h011_illusion_lancer": { sourceHeroId: 12, expectedSourceName: "Phantom Lancer" },
+  "h012_fae_trickster": { sourceHeroId: 13, expectedSourceName: "Puck" },
+  "h013_chain_vanguard": { sourceHeroId: 14, expectedSourceName: "Pudge" },
+  "h014_storm_channeler": { sourceHeroId: 17, expectedSourceName: "Storm Spirit" },
+  "h015_burrow_sentinel": { sourceHeroId: 16, expectedSourceName: "Sand King" },
+  "h016_lightning_archmage": { sourceHeroId: 22, expectedSourceName: "Zeus" },
+  "h017_sea_captain": { sourceHeroId: 23, expectedSourceName: "Kunkka" },
+  "h018_fire_invoker": { sourceHeroId: 25, expectedSourceName: "Lina" },
+  "h019_ice_lich": { sourceHeroId: 31, expectedSourceName: "Lich" },
+  "h020_hex_warden": { sourceHeroId: 27, expectedSourceName: "Shadow Shaman" },
+  "h021_serpent_crusher": { sourceHeroId: 28, expectedSourceName: "Slardar" },
+  "h022_tide_colossus": { sourceHeroId: 29, expectedSourceName: "Tidehunter" },
+  "h023_witch_shaman": { sourceHeroId: 30, expectedSourceName: "Witch Doctor" },
+  "h024_stealth_assassin": { sourceHeroId: 32, expectedSourceName: "Riki" },
+  "h025_gravity_summoner": { sourceHeroId: 33, expectedSourceName: "Enigma" },
+  "h026_gadget_mage": { sourceHeroId: 34, expectedSourceName: "Tinker" },
+  "h027_longshot_artillerist": { sourceHeroId: 35, expectedSourceName: "Sniper" },
+  "h028_plague_saint": { sourceHeroId: 36, expectedSourceName: "Necrophos" },
+  "h029_soul_warlock": { sourceHeroId: 37, expectedSourceName: "Warlock" },
+  "h030_beast_commander": { sourceHeroId: 38, expectedSourceName: "Beastmaster" },
+  "h031_blink_assassin": { sourceHeroId: 39, expectedSourceName: "Queen of Pain" },
+  "h032_poison_alchemist": { sourceHeroId: 40, expectedSourceName: "Venomancer" },
+  "h033_chrono_duelist": { sourceHeroId: 41, expectedSourceName: "Faceless Void" },
+  "h034_skeleton_monarch": { sourceHeroId: 42, expectedSourceName: "Wraith King" },
+  "h035_death_singer": { sourceHeroId: 43, expectedSourceName: "Death Prophet" },
+  "h036_blade_assassin": { sourceHeroId: 44, expectedSourceName: "Phantom Assassin" },
+  "h037_nether_pusher": { sourceHeroId: 45, expectedSourceName: "Pugna" },
+  "h038_psychic_assassin": { sourceHeroId: 46, expectedSourceName: "Templar Assassin" },
+  "h039_venom_dragon": { sourceHeroId: 47, expectedSourceName: "Viper" },
+  "h040_lunar_raider": { sourceHeroId: 48, expectedSourceName: "Luna" },
+  "h041_dragon_knight": { sourceHeroId: 49, expectedSourceName: "Dragon Knight" },
+  "h042_grave_savior": { sourceHeroId: 50, expectedSourceName: "Dazzle" },
+  "h043_clockwork_trapper": { sourceHeroId: 51, expectedSourceName: "Clockwerk" },
+  "h044_lightning_demon": { sourceHeroId: 15, expectedSourceName: "Razor" },
+  "h045_forest_commander": { sourceHeroId: 53, expectedSourceName: "Nature's Prophet" },
+  "h046_lifesteal_berserker": { sourceHeroId: 54, expectedSourceName: "Lifestealer" },
+  "h047_dark_vector": { sourceHeroId: 55, expectedSourceName: "Dark Seer" },
+  "h048_bone_archer": { sourceHeroId: 56, expectedSourceName: "Clinkz" },
+  "h049_dark_paladin": { sourceHeroId: 102, expectedSourceName: "Abaddon" },
+  "h050_wild_enchantress": { sourceHeroId: 58, expectedSourceName: "Enchantress" },
+  "h051_spear_martyr": { sourceHeroId: 59, expectedSourceName: "Huskar" },
+  "h052_night_hunter": { sourceHeroId: 60, expectedSourceName: "Night Stalker" },
+  "h053_brood_matriarch": { sourceHeroId: 61, expectedSourceName: "Broodmother" },
+  "h054_bounty_scout": { sourceHeroId: 62, expectedSourceName: "Bounty Hunter" },
+  "h055_time_weaver": { sourceHeroId: 63, expectedSourceName: "Weaver" },
+  "h056_twin_dragon": { sourceHeroId: 64, expectedSourceName: "Jakiro" },
+  "h057_fire_rider": { sourceHeroId: 65, expectedSourceName: "Batrider" },
+  "h058_animal_priest": { sourceHeroId: 66, expectedSourceName: "Chen" },
+  "h059_specter_global": { sourceHeroId: 67, expectedSourceName: "Spectre" },
+  "h060_doom_bringer": { sourceHeroId: 69, expectedSourceName: "Doom" },
+  "h061_ice_ancient": { sourceHeroId: 68, expectedSourceName: "Ancient Apparition" },
+  "h062_bear_berserker": { sourceHeroId: 70, expectedSourceName: "Ursa" },
+  "h063_horned_charger": { sourceHeroId: 71, expectedSourceName: "Spirit Breaker" },
+  "h064_gyro_artillery": { sourceHeroId: 72, expectedSourceName: "Gyrocopter" },
+  "h065_chemical_brawler": { sourceHeroId: 73, expectedSourceName: "Alchemist" },
+  "h066_complex_mage": { sourceHeroId: 74, expectedSourceName: "Invoker" },
+  "h067_silence_warden": { sourceHeroId: 75, expectedSourceName: "Silencer" },
+  "h068_astral_destroyer": { sourceHeroId: 76, expectedSourceName: "Outworld Destroyer" },
+  "h069_wolf_alpha": { sourceHeroId: 77, expectedSourceName: "Lycan" },
+  "h070_brew_master": { sourceHeroId: 78, expectedSourceName: "Brewmaster" },
+  "h071_shadow_demon": { sourceHeroId: 79, expectedSourceName: "Shadow Demon" },
+  "h072_druid_dual": { sourceHeroId: 80, expectedSourceName: "Lone Druid" },
+  "h073_chaos_lancer": { sourceHeroId: 81, expectedSourceName: "Chaos Knight" },
+  "h074_clone_tactician": { sourceHeroId: 82, expectedSourceName: "Meepo" },
+  "h075_tree_guardian": { sourceHeroId: 83, expectedSourceName: "Treant Protector" },
+  "h076_brute_mage": { sourceHeroId: 84, expectedSourceName: "Ogre Magi" },
+  "h077_decay_zombie": { sourceHeroId: 85, expectedSourceName: "Undying" },
+  "h078_spell_thief": { sourceHeroId: 86, expectedSourceName: "Rubick" },
+  "h079_storm_disruptor": { sourceHeroId: 87, expectedSourceName: "Disruptor" },
+  "h080_carapace_assassin": { sourceHeroId: 88, expectedSourceName: "Nyx Assassin" },
+  "h081_naga_siren": { sourceHeroId: 89, expectedSourceName: "Naga Siren" },
+  "h082_light_keeper": { sourceHeroId: 90, expectedSourceName: "Keeper of the Light" },
+  "h083_spirit_tether": { sourceHeroId: 91, expectedSourceName: "Io" },
+  "h084_gargoyle_brood": { sourceHeroId: 92, expectedSourceName: "Visage" },
+  "h085_vampire_carry": { sourceHeroId: 93, expectedSourceName: "Slark" },
+  "h086_stone_gaze_guardian": { sourceHeroId: 94, expectedSourceName: "Medusa" },
+  "h087_troll_switcher": { sourceHeroId: 95, expectedSourceName: "Troll Warlord" },
+  "h088_centaur_retaliator": { sourceHeroId: 96, expectedSourceName: "Centaur Warrunner" },
+  "h089_gravity_general": { sourceHeroId: 97, expectedSourceName: "Magnus" },
+  "h090_timber_mech": { sourceHeroId: 98, expectedSourceName: "Timbersaw" },
+  "h091_quill_tank": { sourceHeroId: 99, expectedSourceName: "Bristleback" },
+  "h092_polar_berserker": { sourceHeroId: 100, expectedSourceName: "Tusk" },
+  "h093_sky_mage": { sourceHeroId: 101, expectedSourceName: "Skywrath Mage" },
+  "h095_ancient_titan": { sourceHeroId: 103, expectedSourceName: "Elder Titan" },
+  "h096_arena_duelist": { sourceHeroId: 104, expectedSourceName: "Legion Commander" },
+  "h097_demolition_goblin": { sourceHeroId: 105, expectedSourceName: "Techies" },
+  "h098_ember_duelist": { sourceHeroId: 106, expectedSourceName: "Ember Spirit" },
+  "h099_stone_monk": { sourceHeroId: 107, expectedSourceName: "Earth Spirit" },
+  "h100_abyss_lord": { sourceHeroId: 108, expectedSourceName: "Underlord" },
+  "h101_demon_metamorph": { sourceHeroId: 109, expectedSourceName: "Terrorblade" },
+  "h102_solar_bird": { sourceHeroId: 110, expectedSourceName: "Phoenix" },
+  "h103_fate_oracle": { sourceHeroId: 111, expectedSourceName: "Oracle" },
+  "h104_winter_controller": { sourceHeroId: 112, expectedSourceName: "Winter Wyvern" },
+  "h105_arc_double": { sourceHeroId: 113, expectedSourceName: "Arc Warden" },
+  "h106_monkey_warrior": { sourceHeroId: 114, expectedSourceName: "Monkey King" },
+  "h107_dark_fae": { sourceHeroId: 119, expectedSourceName: "Dark Willow" },
+  "h108_rolling_duelist": { sourceHeroId: 120, expectedSourceName: "Pangolier" },
+  "h109_ink_warlock": { sourceHeroId: 121, expectedSourceName: "Grimstroke" },
+  "h110_arena_sentinel": { sourceHeroId: 129, expectedSourceName: "Mars" },
+  "h111_void_duelist": { sourceHeroId: 126, expectedSourceName: "Void Spirit" },
+  "h112_artillery_grandma": { sourceHeroId: 128, expectedSourceName: "Snapfire" },
+  "h113_forest_trickster": { sourceHeroId: 123, expectedSourceName: "Hoodwink" },
+  "h114_dawn_paladin": { sourceHeroId: 135, expectedSourceName: "Dawnbreaker" },
+  "h115_grapple_brawler": { sourceHeroId: 136, expectedSourceName: "Marci" },
+  "h116_primal_beast": { sourceHeroId: 137, expectedSourceName: "Primal Beast" },
+  "h117_gunslinger_wraith": { sourceHeroId: 138, expectedSourceName: "Muerta" },
+  "h118_circus_controller": { sourceHeroId: 131, expectedSourceName: "Ringmaster" },
+  "h119_twin_blade_duelist": { sourceHeroId: 145, expectedSourceName: "Kez" },
+  "h120_heavy_artillery_commander": { sourceHeroId: 155, expectedSourceName: "Largo" },
+  "h121_vengeance_captain": { sourceHeroId: 20, expectedSourceName: "Vengeful Spirit" },
+  "h122_crystal_channeler": { sourceHeroId: 5, expectedSourceName: "Crystal Maiden" },
+  "h123_greatsword_knight": { sourceHeroId: 18, expectedSourceName: "Sven" },
+  "h124_stone_giant": { sourceHeroId: 19, expectedSourceName: "Tiny" },
+  "h125_wind_archer": { sourceHeroId: 21, expectedSourceName: "Windranger" },
+  "h126_storm_edict_prophet": { sourceHeroId: 52, expectedSourceName: "Leshrac" },
+  "h127_goblin_clock_sniper": { sourceHeroId: 26, expectedSourceName: "Lion" },
+  "h128_rune_blade_nomad": { sourceHeroId: 57, expectedSourceName: "Omniknight" },
+} as const;
+
+export const DEPRECATED_LEGACY_HERO_IDS = {
+  "h094_dark_paladin_2": {
+    reason: "Duplicata antiga de h049_dark_paladin, ambos representavam Abaddon.",
+    replacementHeroId: "h049_dark_paladin",
+    sourceHeroId: 102,
+  },
+} as const;
+
+// ============================================================================
+// 2. ARQUIVOS QUE O CODEX DEVE CRIAR
+// ============================================================================
+//
+// scripts/importOfficialHeroSkills.ts
+// src/data/heroSkillSourceOfficial.ts
+// src/data/heroSkillKitsAdapted.ts
+// src/data/legacyHeroSkillMigration.ts
+// src/types/heroSkillTypes.ts
+// src/validation/validateHeroSkillImport.ts
+// reports/hero-skill-import-report.json
+// reports/unmapped-official-heroes.json
+//
+// heroSkillSourceOfficial.ts:
+// - pode conter nomes e descrições oficiais, apenas como metadata de desenvolvimento.
+// - não deve ser exibido na UI pública.
+//
+// heroSkillKitsAdapted.ts:
+// - usa os heroId genéricos atuais;
+// - usa nomes genéricos;
+// - preserva IDs, números, flags, upgrades e textos mecânicos;
+// - não substitui mecânica real por interpretação de designTags.
+//
+// ============================================================================
+// 3. TIPOS
+// ============================================================================
+
+export type SkillCategory =
+  | "standard"
+  | "innate"
+  | "scepter_granted"
+  | "shard_granted"
+  | "other";
+
+export interface OfficialSpecialValue {
+  name: string;
+  heading: string;
+  baseValues: number[];
+  isPercentage: boolean;
+  shardValues: number[];
+  scepterValues: number[];
+  bonuses: Array<{
+    name: string;
+    value: number;
+    operation: number;
+  }>;
+  facetBonus: {
+    name: string;
+    values: number[];
+    operation: number;
+  };
+  requiredFacet: string;
+}
+
+export interface OfficialAbilitySource {
+  sourceAbilityId: number;
+  sourceInternalName: string;
+  sourceDisplayName: string;
+  sourceDescription: string;
+  sourceLore: string;
+  sourceNotes: string[];
+
+  category: SkillCategory;
+  orderInOfficialFeed: number;
+  genericSlot: string;
+
+  maxLevel: number;
+  typeRaw: number;
+  behaviorRaw: string;
+  behaviorFlags: string[];
+
+  targetTeamRaw: number;
+  targetTypeRaw: number;
+  abilityFlagsRaw: number;
+  damageTypeRaw: number;
+  immunityRaw: number;
+  dispellableRaw: number;
+
+  castRanges: number[];
+  castPoints: number[];
+  channelTimes: number[];
+  cooldowns: number[];
+  durations: number[];
+  damages: number[];
+  manaCosts: number[];
+  healthCosts: number[];
+  goldCosts: number[];
+
+  specialValues: OfficialSpecialValue[];
+
+  upgrades: {
+    hasScepterUpgrade: boolean;
+    hasShardUpgrade: boolean;
+    grantedByScepter: boolean;
+    grantedByShard: boolean;
+    scepterText: string;
+    shardText: string;
+    facetsText: string[];
+  };
+
+  isInnate: boolean;
+}
+
+export interface OfficialHeroSkillSource {
+  legacyHeroId: string;
+  sourceHeroId: number;
+  sourceInternalName: string;
+  sourceDisplayName: string;
+  capturedAtIso: string;
+  facets: unknown[];
+
+  standardAbilities: OfficialAbilitySource[];
+  innateAbilities: OfficialAbilitySource[];
+  scepterGrantedAbilities: OfficialAbilitySource[];
+  shardGrantedAbilities: OfficialAbilitySource[];
+  otherAbilities: OfficialAbilitySource[];
+}
+
+export interface AdaptedHeroSkill {
+  id: string;
+  legacyHeroId: string;
+  sourceHeroId: number;
+  sourceAbilityId: number;
+
+  displayName: string;
+  category: SkillCategory;
+  genericSlot: string;
+  order: number;
+
+  maxLevel: number;
+  behaviorFlags: string[];
+  behaviorRaw: string;
+
+  targetTeamRaw: number;
+  targetTypeRaw: number;
+  damageTypeRaw: number;
+  immunityRaw: number;
+  dispellableRaw: number;
+
+  castRanges: number[];
+  castPoints: number[];
+  channelTimes: number[];
+  cooldowns: number[];
+  durations: number[];
+  damages: number[];
+  manaCosts: number[];
+  healthCosts: number[];
+  goldCosts: number[];
+
+  specialValues: OfficialSpecialValue[];
+
+  upgrades: {
+    hasScepterUpgrade: boolean;
+    hasShardUpgrade: boolean;
+    grantedByScepter: boolean;
+    grantedByShard: boolean;
+    scepterText: string;
+    shardText: string;
+  };
+
+  sourceMetadata: {
+    internalAbilityName: string;
+    officialDisplayName: string;
+    officialDescription: string;
+    notes: string[];
+  };
+}
+
+export interface AdaptedHeroSkillKit {
+  heroId: string;
+  sourceHeroId: number;
+  capturedAtIso: string;
+  facets: unknown[];
+
+  standardAbilities: AdaptedHeroSkill[];
+  innateAbilities: AdaptedHeroSkill[];
+  scepterGrantedAbilities: AdaptedHeroSkill[];
+  shardGrantedAbilities: AdaptedHeroSkill[];
+  otherAbilities: AdaptedHeroSkill[];
+}
+
+// ============================================================================
+// 4. DECODIFICAÇÃO DO BEHAVIOR BITMASK
+// ============================================================================
+//
+// behavior vem como string e deve ser lido com BigInt.
+// behaviorRaw deve ser preservado para flags ainda não interpretadas.
+
+export const ABILITY_BEHAVIOR_FLAGS: Record<string, bigint> = {
+  HIDDEN: 1n,
+  PASSIVE: 2n,
+  NO_TARGET: 4n,
+  UNIT_TARGET: 8n,
+  POINT: 16n,
+  AOE: 32n,
+  NOT_LEARNABLE: 64n,
+  CHANNELLED: 128n,
+  ITEM: 256n,
+  TOGGLE: 512n,
+  DIRECTIONAL: 1024n,
+  IMMEDIATE: 2048n,
+  AUTOCAST: 4096n,
+  OPTIONAL_UNIT_TARGET: 8192n,
+  OPTIONAL_POINT: 16384n,
+  OPTIONAL_NO_TARGET: 32768n,
+  AURA: 65536n,
+  ATTACK: 131072n,
+  DONT_RESUME_MOVEMENT: 262144n,
+  ROOT_DISABLES: 524288n,
+  UNRESTRICTED: 1048576n,
+  IGNORE_PSEUDO_QUEUE: 2097152n,
+  IGNORE_CHANNEL: 4194304n,
+  DONT_CANCEL_MOVEMENT: 8388608n,
+  DONT_ALERT_TARGET: 16777216n,
+  DONT_RESUME_ATTACK: 33554432n,
+  NORMAL_WHEN_STOLEN: 67108864n,
+  IGNORE_BACKSWING: 134217728n,
+  RUNE_TARGET: 268435456n,
+  DONT_CANCEL_CHANNEL: 536870912n,
+  VECTOR_TARGETING: 1073741824n,
+};
+
+export function decodeBehaviorFlags(raw: string): string[] {
+  const value = BigInt(raw || "0");
+
+  return Object.entries(ABILITY_BEHAVIOR_FLAGS)
+    .filter(([, bit]) => (value & bit) !== 0n)
+    .map(([name]) => name);
+}
+
+// ============================================================================
+// 5. SCRIPT DE IMPORTAÇÃO
+// ============================================================================
+//
+// Salvar o restante deste bloco como scripts/importOfficialHeroSkills.ts.
+// Requer Node.js 20+.
+//
+// package.json:
+// "scripts": {
+//   "import:hero-skills": "tsx scripts/importOfficialHeroSkills.ts"
+// }
+//
+// npm install -D tsx typescript
+
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+
+const HERO_LIST_URL =
+  "https://www.dota2.com/datafeed/herolist?language=english";
+
+const heroDataUrl = (heroId: number) =>
+  `https://www.dota2.com/datafeed/herodata?language=english&hero_id=${heroId}`;
+
+type JsonRecord = Record<string, any>;
+
+async function fetchJson<T>(url: string, attempts = 4): Promise<T> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          "user-agent": "moba-manager-hero-import/1.0",
+          accept: "application/json",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} em ${url}`);
+      }
+
+      return (await response.json()) as T;
+    } catch (error) {
+      lastError = error;
+
+      if (attempt < attempts) {
+        await new Promise((done) => setTimeout(done, 500 * attempt));
+      }
+    }
+  }
+
+  throw lastError;
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  mapper: (value: T, index: number) => Promise<R>
+): Promise<R[]> {
+  const output = new Array<R>(values.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (true) {
+      const index = nextIndex;
+      nextIndex += 1;
+
+      if (index >= values.length) return;
+
+      output[index] = await mapper(values[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, values.length) }, worker)
+  );
+
+  return output;
+}
+
+function normalizeNumbers(values: unknown): number[] {
+  if (!Array.isArray(values)) return [];
+
+  return values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value));
+}
+
+function classifyAbility(ability: JsonRecord): SkillCategory {
+  if (ability.ability_is_innate) return "innate";
+  if (ability.ability_is_granted_by_scepter) return "scepter_granted";
+  if (ability.ability_is_granted_by_shard) return "shard_granted";
+  if (ability.is_item) return "other";
+  return "standard";
+}
+
+function genericSlotFor(
+  category: SkillCategory,
+  categoryIndex: number
+): string {
+  switch (category) {
+    case "standard":
+      return `standard_${categoryIndex + 1}`;
+    case "innate":
+      return `innate_${categoryIndex + 1}`;
+    case "scepter_granted":
+      return `scepter_granted_${categoryIndex + 1}`;
+    case "shard_granted":
+      return `shard_granted_${categoryIndex + 1}`;
+    default:
+      return `other_${categoryIndex + 1}`;
+  }
+}
+
+function normalizeSpecialValue(value: JsonRecord): OfficialSpecialValue {
+  return {
+    name: String(value.name ?? ""),
+    heading: String(value.heading_loc ?? ""),
+    baseValues: normalizeNumbers(value.values_float),
+    isPercentage: Boolean(value.is_percentage),
+    shardValues: normalizeNumbers(value.values_shard),
+    scepterValues: normalizeNumbers(value.values_scepter),
+    bonuses: Array.isArray(value.bonuses)
+      ? value.bonuses.map((bonus: JsonRecord) => ({
+          name: String(bonus.name ?? ""),
+          value: Number(bonus.value ?? 0),
+          operation: Number(bonus.operation ?? 0),
+        }))
+      : [],
+    facetBonus: {
+      name: String(value.facet_bonus?.name ?? ""),
+      values: normalizeNumbers(value.facet_bonus?.values),
+      operation: Number(value.facet_bonus?.operation ?? 0),
+    },
+    requiredFacet: String(value.required_facet ?? ""),
+  };
+}
+
+function normalizeAbility(
+  ability: JsonRecord,
+  orderInOfficialFeed: number,
+  categoryIndex: number
+): OfficialAbilitySource {
+  const category = classifyAbility(ability);
+
+  return {
+    sourceAbilityId: Number(ability.id),
+    sourceInternalName: String(ability.name ?? ""),
+    sourceDisplayName: String(ability.name_loc ?? ""),
+    sourceDescription: String(ability.desc_loc ?? ""),
+    sourceLore: String(ability.lore_loc ?? ""),
+    sourceNotes: Array.isArray(ability.notes_loc)
+      ? ability.notes_loc.map(String)
+      : [],
+
+    category,
+    orderInOfficialFeed,
+    genericSlot: genericSlotFor(category, categoryIndex),
+
+    maxLevel: Number(ability.max_level ?? 0),
+    typeRaw: Number(ability.type ?? 0),
+    behaviorRaw: String(ability.behavior ?? "0"),
+    behaviorFlags: decodeBehaviorFlags(String(ability.behavior ?? "0")),
+
+    targetTeamRaw: Number(ability.target_team ?? 0),
+    targetTypeRaw: Number(ability.target_type ?? 0),
+    abilityFlagsRaw: Number(ability.flags ?? 0),
+    damageTypeRaw: Number(ability.damage ?? 0),
+    immunityRaw: Number(ability.immunity ?? 0),
+    dispellableRaw: Number(ability.dispellable ?? 0),
+
+    castRanges: normalizeNumbers(ability.cast_ranges),
+    castPoints: normalizeNumbers(ability.cast_points),
+    channelTimes: normalizeNumbers(ability.channel_times),
+    cooldowns: normalizeNumbers(ability.cooldowns),
+    durations: normalizeNumbers(ability.durations),
+    damages: normalizeNumbers(ability.damages),
+    manaCosts: normalizeNumbers(ability.mana_costs),
+    healthCosts: normalizeNumbers(ability.health_costs),
+    goldCosts: normalizeNumbers(ability.gold_costs),
+
+    specialValues: Array.isArray(ability.special_values)
+      ? ability.special_values.map(normalizeSpecialValue)
+      : [],
+
+    upgrades: {
+      hasScepterUpgrade: Boolean(ability.ability_has_scepter),
+      hasShardUpgrade: Boolean(ability.ability_has_shard),
+      grantedByScepter: Boolean(ability.ability_is_granted_by_scepter),
+      grantedByShard: Boolean(ability.ability_is_granted_by_shard),
+      scepterText: String(ability.scepter_loc ?? ""),
+      shardText: String(ability.shard_loc ?? ""),
+      facetsText: Array.isArray(ability.facets_loc)
+        ? ability.facets_loc.map(String)
+        : [],
+    },
+
+    isInnate: Boolean(ability.ability_is_innate),
+  };
+}
+
+function groupAbilities(abilities: OfficialAbilitySource[]) {
+  return {
+    standardAbilities: abilities.filter(
+      (ability) => ability.category === "standard"
+    ),
+    innateAbilities: abilities.filter(
+      (ability) => ability.category === "innate"
+    ),
+    scepterGrantedAbilities: abilities.filter(
+      (ability) => ability.category === "scepter_granted"
+    ),
+    shardGrantedAbilities: abilities.filter(
+      (ability) => ability.category === "shard_granted"
+    ),
+    otherAbilities: abilities.filter(
+      (ability) => ability.category === "other"
+    ),
+  };
+}
+
+function toAdaptedSkill(
+  legacyHeroId: string,
+  sourceHeroId: number,
+  ability: OfficialAbilitySource,
+  order: number
+): AdaptedHeroSkill {
+  const categoryLabel = ability.category.replaceAll("_", " ");
+
+  return {
+    id: `${legacyHeroId}_${ability.category}_${order + 1}_${ability.sourceAbilityId}`,
+    legacyHeroId,
+    sourceHeroId,
+    sourceAbilityId: ability.sourceAbilityId,
+
+    displayName:
+      `${categoryLabel.charAt(0).toUpperCase()}${categoryLabel.slice(1)} ${order + 1}`,
+    category: ability.category,
+    genericSlot: ability.genericSlot,
+    order,
+
+    maxLevel: ability.maxLevel,
+    behaviorFlags: ability.behaviorFlags,
+    behaviorRaw: ability.behaviorRaw,
+
+    targetTeamRaw: ability.targetTeamRaw,
+    targetTypeRaw: ability.targetTypeRaw,
+    damageTypeRaw: ability.damageTypeRaw,
+    immunityRaw: ability.immunityRaw,
+    dispellableRaw: ability.dispellableRaw,
+
+    castRanges: ability.castRanges,
+    castPoints: ability.castPoints,
+    channelTimes: ability.channelTimes,
+    cooldowns: ability.cooldowns,
+    durations: ability.durations,
+    damages: ability.damages,
+    manaCosts: ability.manaCosts,
+    healthCosts: ability.healthCosts,
+    goldCosts: ability.goldCosts,
+
+    specialValues: ability.specialValues,
+
+    upgrades: {
+      hasScepterUpgrade: ability.upgrades.hasScepterUpgrade,
+      hasShardUpgrade: ability.upgrades.hasShardUpgrade,
+      grantedByScepter: ability.upgrades.grantedByScepter,
+      grantedByShard: ability.upgrades.grantedByShard,
+      scepterText: ability.upgrades.scepterText,
+      shardText: ability.upgrades.shardText,
+    },
+
+    sourceMetadata: {
+      internalAbilityName: ability.sourceInternalName,
+      officialDisplayName: ability.sourceDisplayName,
+      officialDescription: ability.sourceDescription,
+      notes: ability.sourceNotes,
+    },
+  };
+}
+
+function adaptGroup(
+  legacyHeroId: string,
+  sourceHeroId: number,
+  abilities: OfficialAbilitySource[]
+): AdaptedHeroSkill[] {
+  return abilities.map((ability, index) =>
+    toAdaptedSkill(legacyHeroId, sourceHeroId, ability, index)
+  );
+}
+
+function serializeTsExport(exportName: string, value: unknown): string {
+  return [
+    "/* eslint-disable */",
+    "// Arquivo gerado automaticamente. Não editar manualmente.",
+    `export const ${exportName} = ${JSON.stringify(value, null, 2)} as const;`,
+    "",
+  ].join("\n");
+}
+
+async function ensureWrite(path: string, content: string) {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, content, "utf8");
+}
+
+async function main() {
+  const heroListResponse = await fetchJson<JsonRecord>(HERO_LIST_URL);
+  const officialHeroes: JsonRecord[] =
+    heroListResponse?.result?.data?.heroes ?? [];
+
+  if (officialHeroes.length === 0) {
+    throw new Error("O herolist oficial retornou vazio.");
+  }
+
+  const officialById = new Map<number, JsonRecord>(
+    officialHeroes.map((hero) => [Number(hero.id), hero])
+  );
+
+  const mappedEntries = Object.entries(
+    LEGACY_HERO_TO_OFFICIAL_SOURCE
+  );
+
+  const mappedSourceIds = mappedEntries.map(
+    ([, mapping]) => mapping.sourceHeroId
+  );
+
+  if (new Set(mappedSourceIds).size !== mappedSourceIds.length) {
+    throw new Error(
+      "O mapping possui sourceHeroId duplicado. Corrija antes de importar."
+    );
+  }
+
+  const unmappedOfficialHeroes = officialHeroes
+    .filter((hero) => !mappedSourceIds.includes(Number(hero.id)))
+    .map((hero) => ({
+      sourceHeroId: Number(hero.id),
+      sourceName: String(hero.name_loc ?? hero.name ?? ""),
+    }));
+
+  const missingSourceHeroes = mappedEntries
+    .filter(([, mapping]) => !officialById.has(mapping.sourceHeroId))
+    .map(([legacyHeroId, mapping]) => ({
+      legacyHeroId,
+      ...mapping,
+    }));
+
+  if (missingSourceHeroes.length > 0) {
+    throw new Error(
+      `Existem mappings ausentes no herolist oficial: ${JSON.stringify(missingSourceHeroes)}`
+    );
+  }
+
+  await ensureWrite(
+    resolve("reports/unmapped-official-heroes.json"),
+    JSON.stringify(unmappedOfficialHeroes, null, 2)
+  );
+
+  const capturedAtIso = new Date().toISOString();
+
+  const sourceKits = await mapWithConcurrency(
+    mappedEntries,
+    5,
+    async ([legacyHeroId, mapping]) => {
+      const response = await fetchJson<JsonRecord>(
+        heroDataUrl(mapping.sourceHeroId)
+      );
+
+      const hero = response?.result?.data?.heroes?.[0];
+
+      if (!hero) {
+        throw new Error(
+          `herodata vazio para sourceHeroId ${mapping.sourceHeroId}`
+        );
+      }
+
+      const officialName = String(hero.name_loc ?? "");
+
+      if (
+        mapping.expectedSourceName &&
+        officialName !== mapping.expectedSourceName
+      ) {
+        throw new Error(
+          `Mapping divergente para ${legacyHeroId}: esperado "${mapping.expectedSourceName}", recebido "${officialName}".`
+        );
+      }
+
+      const rawAbilities: JsonRecord[] = Array.isArray(hero.abilities)
+        ? hero.abilities
+        : [];
+
+      const categoryCounters: Record<SkillCategory, number> = {
+        standard: 0,
+        innate: 0,
+        scepter_granted: 0,
+        shard_granted: 0,
+        other: 0,
+      };
+
+      const abilities = rawAbilities.map((ability, order) => {
+        const category = classifyAbility(ability);
+        const normalized = normalizeAbility(
+          ability,
+          order,
+          categoryCounters[category]
+        );
+        categoryCounters[category] += 1;
+        return normalized;
+      });
+
+      return {
+        legacyHeroId,
+        sourceHeroId: Number(hero.id),
+        sourceInternalName: String(hero.name ?? ""),
+        sourceDisplayName: officialName,
+        capturedAtIso,
+        facets: Array.isArray(hero.facets) ? hero.facets : [],
+        ...groupAbilities(abilities),
+      } satisfies OfficialHeroSkillSource;
+    }
+  );
+
+  const adaptedKits: AdaptedHeroSkillKit[] = sourceKits.map((kit) => ({
+    heroId: kit.legacyHeroId,
+    sourceHeroId: kit.sourceHeroId,
+    capturedAtIso: kit.capturedAtIso,
+    facets: kit.facets,
+
+    standardAbilities: adaptGroup(
+      kit.legacyHeroId,
+      kit.sourceHeroId,
+      kit.standardAbilities
+    ),
+    innateAbilities: adaptGroup(
+      kit.legacyHeroId,
+      kit.sourceHeroId,
+      kit.innateAbilities
+    ),
+    scepterGrantedAbilities: adaptGroup(
+      kit.legacyHeroId,
+      kit.sourceHeroId,
+      kit.scepterGrantedAbilities
+    ),
+    shardGrantedAbilities: adaptGroup(
+      kit.legacyHeroId,
+      kit.sourceHeroId,
+      kit.shardGrantedAbilities
+    ),
+    otherAbilities: adaptGroup(
+      kit.legacyHeroId,
+      kit.sourceHeroId,
+      kit.otherAbilities
+    ),
+  }));
+
+  const report = {
+    capturedAtIso,
+    officialHeroCount: officialHeroes.length,
+    mappedUniqueHeroCount: sourceKits.length,
+    deprecatedLegacyHeroes: DEPRECATED_LEGACY_HERO_IDS,
+    unmappedOfficialHeroes,
+    heroesWithNonFourStandardAbilityCount: sourceKits
+      .filter((kit) => kit.standardAbilities.length !== 4)
+      .map((kit) => ({
+        legacyHeroId: kit.legacyHeroId,
+        sourceHeroId: kit.sourceHeroId,
+        sourceDisplayName: kit.sourceDisplayName,
+        standardAbilityCount: kit.standardAbilities.length,
+        innateCount: kit.innateAbilities.length,
+        scepterGrantedCount: kit.scepterGrantedAbilities.length,
+        shardGrantedCount: kit.shardGrantedAbilities.length,
+      })),
+  };
+
+  await ensureWrite(
+    resolve("src/data/heroSkillSourceOfficial.ts"),
+    serializeTsExport("HERO_SKILL_SOURCE_OFFICIAL", sourceKits)
+  );
+
+  await ensureWrite(
+    resolve("src/data/heroSkillKitsAdapted.ts"),
+    serializeTsExport("HERO_SKILL_KITS_ADAPTED", adaptedKits)
+  );
+
+  await ensureWrite(
+    resolve("src/data/legacyHeroSkillMigration.ts"),
+    [
+      "/* eslint-disable */",
+      "// Arquivo gerado automaticamente.",
+      `export const LEGACY_HERO_TO_OFFICIAL_SOURCE = ${JSON.stringify(
+        LEGACY_HERO_TO_OFFICIAL_SOURCE,
+        null,
+        2
+      )} as const;`,
+      `export const DEPRECATED_LEGACY_HERO_IDS = ${JSON.stringify(
+        DEPRECATED_LEGACY_HERO_IDS,
+        null,
+        2
+      )} as const;`,
+      "",
+    ].join("\n")
+  );
+
+  await ensureWrite(
+    resolve("reports/hero-skill-import-report.json"),
+    JSON.stringify(report, null, 2)
+  );
+
+  console.log(
+    `Importação concluída: ${sourceKits.length} heróis únicos.`
+  );
+
+  if (unmappedOfficialHeroes.length > 0) {
+    console.warn(
+      "Há heróis oficiais novos sem mapping:",
+      unmappedOfficialHeroes
+    );
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+// ============================================================================
+// 6. VALIDAÇÕES OBRIGATÓRIAS
+// ============================================================================
+//
+// 1. O mapping possui 127 sourceHeroId únicos.
+// 2. h094_dark_paladin_2 não aparece no output adaptado.
+// 3. Cada sourceHeroId retornado bate com expectedSourceName.
+// 4. Nenhuma habilidade é criada a partir de designTags.
+// 5. Nenhum herói é forçado a ter exatamente quatro habilidades.
+// 6. Invoker, Kez e kits especiais mantêm todas as habilidades retornadas.
+// 7. Inatas ficam em innateAbilities.
+// 8. Habilidades concedidas por Scepter/Shard ficam em arrays próprios.
+// 9. cooldowns, manaCosts, damages e specialValues são arrays numéricos.
+// 10. behavior é lido com BigInt e behaviorRaw é preservado.
+// 11. Facets são preservadas.
+// 12. Upgrades de Scepter/Shard são preservados.
+// 13. Novo herói oficial gera unmapped-official-heroes.json.
+// 14. Mudança de nome/mapping falha com erro claro.
+// 15. O arquivo antigo moba_complete_hero_skill_kits.txt deixa de ser importado.
+//
+// ============================================================================
+// 7. MIGRAÇÃO NO PROJETO
+// ============================================================================
+//
+// Etapa A:
+// - Remover importação de moba_complete_hero_skill_kits.txt.
+// - Manter o arquivo apenas como deprecated, sem uso em runtime.
+//
+// Etapa B:
+// - Executar npm run import:hero-skills.
+// - Importar HERO_SKILL_KITS_ADAPTED na engine.
+// - Usar HERO_SKILL_SOURCE_OFFICIAL apenas em debug/admin.
+//
+// Etapa C:
+// - Atualizar cards para listar:
+//   innateAbilities
+//   standardAbilities
+//   scepterGrantedAbilities
+//   shardGrantedAbilities
+//
+// Etapa D:
+// - Atualizar IA para não depender de Q/W/E/R fixos.
+// - Iterar por todas as habilidades disponíveis.
+// - Usar behaviorFlags, cooldowns, manaCosts, targets, damageType e specialValues.
+//
+// Etapa E:
+// - Criar adaptador de nomes públicos separado.
+// - Não alterar sourceAbilityId/sourceHeroId.
+//
+// ============================================================================
+// 8. RESULTADO ESPERADO
+// ============================================================================
+//
+// As habilidades do manager devem corresponder mecanicamente às habilidades atuais
+// retornadas pelo Datafeed oficial.
+//
+// A adaptação muda identidade, nome e apresentação; não muda a função real da skill.
+//
+// NÃO fazer:
+// - transformar mana burn em stun;
+// - substituir passiva por aura inventada;
+// - criar ultimate genérica a partir de role;
+// - limitar Invoker/Kez a quatro skills;
+// - ignorar innate, facet, Scepter ou Shard.
+//
+// Fazer:
+// - preservar IDs, números e upgrades;
+// - usar nomes públicos genéricos;
+// - manter sourceAbilityId/sourceHeroId na metadata;
+// - falhar de forma explícita quando o source mudar.
+//
+// FIM.

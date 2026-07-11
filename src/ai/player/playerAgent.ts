@@ -28,6 +28,7 @@ export function selectPlayerMode(context: PlayerContext): PlayerModeScore {
 function scoreRetreatMode(context: PlayerContext): PlayerModeScore {
   const score =
     (1 - context.self.healthPct) * 95 +
+    (context.self.healthPct < 0.32 ? (0.32 - context.self.healthPct) * 220 : 0) +
     context.self.danger * 0.85 +
     context.local.enemyNumbersAdvantage * 13 +
     context.map.gankRisk * 0.2 -
@@ -154,8 +155,8 @@ function getGpmDecisionBonus(context: PlayerContext, optionGpm: number) {
 }
 
 function getLowHealthFarmPenalty(context: PlayerContext) {
-  if (context.self.healthPct >= 0.56) return 0
-  return (0.56 - context.self.healthPct) * 130
+  if (context.self.healthPct >= 0.48) return 0
+  return (0.48 - context.self.healthPct) * 110
 }
 
 function applyRoleAndPersonality(context: PlayerContext, score: PlayerModeScore): PlayerModeScore {

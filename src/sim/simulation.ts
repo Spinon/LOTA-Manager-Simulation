@@ -29,6 +29,7 @@ import {
   wisdomRuneXp,
 } from '../game-systems/nonCombatFormulas.ts'
 import { expectedTimeToKillStructure, isBackdoorProtected, structureDamageTaken } from '../game-systems/structureFormulas.ts'
+import { getPrimarySkillUsageSituation, getSkillAiUsageScore, getSkillEffectProfile, hasSkillTag, isConfirmedGlobalSkill } from '../game-systems/skillRuntime.ts'
 import {
   getLaneCreepReward,
   getLaneCreepStats,
@@ -132,6 +133,19 @@ export type Arcane = {
   unspentSkillPoints: number
   statBonusLevels: number
   earnedGold: number
+  kills: number
+  deaths: number
+  assists: number
+  damageDealt: number
+  heroDamageDealt: number
+  structureDamageDealt: number
+  damageTaken: number
+  healingDone: number
+  healingReceived: number
+  laneCreepKills: number
+  denies: number
+  neutralKills: number
+  objectiveKills: number
   stats: Stats
 }
 export type Creep = {
@@ -300,6 +314,7 @@ export const analyzedGameStateCache = new WeakMap<SimulationState, { time: numbe
 export const playerAiProfileCache = new Map<string, ReturnType<typeof buildPlayerAiProfile>>()
 export const creepSpatialGridCache = new WeakMap<SimulationState, { time: number; grid: SpatialGrid<Creep> }>()
 export const aliveTowersByLaneCache = new WeakMap<SimulationState, { time: number; byTeamLane: Map<string, Tower[]> }>()
+export const offensiveThreatCache = new WeakMap<Arcane, { time: number; range: number; readyDamage: number }>()
 
 export type CombatSource = {
   id: string
@@ -356,7 +371,7 @@ export type TimedEffect = {
   sourceId: string
   sourceName: string
   sourceTeam: TeamId
-  kind: 'slow' | 'stun' | 'silence' | 'buff' | 'barrier' | 'dot' | 'hot'
+  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot'
   polarity: 'positive' | 'negative'
   value: number
   stacks: number
@@ -365,6 +380,7 @@ export type TimedEffect = {
     armorFlat?: number
     moveSpeedPct?: number
     attackSpeedPct?: number
+    incomingDamagePct?: number
   }
   barrierRemaining?: number
   damageType?: CombatDamageType
@@ -567,8 +583,8 @@ export function getRoleGpmDecisionBias(role: string) {
 }
 
 export function getGamePhase(time: number): GamePhase {
-  if (time < 8 * 60) return 'early'
-  if (time < 24 * 60) return 'mid'
+  if (time < 10 * 60) return 'early'
+  if (time < 28 * 60) return 'mid'
   return 'late'
 }
 
@@ -821,7 +837,7 @@ export async function loadGameData() {
   toRuntimeItemModifier = itemModule.toItemModifier
 }
 
-export const rosterSeed: Omit<Arcane, 'pos' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCooldowns' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'stats'>[] = [
+export const rosterSeed: Omit<Arcane, 'pos' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCooldowns' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'kills' | 'deaths' | 'assists' | 'damageDealt' | 'heroDamageDealt' | 'structureDamageDealt' | 'damageTaken' | 'healingDone' | 'healingReceived' | 'laneCreepKills' | 'denies' | 'neutralKills' | 'objectiveKills' | 'stats'>[] = [
   { id: 'd-quasar', team: 'dawn', player: 'Quasar', name: 'Sword Tempest', heroDefinitionId: 'h007_sword_tempest', role: 'Safe Lane', lane: 'bot', portrait: 'ST', items: ['Blade', 'Boots'] },
   { id: 'd-aster', team: 'dawn', player: 'Aster', name: 'Storm Channeler', heroDefinitionId: 'h014_storm_channeler', role: 'Mid', lane: 'mid', portrait: 'SC', items: ['Wand'] },
   { id: 'd-bulwark', team: 'dawn', player: 'Bulwark', name: 'Tide Colossus', heroDefinitionId: 'h022_tide_colossus', role: 'Offlane', lane: 'top', portrait: 'TC', items: ['Shield'] },
@@ -874,6 +890,19 @@ export function createInitialState(seed = 'lota-default-seed'): SimulationState 
       unspentSkillPoints: 1,
       statBonusLevels: 0,
       earnedGold: stats.gold,
+      kills: 0,
+      deaths: 0,
+      assists: 0,
+      damageDealt: 0,
+      heroDamageDealt: 0,
+      structureDamageDealt: 0,
+      damageTaken: 0,
+      healingDone: 0,
+      healingReceived: 0,
+      laneCreepKills: 0,
+      denies: 0,
+      neutralKills: 0,
+      objectiveKills: 0,
       stats,
     }
     return allocateArcaneSkillPoints(baseArcane)
@@ -1388,6 +1417,7 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   ) as Partial<Record<TeamId, TeamAura>>
   const dayCycle = getDayCycle(next.time)
   applyItemAuraEffects(next)
+  applySkillAuraEffects(next)
   next.arcanes = next.arcanes.map((arcane, index) => {
     const current = dayCycle !== previousDayCycle
       ? {
@@ -1490,10 +1520,137 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
   }
 }
 
-export type MatchRenderFrame = SimulationState
+// O frame de replay é deliberadamente uma projeção, não uma cópia do estado de
+// simulação. O tipo mantém compatibilidade estrutural com os leitores da UI,
+// enquanto `createMatchRenderFrame` só materializa os campos que eles exibem.
+// Campos de mecânica (pathfinding, aggro, last-hit e decisões antigas) nunca
+// cruzam a fronteira do worker.
+export interface MatchRenderFrame extends SimulationState {}
+
+// Dados cuja identidade não muda durante uma partida. Este catálogo é enviado
+// uma única vez antes do replay; a próxima etapa troca as cópias por-frame por
+// índices deste pacote ao materializar o frame ativo na UI.
+export type MatchStaticData = {
+  matchSeed: string
+  arcanes: Array<Pick<Arcane, 'id' | 'team' | 'player' | 'name' | 'heroDefinitionId' | 'role' | 'lane' | 'portrait'>>
+  towers: Array<Pick<Tower, 'id' | 'team' | 'lane' | 'tier' | 'pos' | 'maxHp' | 'damage' | 'range'>>
+  structures: Array<Pick<Structure, 'id' | 'team' | 'kind' | 'lane' | 'side' | 'pos' | 'maxHp' | 'damage' | 'range'>>
+  bases: Array<Pick<Base, 'id' | 'team' | 'pos' | 'maxHp'>>
+  camps: Array<Pick<Camp, 'id' | 'name' | 'strength' | 'pos' | 'maxHp' | 'damage' | 'range'>>
+}
+
+export function createMatchStaticData(state: SimulationState): MatchStaticData {
+  return {
+    matchSeed: state.matchSeed,
+    arcanes: state.arcanes.map(({ id, team, player, name, heroDefinitionId, role, lane, portrait }) => ({ id, team, player, name, heroDefinitionId, role, lane, portrait })),
+    towers: state.towers.map(({ id, team, lane, tier, pos, maxHp, damage, range }) => ({ id, team, lane, tier, pos: { ...pos }, maxHp, damage, range })),
+    structures: state.structures.map(({ id, team, kind, lane, side, pos, maxHp, damage, range }) => ({ id, team, kind, lane, side, pos: { ...pos }, maxHp, damage, range })),
+    bases: state.bases.map(({ id, team, pos, maxHp }) => ({ id, team, pos: { ...pos }, maxHp })),
+    camps: state.camps.map(({ id, name, strength, pos, maxHp, damage, range }) => ({ id, name, strength, pos: { ...pos }, maxHp, damage, range })),
+  }
+}
 
 export function createMatchRenderFrame(state: SimulationState): MatchRenderFrame {
-  return cloneSimulationStateForTick(state)
+  return {
+    matchSeed: state.matchSeed,
+    time: state.time,
+    kills: { ...state.kills },
+    winner: state.winner,
+    teamPlans: Object.fromEntries(Object.entries(state.teamPlans).map(([team, plan]) => [
+      team,
+      plan ? { ...plan, targetPosition: plan.targetPosition ? { ...plan.targetPosition } : undefined, reasonTags: [...plan.reasonTags] } : undefined,
+    ])) as Partial<Record<TeamId, TeamPlan>>,
+    teamMemory: {
+      dawn: state.teamMemory.dawn.map((event) => ({ ...event, position: { ...event.position }, tags: [...event.tags] })),
+      dusk: state.teamMemory.dusk.map((event) => ({ ...event, position: { ...event.position }, tags: [...event.tags] })),
+    },
+    teamAuras: { ...state.teamAuras },
+    teamFortifications: {
+      dawn: { ...state.teamFortifications.dawn },
+      dusk: { ...state.teamFortifications.dusk },
+    },
+    events: state.events.map((event) => ({ ...event })),
+    effects: state.effects.map((effect) => ({ ...effect, from: { ...effect.from }, to: { ...effect.to } })),
+    timedEffects: state.timedEffects.map((effect) => ({ ...effect, modifiers: effect.modifiers ? { ...effect.modifiers } : undefined })),
+    deathMarkers: state.deathMarkers.map((marker) => ({ ...marker, pos: { ...marker.pos } })),
+    denyMarkers: state.denyMarkers.map((marker) => ({ ...marker, pos: { ...marker.pos } })),
+    goldMarkers: state.goldMarkers.map((marker) => ({ ...marker, pos: { ...marker.pos } })),
+    skillMarkers: state.skillMarkers.map((marker) => ({ ...marker, pos: { ...marker.pos } })),
+    recentTeleports: state.recentTeleports.map((record) => ({ ...record, pos: { ...record.pos } })),
+    arcanes: state.arcanes.map((arcane) => ({
+      id: arcane.id,
+      team: arcane.team,
+      player: arcane.player,
+      name: arcane.name,
+      heroDefinitionId: arcane.heroDefinitionId,
+      role: arcane.role,
+      lane: arcane.lane,
+      portrait: arcane.portrait,
+      pos: { ...arcane.pos },
+      respawn: arcane.respawn,
+      aggression: arcane.aggression,
+      visionRange: arcane.visionRange,
+      shotcalling: arcane.shotcalling,
+      macroDecision: arcane.macroDecision,
+      microDecision: arcane.microDecision,
+      aiMode: arcane.aiMode,
+      aiReason: arcane.aiReason,
+      aiExecutionChance: arcane.aiExecutionChance,
+      aiExecutionDelay: arcane.aiExecutionDelay,
+      aiFailure: arcane.aiFailure,
+      decisionStatus: arcane.decisionStatus,
+      nextDecisionAt: arcane.nextDecisionAt,
+      items: [...arcane.items],
+      itemCooldowns: { ...arcane.itemCooldowns },
+      tpScrolls: arcane.tpScrolls,
+      tpCooldownUntil: arcane.tpCooldownUntil,
+      channeling: arcane.channeling ? { ...arcane.channeling, target: { ...arcane.channeling.target } } : undefined,
+      skillLevels: { ...arcane.skillLevels },
+      unspentSkillPoints: arcane.unspentSkillPoints,
+      statBonusLevels: arcane.statBonusLevels,
+      earnedGold: arcane.earnedGold,
+      kills: arcane.kills,
+      deaths: arcane.deaths,
+      assists: arcane.assists,
+      damageDealt: arcane.damageDealt,
+      heroDamageDealt: arcane.heroDamageDealt,
+      structureDamageDealt: arcane.structureDamageDealt,
+      damageTaken: arcane.damageTaken,
+      healingDone: arcane.healingDone,
+      healingReceived: arcane.healingReceived,
+      laneCreepKills: arcane.laneCreepKills,
+      denies: arcane.denies,
+      neutralKills: arcane.neutralKills,
+      objectiveKills: arcane.objectiveKills,
+      stats: { ...arcane.stats },
+    })),
+    creeps: state.creeps.map((creep) => ({
+      id: creep.id,
+      team: creep.team,
+      lane: creep.lane,
+      type: creep.type,
+      pos: { ...creep.pos },
+      hp: creep.hp,
+      maxHp: creep.maxHp,
+      damage: creep.damage,
+      range: creep.range,
+      visionRange: creep.visionRange,
+    })),
+    towers: state.towers.map((tower) => ({
+      id: tower.id, team: tower.team, lane: tower.lane, tier: tower.tier, pos: { ...tower.pos }, hp: tower.hp, maxHp: tower.maxHp, damage: tower.damage, range: tower.range,
+    })),
+    structures: state.structures.map((structure) => ({
+      id: structure.id, team: structure.team, kind: structure.kind, lane: structure.lane, side: structure.side, pos: { ...structure.pos }, hp: structure.hp, maxHp: structure.maxHp, damage: structure.damage, range: structure.range,
+    })),
+    bases: state.bases.map((base) => ({ ...base, pos: { ...base.pos } })),
+    camps: state.camps.map((camp) => ({
+      id: camp.id, name: camp.name, strength: camp.strength, pos: { ...camp.pos }, hp: camp.hp, maxHp: camp.maxHp, damage: camp.damage, range: camp.range, level: camp.level, respawn: camp.respawn, stackCount: camp.stackCount,
+    })),
+    runes: state.runes.map((rune) => ({ ...rune, pos: { ...rune.pos } })),
+    boss: {
+      id: state.boss.id, name: state.boss.name, pos: { ...state.boss.pos }, hp: state.boss.hp, maxHp: state.boss.maxHp, damage: state.boss.damage, range: state.boss.range, respawn: state.boss.respawn,
+    },
+  } as MatchRenderFrame
 }
 
 export function spawnRunesForTick(state: SimulationState, previousTime: number) {
@@ -3060,9 +3217,11 @@ export function shouldReconsiderArcaneDecision(state: SimulationState, arcane: A
 
   const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
   const manaRatio = arcane.stats.mana / Math.max(1, arcane.stats.maxMana)
-  if (atBase && arcane.macroDecision === 'Recuperar recursos' && hpRatio >= 0.94 && manaRatio >= 0.82) return true
-  if (atBase && distance(arcane.target, teamInfo[arcane.team].base) < baseServiceRange && hpRatio >= 0.94 && manaRatio >= 0.82 && !canBuyAtBase) return true
-  if (hpRatio < 0.42 || arcane.lastDecisionHpRatio - hpRatio > 0.16) return true
+  const emergencyRecovery = getArcaneEmergencyRecoveryRatio(state, arcane)
+  const hardRetreatHpRatio = Math.max(0.22, 0.36 - emergencyRecovery * 0.6)
+  if (atBase && arcane.macroDecision === 'Recuperar recursos' && hpRatio >= 0.84 && manaRatio >= 0.65) return true
+  if (atBase && distance(arcane.target, teamInfo[arcane.team].base) < baseServiceRange && hpRatio >= 0.84 && manaRatio >= 0.65 && !canBuyAtBase) return true
+  if (hpRatio < hardRetreatHpRatio || arcane.lastDecisionHpRatio - hpRatio > 0.19) return true
   if (manaRatio < 0.2 && arcane.lastDecisionManaRatio - manaRatio > 0.18) return true
   if (distance(arcane.pos, arcane.target) <= 1.15) return true
   if (distance(arcane.pos, formationPoint(arcane.target, arcane.id)) <= 1.15) return true
@@ -3252,6 +3411,7 @@ export function canStartTeleport(state: SimulationState, arcane: Arcane) {
     arcane.tpScrolls > 0 &&
     arcane.tpCooldownUntil <= state.time &&
     arcane.stats.mana >= teleportManaCost &&
+    !hasTimedEffect(state, arcane.id, 'mute') &&
     !isArcaneStunned(state, arcane)
 }
 
@@ -3379,7 +3539,7 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     ? syncLanePathIndex(arcane.pos, path, arcane.pathIndex)
     : arcane.pathIndex
 
-  if (isArcaneStunned(state, arcane)) {
+  if (isArcaneMovementDisabled(state, arcane)) {
     const hpRegen = atBase
       ? resourceRegenForTick(NON_COMBAT_RULES.regeneration.baseHealthRegenPerSecond, delta)
       : 0
@@ -3392,9 +3552,9 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     return {
       ...arcane,
       macroDecision: 'Controlado',
-      microDecision: 'Atordoado',
-      aiReason: 'stun, controle',
-      decision: 'Atordoado',
+      microDecision: isArcaneStunned(state, arcane) ? 'Atordoado' : 'Enraizado',
+      aiReason: isArcaneStunned(state, arcane) ? 'stun, controle' : 'root, controle',
+      decision: isArcaneStunned(state, arcane) ? 'Atordoado' : 'Enraizado',
       stats: {
         ...arcane.stats,
         hp: Math.min(arcane.stats.maxHp, arcane.stats.hp + hpRegen),
@@ -3415,6 +3575,16 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     const memoryDanger = getTeamMemoryDanger(state, arcane.team, arcane.pos)
     const hpRatio = arcane.stats.hp / arcane.stats.maxHp
     const isWounded = hpRatio < 0.62
+    const nearbyBurstThreat = visibleEnemies.reduce((highestThreat, enemy) => {
+      const threat = getArcaneOffensiveThreat(state, enemy)
+      const threatRange = Math.max(enemy.stats.range + 2.2, threat.range + 1.4)
+      if (distance(arcane.pos, enemy.pos) > threatRange) return highestThreat
+      const projectedDamage = threat.readyDamage + enemy.stats.damage * 2
+      return Math.max(highestThreat, projectedDamage / Math.max(1, arcane.stats.maxHp))
+    }, 0)
+    const repeatedDeathCaution = Math.min(0.16, arcane.deaths * 0.018)
+    const tacticalRetreatThreshold = Math.min(0.74, Math.max(0.38, nearbyBurstThreat + 0.12 + repeatedDeathCaution))
+    const shouldTacticallyDisengage = nearbyBurstThreat > 0 && hpRatio <= tacticalRetreatThreshold
     const effectiveDanger = getEffectiveDangerScore(Math.max(dangerScore, memoryDanger), actionDanger, hpRatio)
     const targetThreatLimit = Math.min(
       isWounded ? 62 : 78,
@@ -3483,7 +3653,8 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
         : undefined
     const weakCamp = getBestJungleCampForArcane(state, arcane, phase === 'early' ? isSupport ? 10 : 6 : isSupport ? 9 : 12, visibleEnemies)
     const economyCamp = getBestJungleCampForArcane(state, arcane, phase === 'early' ? isSupport ? 16 : 9 : isSupport ? 15 : 22, visibleEnemies)
-    const lowHp = hpRatio < 0.42
+    const emergencyRecovery = getArcaneEmergencyRecoveryRatio(state, arcane)
+    const lowHp = hpRatio < Math.max(0.22, 0.36 - emergencyRecovery * 0.6)
     const alreadyPressuringTower = arcane.macroDecision.startsWith('Pressionar torre') || arcane.microDecision.startsWith('Batendo torre')
     const towerThreat = nearest(arcane.pos, state.towers.filter((tower) => tower.team !== arcane.team && tower.hp > 0), 10.5)
     const towerDiveRisk = towerThreat && (!alliedLaneCreepNearTower || hpRatio < (alreadyPressuringTower ? 0.62 : 0.82))
@@ -3496,8 +3667,8 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       !alliedLaneCreepNearTower &&
       (distance(arcane.pos, laneBlocker.pos) <= 25 || nextAdvanceBlockedByTower)
     const needsBaseRecovery = atBase && (
-      arcane.stats.hp < arcane.stats.maxHp * 0.94 ||
-      arcane.stats.mana < arcane.stats.maxMana * 0.82
+      arcane.stats.hp < arcane.stats.maxHp * 0.84 ||
+      arcane.stats.mana < arcane.stats.maxMana * 0.65
     )
     const teamCall = state.teamCalls[arcane.team]
     const teamPlan = state.teamPlans[arcane.team] ?? selectTeamPlan({
@@ -3569,7 +3740,12 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       microDecision = baseThreat.target && 'player' in baseThreat.target
         ? `Defendendo base contra ${baseThreat.target.player}`
         : 'Limpando invasao na base'
-    } else if (lowHp || effectiveDanger >= 68 || (modeWantsRetreat && effectiveDanger >= 48)) {
+    } else if (shouldTacticallyDisengage) {
+      const laneDistance = getLaneDistanceAlongPath(arcane.pos, path)
+      target = formationPoint(getLanePointAtDistance(path, Math.max(0, laneDistance - (8 + repeatedDeathCaution * 30))), arcane.id)
+      macroDecision = 'Segurar rota'
+      microDecision = 'Reposicionando por risco de burst'
+    } else if (lowHp || effectiveDanger >= 68 || (modeWantsRetreat && effectiveDanger >= (emergencyRecovery > 0 ? 60 : 48))) {
       target = ownBase
       macroDecision = 'Recuar'
       microDecision = effectiveDanger >= 68 || modeWantsRetreat ? 'Recuando por perigo alto' : 'Recuando para curar'
@@ -3915,6 +4091,7 @@ export function applyDispelItemIfNeeded(state: SimulationState, arcane: Arcane):
 }
 
 export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Arcane): { arcane: Arcane; used?: string; interruptsDecision?: boolean } {
+  if (hasTimedEffect(state, arcane.id, 'mute')) return { arcane }
   const candidate = getSimpleActiveItemCandidate(state, arcane)
   const active = candidate?.item.active
   if (!candidate || !active) return { arcane }
@@ -3930,10 +4107,10 @@ export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Ar
   if (hasAnyItemTag(tags, ['restore_health', 'heal_over_time', 'healing', 'heal'])) {
     const healing = getActiveItemNumber(active.values, 'health') ?? getActiveItemNumber(active.values, 'heal') ?? 180
     if (hasAnyItemTag(tags, ['team']) || active.target === 'area') {
-      applyHealthToArcanes(state, allyTargets, healing)
+      applyHealthToArcanes(state, allyTargets, healing, arcane.id)
       applied = allyTargets.length > 0
     } else if (allyTargets.some((target) => target.id !== arcane.id)) {
-      applyHealthToArcanes(state, allyTargets.slice(0, 1), healing)
+      applyHealthToArcanes(state, allyTargets.slice(0, 1), healing, arcane.id)
       applied = true
     } else {
       nextArcane = healArcaneDirectly(nextArcane, healing)
@@ -4213,8 +4390,11 @@ export function getSimpleActiveItemAllyTargets(state: SimulationState, arcane: A
 }
 
 export function healArcaneDirectly(arcane: Arcane, amount: number) {
+  const appliedHealing = Math.min(amount, Math.max(0, arcane.stats.maxHp - arcane.stats.hp))
   return {
     ...arcane,
+    healingDone: arcane.healingDone + appliedHealing,
+    healingReceived: arcane.healingReceived + appliedHealing,
     stats: {
       ...arcane.stats,
       hp: Math.min(arcane.stats.maxHp, arcane.stats.hp + amount),
@@ -4232,11 +4412,24 @@ export function restoreManaDirectly(arcane: Arcane, amount: number) {
   }
 }
 
-export function applyHealthToArcanes(state: SimulationState, targets: Arcane[], amount: number) {
+export function applyHealthToArcanes(state: SimulationState, targets: Arcane[], amount: number, sourceArcaneId?: string) {
   const targetIds = new Set(targets.map((target) => target.id))
-  state.arcanes = state.arcanes.map((arcane) => targetIds.has(arcane.id)
-    ? { ...arcane, stats: { ...arcane.stats, hp: Math.min(arcane.stats.maxHp, arcane.stats.hp + amount) } }
-    : arcane)
+  let totalHealing = 0
+  state.arcanes = state.arcanes.map((arcane) => {
+    if (!targetIds.has(arcane.id)) return arcane
+    const appliedHealing = Math.min(amount, Math.max(0, arcane.stats.maxHp - arcane.stats.hp))
+    totalHealing += appliedHealing
+    return {
+      ...arcane,
+      healingReceived: arcane.healingReceived + appliedHealing,
+      stats: { ...arcane.stats, hp: arcane.stats.hp + appliedHealing },
+    }
+  })
+  if (sourceArcaneId && totalHealing > 0) {
+    state.arcanes = state.arcanes.map((arcane) => arcane.id === sourceArcaneId
+      ? { ...arcane, healingDone: arcane.healingDone + totalHealing }
+      : arcane)
+  }
 }
 
 export function applyManaToArcanes(state: SimulationState, targets: Arcane[], amount: number) {
@@ -4574,21 +4767,52 @@ export function getArcaneStatModifierEffects(state: SimulationState, arcane: Arc
   ))
 }
 
+export function getArcanePassiveCombatModifiers(state: SimulationState, arcane: Arcane) {
+  if (hasTimedEffect(state, arcane.id, 'break')) {
+    return { flatDamage: 0, damagePct: 0, armorFlat: 0, attackSpeedPct: 0, lifestealPct: 0, incomingDamagePct: 0 }
+  }
+
+  return (getHeroDefinition(arcane.heroDefinitionId).skills ?? [])
+    .filter((skill) => skill.kind === 'passive')
+    .map((skill) => ({ skill, level: getSimpleSkillLevel(arcane, skill) }))
+    .filter(({ level }) => level > 0)
+    .reduce((modifiers, { skill, level }) => {
+      const profile = getSkillEffectProfile(skill, level)
+      const hasCrit = profile.critChance > 0 && profile.critMultiplier > 1
+      const expectedCritPct = hasCrit ? profile.critChance * (profile.critMultiplier - 1) : 0
+      const flatDamage = !hasCrit && profile.damage > 0 ? Math.min(55, profile.damage * 0.12) : 0
+      const auraDamage = hasSkillTag(skill, ['damage_aura', 'vengeance_aura', 'aura']) ? 0.025 * level : 0
+      const defensiveReduction = hasSkillTag(skill, ['dispersion', 'untouchable', 'damage_reduction', 'evasion'])
+        ? Math.min(0.28, 0.06 + level * 0.035)
+        : 0
+      return {
+        flatDamage: modifiers.flatDamage + flatDamage,
+        damagePct: modifiers.damagePct + expectedCritPct + auraDamage,
+        armorFlat: modifiers.armorFlat + profile.armorDelta,
+        attackSpeedPct: modifiers.attackSpeedPct + profile.attackSpeedPct,
+        lifestealPct: Math.max(modifiers.lifestealPct, profile.lifestealPct),
+        incomingDamagePct: Math.max(modifiers.incomingDamagePct, defensiveReduction),
+      }
+    }, { flatDamage: 0, damagePct: 0, armorFlat: 0, attackSpeedPct: 0, lifestealPct: 0, incomingDamagePct: 0 })
+}
+
 export function getEffectiveArcaneDamage(state: SimulationState, arcane: Arcane) {
   const modifiers = getArcaneStatModifierEffects(state, arcane)
+  const passive = getArcanePassiveCombatModifiers(state, arcane)
   return applyFlatAndPercentModifiers(
     arcane.stats.damage,
-    [],
-    modifiers.map((effect) => effect.modifiers?.damagePct ?? 0),
+    [passive.flatDamage],
+    [...modifiers.map((effect) => effect.modifiers?.damagePct ?? 0), passive.damagePct],
   )
 }
 
 export function getEffectiveArcaneDamageRange(state: SimulationState, arcane: Arcane) {
   const modifiers = getArcaneStatModifierEffects(state, arcane)
-  const percents = modifiers.map((effect) => effect.modifiers?.damagePct ?? 0)
+  const passive = getArcanePassiveCombatModifiers(state, arcane)
+  const percents = [...modifiers.map((effect) => effect.modifiers?.damagePct ?? 0), passive.damagePct]
   return {
-    min: applyFlatAndPercentModifiers(arcane.stats.damageMin, [], percents),
-    max: applyFlatAndPercentModifiers(arcane.stats.damageMax, [], percents),
+    min: applyFlatAndPercentModifiers(arcane.stats.damageMin, [passive.flatDamage], percents),
+    max: applyFlatAndPercentModifiers(arcane.stats.damageMax, [passive.flatDamage], percents),
   }
 }
 
@@ -4599,9 +4823,10 @@ export function getArcaneDamageRangeLabel(state: SimulationState, arcane: Arcane
 
 export function getEffectiveArcaneArmor(state: SimulationState, arcane: Arcane) {
   const modifiers = getArcaneStatModifierEffects(state, arcane)
+  const passive = getArcanePassiveCombatModifiers(state, arcane)
   return applyFlatAndPercentModifiers(
     arcane.stats.armor,
-    modifiers.map((effect) => effect.modifiers?.armorFlat ?? 0),
+    [...modifiers.map((effect) => effect.modifiers?.armorFlat ?? 0), passive.armorFlat],
   )
 }
 
@@ -4616,7 +4841,8 @@ export function getEffectiveArcaneMoveSpeed(state: SimulationState, arcane: Arca
 
 export function getEffectiveArcaneAttackCooldown(state: SimulationState, arcane: Arcane) {
   const modifiers = getArcaneStatModifierEffects(state, arcane)
-  const attackSpeedPct = modifiers.reduce((sum, effect) => sum + (effect.modifiers?.attackSpeedPct ?? 0), 0)
+  const passive = getArcanePassiveCombatModifiers(state, arcane)
+  const attackSpeedPct = modifiers.reduce((sum, effect) => sum + (effect.modifiers?.attackSpeedPct ?? 0), passive.attackSpeedPct)
   return arcane.stats.attackSpeed / Math.max(0.2, 1 + attackSpeedPct)
 }
 
@@ -4631,8 +4857,11 @@ export function getArcaneBarrierAmount(state: SimulationState, arcane: Arcane) {
 }
 
 export function resolveIncomingArcaneDamage(state: SimulationState, target: Arcane, damage: number, damageType: CombatDamageType) {
+  const passive = getArcanePassiveCombatModifiers(state, target)
+  const temporaryReduction = getArcaneStatModifierEffects(state, target)
+    .reduce((sum, effect) => sum + (effect.modifiers?.incomingDamagePct ?? 0), 0)
   const resolvedDamage = resolveDamage({
-    baseDamage: damage,
+    baseDamage: damage * (1 - Math.min(0.8, passive.incomingDamagePct + temporaryReduction)),
     damageType,
     targetArmor: getEffectiveArcaneArmor(state, target),
     targetMagicResistance: target.stats.magicResistance,
@@ -4646,7 +4875,19 @@ export function hasTimedEffect(state: SimulationState, targetId: string, kind: T
 }
 
 export function isArcaneStunned(state: SimulationState, arcane: Arcane) {
-  return hasTimedEffect(state, arcane.id, 'stun')
+  return hasTimedEffect(state, arcane.id, 'stun') ||
+    hasTimedEffect(state, arcane.id, 'hex') ||
+    hasTimedEffect(state, arcane.id, 'sleep') ||
+    hasTimedEffect(state, arcane.id, 'fear') ||
+    hasTimedEffect(state, arcane.id, 'taunt')
+}
+
+export function isArcaneMovementDisabled(state: SimulationState, arcane: Arcane) {
+  return isArcaneStunned(state, arcane) || hasTimedEffect(state, arcane.id, 'root')
+}
+
+export function isArcaneAttackDisabled(state: SimulationState, arcane: Arcane) {
+  return isArcaneStunned(state, arcane) || hasTimedEffect(state, arcane.id, 'disarm')
 }
 
 export function processTimedEffects(state: SimulationState): SimulationState {
@@ -4656,21 +4897,35 @@ export function processTimedEffects(state: SimulationState): SimulationState {
       return
     }
 
+    const target = state.arcanes.find((arcane) => arcane.id === effect.targetId && arcane.stats.hp > 0 && arcane.respawn <= state.time)
+    if (!target) return
+    const sourceArcane = state.arcanes.find((arcane) => effect.sourceId === arcane.id || effect.sourceId.startsWith(`${arcane.id}-`))
+    const rawTickValue = effect.value * effect.stacks
+    const resolvedTickValue = effect.kind === 'dot'
+      ? resolveIncomingArcaneDamage(state, target, rawTickValue, effect.damageType ?? 'magical')
+      : rawTickValue
+    const appliedValue = effect.kind === 'dot'
+      ? Math.min(target.stats.hp, resolvedTickValue)
+      : Math.min(resolvedTickValue, Math.max(0, target.stats.maxHp - target.stats.hp))
+
     state.arcanes = state.arcanes.map((arcane) => {
-      if (arcane.id !== effect.targetId || arcane.stats.hp <= 0 || arcane.respawn > state.time) return arcane
-      const rawTickValue = effect.value * effect.stacks
-      const tickValue = effect.kind === 'dot'
-        ? resolveIncomingArcaneDamage(state, arcane, rawTickValue, effect.damageType ?? 'magical')
-        : rawTickValue
-      const nextHp = effect.kind === 'dot'
-        ? Math.max(0, arcane.stats.hp - tickValue)
-        : Math.min(arcane.stats.maxHp, arcane.stats.hp + tickValue)
+      const isTarget = arcane.id === target.id
+      const isSource = arcane.id === sourceArcane?.id
+      if (!isTarget && !isSource) return arcane
       return {
         ...arcane,
-        lastHitBy: effect.kind === 'dot'
+        lastHitBy: isTarget && effect.kind === 'dot'
           ? { id: effect.sourceId, label: effect.sourceName, team: effect.sourceTeam }
           : arcane.lastHitBy,
-        stats: { ...arcane.stats, hp: nextHp },
+        damageDealt: arcane.damageDealt + (isSource && effect.kind === 'dot' ? appliedValue : 0),
+        heroDamageDealt: arcane.heroDamageDealt + (isSource && effect.kind === 'dot' ? appliedValue : 0),
+        damageTaken: arcane.damageTaken + (isTarget && effect.kind === 'dot' ? appliedValue : 0),
+        healingDone: arcane.healingDone + (isSource && effect.kind === 'hot' ? appliedValue : 0),
+        healingReceived: arcane.healingReceived + (isTarget && effect.kind === 'hot' ? appliedValue : 0),
+        stats: isTarget ? {
+          ...arcane.stats,
+          hp: effect.kind === 'dot' ? arcane.stats.hp - appliedValue : arcane.stats.hp + appliedValue,
+        } : arcane.stats,
       }
     })
     tickedEffectIds.add(effect.id)
@@ -4692,6 +4947,7 @@ export function addTimedEffect(state: SimulationState, target: Arcane, effect: O
     ? finalDebuffDuration(effect.duration, [target.stats.statusResistance / 100])
     : effect.duration
   const id = `${effect.kind}-${target.id}-${effect.sourceId}`
+  const existing = state.timedEffects.find((current) => current.id === id)
   const timedEffect: TimedEffect = {
     id,
     targetId: target.id,
@@ -4706,7 +4962,9 @@ export function addTimedEffect(state: SimulationState, target: Arcane, effect: O
     barrierRemaining: effect.kind === 'barrier' ? effect.value : effect.barrierRemaining,
     damageType: effect.damageType,
     tickInterval: effect.tickInterval,
-    nextTickAt: effect.kind === 'dot' || effect.kind === 'hot' ? state.time + (effect.tickInterval ?? 1) : undefined,
+    nextTickAt: effect.kind === 'dot' || effect.kind === 'hot'
+      ? existing?.nextTickAt ?? state.time + (effect.tickInterval ?? 1)
+      : undefined,
     dispelType: effect.dispelType ?? getDefaultDispelType(effect.kind, effect.polarity),
     createdAt: state.time,
     expiresAt: state.time + duration,
@@ -4720,8 +4978,8 @@ export function addTimedEffect(state: SimulationState, target: Arcane, effect: O
 
 export function getDefaultDispelType(kind: TimedEffect['kind'], polarity: TimedEffect['polarity']): DispelType {
   if (polarity === 'positive') return kind === 'barrier' || kind === 'buff' || kind === 'hot' ? 'basic' : 'none'
-  if (kind === 'stun') return 'strong'
-  if (kind === 'slow' || kind === 'silence' || kind === 'dot') return 'basic'
+  if (kind === 'stun' || kind === 'hex' || kind === 'sleep' || kind === 'fear' || kind === 'taunt') return 'strong'
+  if (kind === 'slow' || kind === 'silence' || kind === 'root' || kind === 'disarm' || kind === 'break' || kind === 'mute' || kind === 'dot') return 'basic'
   return 'basic'
 }
 
@@ -5137,7 +5395,7 @@ export function getUnitHitboxRadius(entity: Arcane | Creep | Camp | Boss) {
 }
 
 export function isArcaneSilenced(state: SimulationState, arcane: Arcane) {
-  return hasTimedEffect(state, arcane.id, 'silence')
+  return hasTimedEffect(state, arcane.id, 'silence') || hasTimedEffect(state, arcane.id, 'hex') || hasTimedEffect(state, arcane.id, 'sleep')
 }
 
 export function hasAnyCastableSkill(state: SimulationState, arcane: Arcane) {
@@ -5159,12 +5417,22 @@ export function hasAnyCastableSkill(state: SimulationState, arcane: Arcane) {
 export function tryCastSimpleSkill(state: SimulationState, arcane: Arcane, fallbackTarget: CombatTarget | undefined) {
   if (isArcaneSilenced(state, arcane)) return false
 
+  const situation = getPrimarySkillUsageSituation({
+    phase: getGamePhase(state.time),
+    aiMode: arcane.aiMode,
+    macroDecision: arcane.macroDecision,
+    hpRatio: arcane.stats.hp / Math.max(1, arcane.stats.maxHp),
+  })
   const skills = getHeroDefinition(arcane.heroDefinitionId).skills ?? []
   const usableSkills = skills
     .filter((skill) => skill.kind !== 'passive')
     .map((skill) => ({ skill, level: getSimpleSkillLevel(arcane, skill) }))
     .filter(({ skill, level }) => level > 0 && arcane.stats.mana >= getSimpleSkillManaCost(arcane, skill, level) && (arcane.itemCooldowns[skill.id] ?? 0) <= state.time)
-    .sort((a, b) => getSimpleSkillPriority(b.skill) - getSimpleSkillPriority(a.skill))
+    .sort((a, b) => (
+      getSimpleSkillPriority(b.skill) + getSkillAiUsageScore(b.skill, situation) * 0.45
+    ) - (
+      getSimpleSkillPriority(a.skill) + getSkillAiUsageScore(a.skill, situation) * 0.45
+    ))
 
   for (const { skill, level } of usableSkills) {
     if (castSimpleSkill(state, arcane, skill, level, fallbackTarget)) {
@@ -5180,6 +5448,9 @@ export function tryCastSimpleSkill(state: SimulationState, arcane: Arcane, fallb
 }
 
 export function getSimpleSkillLevel(arcane: Arcane, skill: HeroSkillDefinition) {
+  if (skill.category === 'innate') {
+    return Math.min(skill.maxLevel ?? 1, Math.max(1, Math.floor((arcane.stats.level + 4) / 5)))
+  }
   return arcane.skillLevels[skill.key] ?? 0
 }
 
@@ -5188,19 +5459,24 @@ export function getAvailableSkillPointsForLevel(level: number) {
 }
 
 export function getMaxSkillLevelAllowed(skill: HeroSkillDefinition, heroLevel: number) {
-  if (skill.kind === 'passive' && skill.target === 'passive' && skill.key === 'R') return 0
-  if (skill.key === 'R') {
-    if (heroLevel >= 18) return 3
-    if (heroLevel >= 12) return 2
-    if (heroLevel >= 6) return 1
+  if (skill.category === 'innate' || skill.learnable === false) return 0
+  const maxLevel = skill.maxLevel ?? (isUltimateSkill(skill) ? 3 : 4)
+  if (isUltimateSkill(skill)) {
+    if (heroLevel >= 18) return Math.min(maxLevel, 3)
+    if (heroLevel >= 12) return Math.min(maxLevel, 2)
+    if (heroLevel >= 6) return Math.min(maxLevel, 1)
     return 0
   }
 
-  return Math.min(4, Math.ceil(heroLevel / 2))
+  return Math.min(maxLevel, Math.ceil(heroLevel / 2))
+}
+
+export function isUltimateSkill(skill: HeroSkillDefinition) {
+  return skill.key === 'R' || (skill.category === 'standard' && skill.maxLevel === 3)
 }
 
 export function getSpentSkillPoints(arcane: Pick<Arcane, 'skillLevels' | 'statBonusLevels'>) {
-  return Object.values(arcane.skillLevels).reduce((total, level) => total + (level ?? 0), 0) + arcane.statBonusLevels
+  return Object.values(arcane.skillLevels).reduce<number>((total, level) => total + (level ?? 0), 0) + arcane.statBonusLevels
 }
 
 export function allocateArcaneSkillPoints(arcane: Arcane): Arcane {
@@ -5265,9 +5541,9 @@ export function getSkillLevelUpScore(arcane: Arcane, skill: HeroSkillDefinition)
   const sustainScore = ['heal', 'healer', 'regen', 'shield', 'barrier', 'spell_parry'].some((tag) => tags.has(tag)) ? (isSupport ? 22 : 9) : 0
   const damageScore = skill.damageType !== 'none' || getSimpleSkillNumericValue(skill, 'damage', currentLevel + 1, 0) > 0 ? (isCore || role === 'Greedy Support' ? 18 : 11) : 0
   const mobilityScore = ['mobility', 'escape', 'haste'].some((tag) => tags.has(tag)) ? (role === 'Safe Lane' || role === 'Mid' ? 13 : 8) : 0
-  const ultimateScore = skill.key === 'R' ? 34 : 0
+  const ultimateScore = isUltimateSkill(skill) ? 34 : 0
   const levelCurveScore = currentLevel === 0 ? 16 : 10 - currentLevel * 1.5
-  const laningNeedScore = arcane.stats.level <= 5 && skill.key !== 'R' ? 9 : 0
+  const laningNeedScore = arcane.stats.level <= 5 && !isUltimateSkill(skill) ? 9 : 0
 
   return ultimateScore + controlScore + sustainScore + damageScore + mobilityScore + levelCurveScore + laningNeedScore
 }
@@ -5288,12 +5564,12 @@ export function getSimpleSkillPriority(skill: HeroSkillDefinition) {
   const controlScore = ['stun', 'disable', 'silence', 'slow', 'taunt'].some((tag) => tags.has(tag)) ? 16 : 0
   const sustainScore = ['heal', 'healer', 'regen', 'shield', 'barrier', 'spell_parry'].some((tag) => tags.has(tag)) ? 12 : 0
   const damageScore = skill.damageType !== 'none' || getSimpleSkillNumericValue(skill, 'damage', 1, 0) > 0 ? 10 : 0
-  const ultimateScore = skill.key === 'R' ? 20 : 0
+  const ultimateScore = isUltimateSkill(skill) ? 20 : 0
   return ultimateScore + controlScore + sustainScore + damageScore
 }
 
 export function getSimpleSkillCooldown(skill: HeroSkillDefinition, level: number) {
-  const fallback = skill.key === 'R' ? 70 : 13
+  const fallback = isUltimateSkill(skill) ? 70 : 13
   return Math.max(2.5, getSimpleSkillNumericValue(skill, 'cooldown', level, fallback))
 }
 
@@ -5302,15 +5578,16 @@ export function getSimpleSkillManaCost(arcane: Arcane, skill: HeroSkillDefinitio
   if (Number.isFinite(explicitCost)) return explicitCost
 
   const roleDiscount = arcane.role.includes('Support') ? 0.92 : arcane.role === 'Mid' ? 0.96 : 1
-  const baseCost = skill.key === 'R'
+  const baseCost = isUltimateSkill(skill)
     ? 140 + level * 45
     : 48 + level * 18 + (skill.damageType === 'none' ? 8 : 0)
-  const maxManaGuard = Math.max(28, arcane.stats.maxMana * (skill.key === 'R' ? 0.32 : 0.18))
+  const maxManaGuard = Math.max(28, arcane.stats.maxMana * (isUltimateSkill(skill) ? 0.32 : 0.18))
   return Math.round(Math.min(baseCost * roleDiscount, maxManaGuard))
 }
 
 export function getSimpleSkillRange(arcane: Arcane, skill: HeroSkillDefinition, level: number) {
   if (skill.target === 'self' || skill.target === 'passive') return 0
+  if (isConfirmedGlobalSkill(skill)) return 200
   const importedRange = getSimpleSkillNumericValue(skill, 'range', level, 620)
   const minimumRange = arcane.stats.attackType === 'ranged' ? 3.4 : 2.65
 
@@ -5340,10 +5617,16 @@ export function castSimpleSkill(
   level: number,
   fallbackTarget: CombatTarget | undefined,
 ) {
+  if (isConfirmedGlobalSkill(skill) && !shouldCastGlobalSkill(state, arcane, skill)) return false
   const target = getSimpleSkillTarget(state, arcane, skill, level, fallbackTarget)
   if (!target) return false
+  if ('player' in target && target.team !== arcane.team && !shouldCommitOffensiveSkill(state, arcane, target, skill)) {
+    return false
+  }
   const manaCost = getSimpleSkillManaCost(arcane, skill, level)
   if (arcane.stats.mana < manaCost) return false
+  const profile = getSkillEffectProfile(skill, level)
+  const affectedTargets = getSimpleSkillAffectedTargets(state, arcane, skill, profile, target)
 
   const source: CombatSource = {
     id: `${arcane.id}-${skill.id}`,
@@ -5352,25 +5635,62 @@ export function castSimpleSkill(
     damageType: getSimpleSkillDamageType(skill),
   }
 
-  if ('player' in target && isPositiveSimpleSkill(skill)) {
-    applySimplePositiveSkill(state, arcane, skill, level, target)
+  if (isPositiveSimpleSkill(skill)) {
+    const alliedTargets = affectedTargets.filter((candidate): candidate is Arcane => 'player' in candidate && candidate.team === arcane.team)
+    if (alliedTargets.length === 0) return false
+    alliedTargets.forEach((ally) => applySimplePositiveSkill(state, arcane, skill, level, ally))
+    applySimpleSkillMobility(state, arcane, target, skill, profile)
     addSimpleSkillEffect(state, arcane, target)
     finishSimpleSkillCast(state, arcane, skill, manaCost, target)
     return true
   }
 
   const damage = getSimpleSkillDamage(arcane, skill, level)
-  if (damage > 0 && skill.damageType !== 'none') {
-    if ('player' in target && target.team !== arcane.team) {
-      applyTowerAggro(state, target.team, arcane.id)
-      applyCreepAggro(state, target.team, arcane.id)
+  affectedTargets.forEach((affectedTarget) => {
+    const expectedCritMultiplier = skill.flags?.canCrit && profile.critChance > 0
+      ? 1 + profile.critChance * (profile.critMultiplier - 1)
+      : 1
+    const executeMultiplier = 'player' in affectedTarget && hasAnySimpleSkillTag(skill, ['execute'])
+      ? getSimpleSkillExecuteMultiplier(affectedTarget, level)
+      : 1
+    const globalDamageScale = profile.isGlobal ? (isUltimateSkill(skill) ? 0.55 : 0.3) : 1
+    const directDamage = (profile.isDamageOverTime ? damage * 0.35 : damage) * expectedCritMultiplier * executeMultiplier * globalDamageScale
+    if (directDamage > 0 && skill.damageType !== 'none') {
+      if ('player' in affectedTarget && affectedTarget.team !== arcane.team) {
+        applyTowerAggro(state, affectedTarget.team, arcane.id)
+        applyCreepAggro(state, affectedTarget.team, arcane.id)
+      }
+      damageEntity(state, affectedTarget.id, directDamage, source)
+      if (skill.flags?.canSpellLifesteal && 'player' in affectedTarget) {
+        const healing = directDamage * 0.1
+        arcane.stats.hp = Math.min(arcane.stats.maxHp, arcane.stats.hp + healing)
+        arcane.healingDone += healing
+        arcane.healingReceived += healing
+      }
     }
-    damageEntity(state, target.id, damage, source)
-  }
 
-  if ('player' in target && target.team !== arcane.team) {
-    applySimpleNegativeSkillEffects(state, arcane, skill, level, target)
-  }
+    if ('player' in affectedTarget && affectedTarget.team !== arcane.team) {
+      applySimpleNegativeSkillEffects(state, arcane, skill, level, affectedTarget)
+      applySimpleSkillManaEffect(state, arcane, affectedTarget, profile)
+      applySimpleSkillDispel(state, skill, affectedTarget, 'positive')
+      if (profile.isDamageOverTime && damage > 0) {
+        addTimedEffect(state, affectedTarget, {
+          sourceId: source.id,
+          sourceName: source.label,
+          sourceTeam: source.team,
+          kind: 'dot',
+          polarity: 'negative',
+          value: (damage * 0.65 * genericHeroSkillDamageMultiplier) / Math.max(1, profile.duration),
+          damageType: getSimpleSkillDamageType(skill),
+          tickInterval: 1,
+          duration: profile.duration,
+        })
+      }
+    }
+  })
+
+  applySimpleSkillMobility(state, arcane, target, skill, profile)
+  applySimpleSkillSummonPressure(state, arcane, skill, profile)
 
   if (isBoss(target)) {
     state.boss = {
@@ -5381,9 +5701,243 @@ export function castSimpleSkill(
   }
 
   addSimpleSkillEffect(state, arcane, target)
-  const casted = damage > 0 || ('player' in target && hasSimpleStatusTag(skill))
+  const casted = damage > 0 || affectedTargets.some((candidate) => 'player' in candidate && hasSimpleStatusTag(skill)) || profile.manaDelta !== 0 || profile.isMobility || profile.summonCount > 0 || hasAnySimpleSkillTag(skill, ['purge', 'dispel'])
   if (casted) finishSimpleSkillCast(state, arcane, skill, manaCost, target)
   return casted
+}
+
+export function applySkillAuraEffects(state: SimulationState) {
+  state.arcanes
+    .filter((holder) => holder.stats.hp > 0 && holder.respawn <= state.time && !hasTimedEffect(state, holder.id, 'break'))
+    .forEach((holder) => {
+      const auraSkills = (getHeroDefinition(holder.heroDefinitionId).skills ?? [])
+        .filter((skill) => skill.kind === 'passive' && hasSkillTag(skill, ['aura', 'aura_dot', 'damage_aura', 'vengeance_aura', 'mana_aura']))
+        .map((skill) => ({ skill, level: getSimpleSkillLevel(holder, skill) }))
+        .filter(({ level }) => level > 0)
+
+      auraSkills.forEach(({ skill, level }) => {
+        const allies = state.arcanes.filter((arcane) => arcane.team === holder.team && arcane.stats.hp > 0 && arcane.respawn <= state.time && distance(arcane.pos, holder.pos) <= 9)
+        const enemies = state.arcanes.filter((arcane) => arcane.team !== holder.team && arcane.stats.hp > 0 && arcane.respawn <= state.time && distance(arcane.pos, holder.pos) <= 9)
+
+        if (hasSkillTag(skill, ['aura_dot'])) {
+          enemies.forEach((enemy) => addTimedEffect(state, enemy, {
+            sourceId: `${holder.id}-${skill.id}`,
+            sourceName: `${holder.player}: ${skill.name}`,
+            sourceTeam: holder.team,
+            kind: 'dot',
+            polarity: 'negative',
+            value: 3 + level * 2.5,
+            damageType: skill.damageType === 'none' ? 'magical' : getSimpleSkillDamageType(skill),
+            tickInterval: 1,
+            duration: 0.85,
+            dispelType: 'none',
+          }))
+          return
+        }
+
+        allies.forEach((ally) => {
+          if (hasSkillTag(skill, ['mana_aura'])) {
+            ally.stats.mana = Math.min(ally.stats.maxMana, ally.stats.mana + simulationFrameSeconds * (0.65 + level * 0.35))
+          }
+          addTimedEffect(state, ally, {
+            sourceId: `${holder.id}-${skill.id}`,
+            sourceName: `${holder.player}: ${skill.name}`,
+            sourceTeam: holder.team,
+            kind: 'buff',
+            polarity: 'positive',
+            value: 1,
+            modifiers: {
+              damagePct: 0.015 + level * 0.012,
+              attackSpeedPct: 0.012 + level * 0.01,
+            },
+            duration: 0.85,
+            dispelType: 'none',
+          })
+        })
+      })
+    })
+}
+
+export function getSimpleSkillAffectedTargets(
+  state: SimulationState,
+  caster: Arcane,
+  skill: HeroSkillDefinition,
+  profile: ReturnType<typeof getSkillEffectProfile>,
+  primaryTarget: CombatTarget,
+): CombatTarget[] {
+  if ((!profile.isArea && !profile.isGlobal) || !('player' in primaryTarget)) return [primaryTarget]
+
+  const positive = isPositiveSimpleSkill(skill)
+  const radius = profile.isGlobal ? Number.POSITIVE_INFINITY : Math.max(2.5, profile.radius)
+  const center = profile.isGlobal ? caster.pos : primaryTarget.pos
+  const candidates = state.arcanes.filter((candidate) => (
+    candidate.stats.hp > 0 &&
+    candidate.respawn <= state.time &&
+    (positive ? candidate.team === caster.team : candidate.team !== caster.team) &&
+    (positive || !profile.isGlobal || hasAnySimpleSkillTag(skill, ['global_silence']) || isPointVisibleToTeam(state, caster.team, candidate.pos)) &&
+    distance(candidate.pos, center) <= radius
+  ))
+  return candidates.length > 0 ? candidates : [primaryTarget]
+}
+
+export function applySimpleSkillManaEffect(
+  state: SimulationState,
+  caster: Arcane,
+  target: Arcane,
+  profile: ReturnType<typeof getSkillEffectProfile>,
+) {
+  if (profile.manaDelta === 0) return
+  const targetManaBefore = target.stats.mana
+  target.stats.mana = Math.max(0, Math.min(target.stats.maxMana, target.stats.mana + profile.manaDelta))
+  if (profile.manaDelta < 0) {
+    const burnedMana = targetManaBefore - target.stats.mana
+    if (burnedMana > 0) {
+      damageEntity(state, target.id, burnedMana * 0.35, {
+        id: `${caster.id}-mana-burn`,
+        label: `${caster.player}: Mana Burn`,
+        team: caster.team,
+        damageType: 'magical',
+      })
+    }
+  }
+}
+
+export function applySimpleSkillMobility(
+  _state: SimulationState,
+  caster: Arcane,
+  target: CombatTarget,
+  skill: HeroSkillDefinition,
+  profile: ReturnType<typeof getSkillEffectProfile>,
+) {
+  if (!profile.isMobility || skill.target === 'self' || distance(caster.pos, target.pos) < 0.5) return
+  const travel = Math.min(6.5, getSimpleSkillRange(caster, skill, getSimpleSkillLevel(caster, skill)) * 0.78)
+  caster.pos = clampToMapBounds(moveToward(caster.pos, target.pos, travel))
+  caster.target = caster.pos
+}
+
+export function applySimpleSkillDisplacement(caster: Arcane, target: Arcane, skill: HeroSkillDefinition, level: number) {
+  const currentDistance = distance(caster.pos, target.pos)
+  if (currentDistance < 0.2) return
+
+  if (hasAnySimpleSkillTag(skill, ['hook', 'hookshot', 'pull', 'drag'])) {
+    const pullDistance = Math.min(currentDistance - 0.1, 2.8 + level * 0.55)
+    target.pos = clampToMapBounds(moveToward(target.pos, caster.pos, Math.max(0, pullDistance)))
+    target.target = target.pos
+    return
+  }
+
+  if (hasAnySimpleSkillTag(skill, ['knockback', 'push'])) {
+    const pushDistance = 2.2 + level * 0.45
+    const directionX = (target.pos.x - caster.pos.x) / currentDistance
+    const directionY = (target.pos.y - caster.pos.y) / currentDistance
+    target.pos = clampToMapBounds({
+      x: target.pos.x + directionX * pushDistance,
+      y: target.pos.y + directionY * pushDistance,
+    })
+    target.target = target.pos
+  }
+}
+
+export function getSimpleSkillExecuteMultiplier(target: Arcane, level: number) {
+  const hpRatio = target.stats.hp / Math.max(1, target.stats.maxHp)
+  const threshold = Math.min(0.42, 0.24 + level * 0.04)
+  return hpRatio <= threshold ? 1.55 : 1
+}
+
+export function shouldCastGlobalSkill(state: SimulationState, caster: Arcane, skill: HeroSkillDefinition) {
+  const allies = state.arcanes.filter((arcane) => arcane.team === caster.team && arcane.stats.hp > 0 && arcane.respawn <= state.time)
+  const enemies = state.arcanes.filter((arcane) => (
+    arcane.team !== caster.team &&
+    arcane.stats.hp > 0 &&
+    arcane.respawn <= state.time &&
+    isPointVisibleToTeam(state, caster.team, arcane.pos)
+  ))
+  const positive = isPositiveSimpleSkill(skill) || hasAnySimpleSkillTag(skill, ['global_stealth', 'stampede'])
+
+  if (positive) {
+    const wounded = allies.filter((ally) => ally.stats.hp / Math.max(1, ally.stats.maxHp) < 0.65)
+    const critical = wounded.some((ally) => ally.stats.hp / Math.max(1, ally.stats.maxHp) < 0.34)
+    const teamfight = enemies.filter((enemy) => allies.some((ally) => distance(ally.pos, enemy.pos) <= 11)).length >= 2
+    return critical || wounded.length >= 2 || teamfight
+  }
+
+  const engagedEnemies = enemies.filter((enemy) => allies.some((ally) => distance(ally.pos, enemy.pos) <= 11))
+  const vulnerableEnemy = enemies.some((enemy) => enemy.stats.hp / Math.max(1, enemy.stats.maxHp) < 0.28)
+  const committed = caster.aiMode === 'join_fight' || caster.aiMode === 'finish_enemy' || caster.macroDecision.includes('Lutar')
+  const globalMobility = hasAnySimpleSkillTag(skill, ['global_charge', 'global_recall']) || getSkillEffectProfile(skill, getSimpleSkillLevel(caster, skill)).isMobility
+  if (globalMobility) return committed && engagedEnemies.length >= 1
+  if (isUltimateSkill(skill)) return engagedEnemies.length >= 2 || (committed && engagedEnemies.length >= 1) || vulnerableEnemy
+  return engagedEnemies.length >= 2
+}
+
+export function applySimpleSkillDispel(
+  state: SimulationState,
+  skill: HeroSkillDefinition,
+  target: Arcane,
+  polarity: TimedEffect['polarity'],
+) {
+  if (!hasAnySimpleSkillTag(skill, ['purge', 'dispel', 'cleanse'])) return 0
+  const power: DispelPower = hasAnySimpleSkillTag(skill, ['strong_dispel', 'strong_cleanse']) ? 'strong' : 'basic'
+  return dispelTimedEffects(state, target.id, power, polarity)
+}
+
+export function applySimpleSkillSummonPressure(
+  state: SimulationState,
+  caster: Arcane,
+  skill: HeroSkillDefinition,
+  profile: ReturnType<typeof getSkillEffectProfile>,
+) {
+  if (profile.summonCount <= 0) return
+  addTimedEffect(state, caster, {
+    sourceId: `${caster.id}-${skill.id}-summons`,
+    sourceName: `${skill.name}: summons`,
+    sourceTeam: caster.team,
+    kind: 'buff',
+    polarity: 'positive',
+    value: profile.summonCount,
+    modifiers: {
+      damagePct: Math.min(0.32, 0.045 * profile.summonCount),
+      attackSpeedPct: Math.min(0.24, 0.035 * profile.summonCount),
+    },
+    duration: profile.summonDuration || profile.duration,
+  })
+}
+
+export function shouldCommitOffensiveSkill(
+  state: SimulationState,
+  arcane: Arcane,
+  target: Arcane,
+  skill: HeroSkillDefinition,
+) {
+  if (isPositiveSimpleSkill(skill)) return true
+
+  const committedDecision = arcane.aiMode === 'join_fight' ||
+    arcane.aiMode === 'finish_enemy' ||
+    arcane.macroDecision.startsWith('Criar vantagem') ||
+    arcane.macroDecision.startsWith('Pressionar inimigo') ||
+    arcane.macroDecision.startsWith('Lutar em equipe')
+  if (committedDecision) return true
+
+  const nearbyAllies = state.arcanes.filter((candidate) => (
+    candidate.team === arcane.team &&
+    candidate.stats.hp > 0 &&
+    candidate.respawn <= state.time &&
+    distance(candidate.pos, target.pos) <= 12
+  )).length
+  const nearbyEnemies = state.arcanes.filter((candidate) => (
+    candidate.team !== arcane.team &&
+    candidate.stats.hp > 0 &&
+    candidate.respawn <= state.time &&
+    distance(candidate.pos, target.pos) <= 12
+  )).length
+  if (nearbyAllies >= 2 && nearbyEnemies >= 2) return true
+
+  const phase = getGamePhase(state.time)
+  const targetHpRatio = target.stats.hp / Math.max(1, target.stats.maxHp)
+  const manaRatio = arcane.stats.mana / Math.max(1, arcane.stats.maxMana)
+  const executeThreshold = phase === 'early' ? 0.56 : phase === 'mid' ? 0.68 : 0.76
+
+  return targetHpRatio <= executeThreshold && manaRatio >= 0.3
 }
 
 export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, skill: HeroSkillDefinition, manaCost: number, target: CombatTarget) {
@@ -5404,6 +5958,17 @@ export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, sk
       expiresAt: state.time + 1.15,
     },
   ]
+  if (hasAnySimpleSkillTag(skill, ['channel', 'aoe_channel', 'channel_disable'])) {
+    const channelDuration = Math.min(4, Math.max(0.8, getSkillEffectProfile(skill, getSimpleSkillLevel(arcane, skill)).duration * 0.45))
+    arcane.channeling = {
+      kind: 'skill',
+      target: target.pos,
+      startedAt: state.time,
+      completesAt: state.time + channelDuration,
+      label: skill.name,
+      effectLabel: `${skill.name} concluida`,
+    }
+  }
 }
 
 export function getSimpleSkillTarget(
@@ -5428,7 +5993,7 @@ export function getSimpleSkillTarget(
 
   if (
     fallbackTarget &&
-    canTargetWithSimpleDamageSkill(arcane, fallbackTarget) &&
+    canTargetWithSimpleDamageSkill(arcane, skill, fallbackTarget) &&
     distance(arcane.pos, fallbackTarget.pos) <= range + getEntityCollisionRadius(fallbackTarget)
   ) {
     return fallbackTarget
@@ -5443,7 +6008,12 @@ export function getSimplePositiveSkillTarget(
   skill: HeroSkillDefinition,
   level: number,
 ): Arcane | undefined {
-  const range = skill.target === 'self' ? 0 : getSimpleSkillRange(arcane, skill, level)
+  if (skill.target === 'self') {
+    const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
+    const threatened = nearest(arcane.pos, state.arcanes.filter((enemy) => enemy.team !== arcane.team && enemy.stats.hp > 0 && enemy.respawn <= state.time), 12)
+    return threatened || hpRatio < 0.78 || arcane.aiMode === 'retreat' ? arcane : undefined
+  }
+  const range = getSimpleSkillRange(arcane, skill, level)
   const allies = state.arcanes.filter((ally) => (
     ally.team === arcane.team &&
     ally.stats.hp > 0 &&
@@ -5451,7 +6021,7 @@ export function getSimplePositiveSkillTarget(
     (ally.id === arcane.id || distance(arcane.pos, ally.pos) <= range + getEntityCollisionRadius(ally))
   ))
 
-  if (hasAnySimpleSkillTag(skill, ['heal', 'healer', 'regen', 'shield', 'barrier', 'spell_parry'])) {
+  if (isSimpleHealingSkill(skill) || hasAnySimpleSkillTag(skill, ['regen', 'shield', 'barrier', 'spell_parry'])) {
     return allies
       .filter((ally) => ally.stats.hp / Math.max(1, ally.stats.maxHp) < (ally.id === arcane.id ? 0.78 : 0.66))
       .sort((a, b) => (a.stats.hp / Math.max(1, a.stats.maxHp)) - (b.stats.hp / Math.max(1, b.stats.maxHp)))[0]
@@ -5466,15 +6036,21 @@ export function getSimplePositiveSkillTarget(
   return fighting ? arcane : undefined
 }
 
-export function canTargetWithSimpleDamageSkill(arcane: Arcane, target: CombatTarget) {
+export function canTargetWithSimpleDamageSkill(arcane: Arcane, skill: HeroSkillDefinition, target: CombatTarget) {
+  if (isStructureLikeTarget(target)) {
+    const canDamageBuildings = skill.flags?.affectsBuildings || hasAnySimpleSkillTag(skill, ['affects_buildings', 'building_damage', 'tower_damage'])
+    return canDamageBuildings && 'team' in target && 'hp' in target && target.team !== arcane.team && target.hp > 0
+  }
   if ('team' in target) return target.team !== arcane.team && ('hp' in target ? target.hp > 0 : true)
   if ('strength' in target) return target.hp > 0
   return isBoss(target) && target.hp > 0
 }
 
 export function getSimpleSkillDamage(arcane: Arcane, skill: HeroSkillDefinition, level: number) {
-  const baseDamage = getSimpleSkillNumericValue(skill, 'damage', level, skill.damageType === 'none' ? 0 : 90 + level * 34)
+  if (hasAnySimpleSkillTag(skill, ['global_silence'])) return 0
+  const baseDamage = getSimpleSkillNumericValue(skill, 'damage', level, 0)
   const scaling = skill.scaling
+  if (baseDamage <= 0 && (!scaling?.attribute || !scaling.coefficient)) return 0
   if (!scaling?.attribute || !scaling.coefficient) return Math.round(baseDamage)
 
   const calculated = calculateHeroStats(getHeroDefinition(arcane.heroDefinitionId), arcane.stats.level, [])
@@ -5501,34 +6077,41 @@ export function applySimplePositiveSkill(
   level: number,
   target: Arcane,
 ) {
-  if (hasAnySimpleSkillTag(skill, ['heal', 'healer', 'regen'])) {
-    const healing = getSimpleSkillNumericValue(skill, 'heal', level, Math.max(75, getSimpleSkillDamage(caster, skill, level) * 0.65))
-    target.stats.hp = Math.min(target.stats.maxHp, target.stats.hp + Math.round(healing))
+  const profile = getSkillEffectProfile(skill, level)
+  applySimpleSkillDispel(state, skill, target, 'negative')
+  if (profile.heal > 0 || isSimpleHealingSkill(skill) || hasAnySimpleSkillTag(skill, ['regen'])) {
+    const healing = profile.heal || Math.max(75, getSimpleSkillDamage(caster, skill, level) * 0.65)
+    const directHealing = profile.isHealingOverTime ? healing * 0.4 : healing
+    const appliedHealing = Math.min(Math.round(directHealing), Math.max(0, target.stats.maxHp - target.stats.hp))
+    target.stats.hp += appliedHealing
+    target.healingReceived += appliedHealing
+    const liveCaster = state.arcanes.find((arcane) => arcane.id === caster.id)
+    if (liveCaster) liveCaster.healingDone += appliedHealing
     addTimedEffect(state, target, {
       sourceId: `${caster.id}-${skill.id}`,
       sourceName: skill.name,
       sourceTeam: caster.team,
       kind: 'hot',
       polarity: 'positive',
-      value: Math.max(8, Math.round(healing * 0.08)),
+      value: Math.max(8, Math.round((profile.isHealingOverTime ? healing * 0.6 : healing * 0.24) / 3)),
       tickInterval: 1,
       duration: 3,
     })
   }
 
-  if (hasAnySimpleSkillTag(skill, ['shield', 'barrier', 'spell_parry'])) {
+  if (profile.barrier > 0 || hasAnySimpleSkillTag(skill, ['shield', 'barrier', 'spell_parry'])) {
     addTimedEffect(state, target, {
       sourceId: `${caster.id}-${skill.id}`,
       sourceName: skill.name,
       sourceTeam: caster.team,
       kind: 'barrier',
       polarity: 'positive',
-      value: getSimpleSkillNumericValue(skill, 'barrier', level, 90 + level * 45),
-      duration: 4.5,
+      value: profile.barrier || 90 + level * 45,
+      duration: profile.duration,
     })
   }
 
-  if (hasAnySimpleSkillTag(skill, ['mobility', 'escape', 'haste'])) {
+  if (profile.moveSpeedPct > 0 || profile.isMobility || hasAnySimpleSkillTag(skill, ['haste'])) {
     addTimedEffect(state, target, {
       sourceId: `${caster.id}-${skill.id}`,
       sourceName: skill.name,
@@ -5536,12 +6119,15 @@ export function applySimplePositiveSkill(
       kind: 'buff',
       polarity: 'positive',
       value: 1,
-      modifiers: { moveSpeedPct: 0.18 },
-      duration: 3.2,
+      modifiers: { moveSpeedPct: profile.moveSpeedPct || 0.18 },
+      duration: profile.duration,
     })
   }
 
-  if (hasAnySimpleSkillTag(skill, ['armor', 'durable'])) {
+  const selfTransformation = skill.target === 'self' && profile.damage > 0
+  const teamMobility = hasAnySimpleSkillTag(skill, ['stampede', 'global_stealth', 'global_recall'])
+  const defensiveState = hasAnySimpleSkillTag(skill, ['untargetable', 'spell_immunity', 'damage_reduction', 'borrowed_life', 'phase_shift', 'global_stealth'])
+  if (profile.armorDelta > 0 || profile.attackSpeedPct > 0 || profile.summonCount > 0 || selfTransformation || defensiveState || teamMobility || hasAnySimpleSkillTag(skill, ['armor', 'durable', 'damage_buff'])) {
     addTimedEffect(state, target, {
       sourceId: `${caster.id}-${skill.id}`,
       sourceName: skill.name,
@@ -5549,9 +6135,19 @@ export function applySimplePositiveSkill(
       kind: 'buff',
       polarity: 'positive',
       value: 1,
-      modifiers: { armorFlat: 2 + level },
-      duration: 4,
+      modifiers: {
+        armorFlat: profile.armorDelta || (hasAnySimpleSkillTag(skill, ['armor', 'durable']) ? 2 + level : 0),
+        moveSpeedPct: teamMobility ? 0.2 : 0,
+        attackSpeedPct: profile.attackSpeedPct + Math.min(0.24, profile.summonCount * 0.03),
+        damagePct: Math.min(0.3, profile.summonCount * 0.035 + (selfTransformation ? profile.damage / 1000 : 0)),
+        incomingDamagePct: defensiveState ? 0.3 : 0,
+      },
+      duration: profile.summonDuration || profile.duration,
     })
+  }
+
+  if (profile.manaDelta > 0) {
+    target.stats.mana = Math.min(target.stats.maxMana, target.stats.mana + profile.manaDelta)
   }
 }
 
@@ -5563,7 +6159,9 @@ export function applySimpleNegativeSkillEffects(
   target: Arcane,
 ) {
   const sourceId = `${caster.id}-${skill.id}`
-  if (hasAnySimpleSkillTag(skill, ['stun', 'disable', 'taunt'])) {
+  const profile = getSkillEffectProfile(skill, level)
+  applySimpleSkillDisplacement(caster, target, skill, level)
+  if (profile.stunDuration > 0 && !hasAnySimpleSkillTag(skill, ['hex', 'sleep', 'taunt', 'fear'])) {
     addTimedEffect(state, target, {
       sourceId,
       sourceName: skill.name,
@@ -5571,23 +6169,35 @@ export function applySimpleNegativeSkillEffects(
       kind: 'stun',
       polarity: 'negative',
       value: 1,
-      duration: Math.min(2.2, getSimpleSkillNumericValue(skill, 'duration', level, 0.65 + level * 0.18)),
+      duration: profile.stunDuration,
     })
   }
 
-  if (hasAnySimpleSkillTag(skill, ['slow'])) {
+  if (profile.rootDuration > 0) {
+    addTimedEffect(state, target, {
+      sourceId,
+      sourceName: skill.name,
+      sourceTeam: caster.team,
+      kind: 'root',
+      polarity: 'negative',
+      value: 1,
+      duration: profile.rootDuration,
+    })
+  }
+
+  if (profile.slowPct > 0) {
     addTimedEffect(state, target, {
       sourceId,
       sourceName: skill.name,
       sourceTeam: caster.team,
       kind: 'slow',
       polarity: 'negative',
-      value: Math.min(0.55, getSimpleSkillNumericValue(skill, 'slow', level, 0.18 + level * 0.04)),
-      duration: getSimpleSkillNumericValue(skill, 'duration', level, 2.4),
+      value: profile.slowPct,
+      duration: profile.duration,
     })
   }
 
-  if (hasAnySimpleSkillTag(skill, ['silence', 'anti_magic'])) {
+  if (profile.silenceDuration > 0) {
     addTimedEffect(state, target, {
       sourceId,
       sourceName: skill.name,
@@ -5595,9 +6205,54 @@ export function applySimpleNegativeSkillEffects(
       kind: 'silence',
       polarity: 'negative',
       value: 1,
-      duration: Math.min(3.2, getSimpleSkillNumericValue(skill, 'duration', level, 1.3 + level * 0.25)),
+      duration: profile.silenceDuration,
     })
   }
+
+  applySimpleNamedControl(state, caster, skill, target, profile.duration)
+
+  if (profile.armorDelta < 0) {
+    addTimedEffect(state, target, {
+      sourceId: `${sourceId}-armor`,
+      sourceName: skill.name,
+      sourceTeam: caster.team,
+      kind: 'buff',
+      polarity: 'negative',
+      value: 1,
+      modifiers: { armorFlat: profile.armorDelta },
+      duration: profile.duration,
+    })
+  }
+}
+
+export function applySimpleNamedControl(
+  state: SimulationState,
+  caster: Arcane,
+  skill: HeroSkillDefinition,
+  target: Arcane,
+  duration: number,
+) {
+  const controls: Array<{ tags: string[]; kind: TimedEffect['kind'] }> = [
+    { tags: ['hex'], kind: 'hex' },
+    { tags: ['sleep'], kind: 'sleep' },
+    { tags: ['fear'], kind: 'fear' },
+    { tags: ['taunt'], kind: 'taunt' },
+    { tags: ['disarm'], kind: 'disarm' },
+    { tags: ['break'], kind: 'break' },
+    { tags: ['mute'], kind: 'mute' },
+  ]
+  controls.forEach((control) => {
+    if (!hasAnySimpleSkillTag(skill, control.tags)) return
+    addTimedEffect(state, target, {
+      sourceId: `${caster.id}-${skill.id}-${control.kind}`,
+      sourceName: skill.name,
+      sourceTeam: caster.team,
+      kind: control.kind,
+      polarity: 'negative',
+      value: 1,
+      duration,
+    })
+  })
 }
 
 export function addSimpleSkillEffect(state: SimulationState, arcane: Arcane, target: CombatTarget) {
@@ -5612,12 +6267,31 @@ export function addSimpleSkillEffect(state: SimulationState, arcane: Arcane, tar
 }
 
 export function isPositiveSimpleSkill(skill: HeroSkillDefinition) {
-  const positiveTags = ['heal', 'healer', 'regen', 'shield', 'barrier', 'spell_parry', 'armor', 'durable', 'mobility', 'escape', 'haste']
-  return hasAnySimpleSkillTag(skill, positiveTags)
+  if (skill.target === 'self') return true
+  if (isSimpleHealingSkill(skill)) return true
+  const positiveTags = ['regen', 'shield', 'barrier', 'spell_parry', 'armor', 'durable', 'mobility', 'escape', 'haste', 'save', 'cleanse', 'false_promise', 'fate_edict', 'overcharge', 'relocate', 'tether', 'stampede', 'global_stealth', 'global_recall', 'ally_target']
+  const negativeTags = ['anti_heal', 'armor_reduction', 'movement_control', 'spell_lockout', 'purge', 'dispel']
+  const manaRestore = 'manaValue' in skill.values && !hasAnySimpleSkillTag(skill, ['mana_burn', 'mana_drain'])
+  const defensiveUtility = hasAnySimpleSkillTag(skill, ['defensive_utility']) && skill.damageType === 'none' && !hasAnySimpleSkillTag(skill, negativeTags)
+  return hasAnySimpleSkillTag(skill, positiveTags) || defensiveUtility || (skill.damageType === 'none' && manaRestore)
+}
+
+export function isSimpleHealingSkill(skill: HeroSkillDefinition) {
+  return hasAnySimpleSkillTag(skill, [
+    'heal',
+    'healer',
+    'global_heal',
+    'armor_heal',
+    'heal_damage',
+    'heal_nuke',
+    'heal_share',
+    'heal_over_time',
+    'purifying_flames',
+  ])
 }
 
 export function hasSimpleStatusTag(skill: HeroSkillDefinition) {
-  return hasAnySimpleSkillTag(skill, ['stun', 'disable', 'taunt', 'slow', 'silence', 'anti_magic'])
+  return hasAnySimpleSkillTag(skill, ['stun', 'disable', 'taunt', 'slow', 'silence', 'anti_magic', 'root', 'net', 'leash', 'hex', 'sleep', 'fear', 'disarm', 'break', 'mute'])
 }
 
 export function hasAnySimpleSkillTag(skill: HeroSkillDefinition, tags: string[]) {
@@ -5789,7 +6463,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   next.arcanes.forEach((arcane) => {
     if (arcane.stats.hp <= 0 || arcane.respawn > next.time) return
     if (arcane.channeling) return
-    if (isArcaneStunned(next, arcane)) return
+    if (isArcaneAttackDisabled(next, arcane)) return
     const attackReady = next.time - arcane.lastAttack >= getEffectiveArcaneAttackCooldown(next, arcane)
     if (!attackReady && !hasAnyCastableSkill(next, arcane)) return
     const canAttackBoss = next.boss.hp > 0 && arcane.microDecision.startsWith('Atacar chefe')
@@ -5809,9 +6483,6 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     ))
     const target = bossTarget ?? objectiveTarget ?? lastHitTarget ?? denyTarget ?? enemyArcaneTarget ?? nearestReachableByArcane(arcane, [
       ...fallbackEnemyCreeps,
-      ...getCachedAttackableEnemyTowers(next, arcane.team, frameContext),
-      ...getCachedAttackableEnemyStructures(next, arcane.team, frameContext),
-      ...(isEnemyBaseUnlocked(next, arcane.team) ? next.bases.filter((base) => base.team !== arcane.team && base.hp > 0) : []),
       ...next.camps.filter((camp) => camp.hp > 0),
       ...(canAttackBoss ? [next.boss] : []),
     ])
@@ -5863,9 +6534,13 @@ export type ItemAttackResolution = {
 
 export function resolveArcaneItemAttackEffects(state: SimulationState, arcane: Arcane, target: CombatTarget): ItemAttackResolution {
   const effects = getArcaneItemEffects(arcane, ['passive', 'toggle'])
+  const passiveSkills = getArcanePassiveCombatModifiers(state, arcane)
   let physicalDamage = getEffectiveArcaneDamage(state, arcane)
   let magicDamage = 0
-  let lifestealPct = getItemPassiveNumber(effects, ['lifesteal', 'lifesteal_amp'], 'lifestealPct') ?? 0
+  let lifestealPct = Math.max(
+    getItemPassiveNumber(effects, ['lifesteal', 'lifesteal_amp'], 'lifestealPct') ?? 0,
+    passiveSkills.lifestealPct * 100,
+  )
   let cleavePct = 0
   let multiTargetPct = 0
 
@@ -6307,6 +6982,8 @@ export function resolveDeaths(state: SimulationState): SimulationState {
         if (lastHitArcane) addGoldMarker(next, lastHitArcane.team, creep.pos, getCreepGoldReward(creep))
       })
     next.arcanes = next.arcanes.map((arcane) => {
+      const laneCreepKills = deadCreeps.filter((creep) => !isDeniedCreep(creep) && creep.lastHitBy?.id === arcane.id).length
+      const denies = deniedCreeps.filter((creep) => creep.lastHitBy?.id === arcane.id).length
       const creepRewards = deadCreeps.reduce((total, creep) => {
         if (isDeniedCreep(creep)) return total
         const lastHitGold = creep.lastHitBy?.id === arcane.id ? getCreepGoldReward(creep) : 0
@@ -6321,8 +6998,12 @@ export function resolveDeaths(state: SimulationState): SimulationState {
         }
       }, { gold: 0, xp: 0 })
 
-      if (creepRewards.gold === 0 && creepRewards.xp === 0) return arcane
-      return grantArcaneEconomy(arcane, creepRewards.gold, creepRewards.xp)
+      if (creepRewards.gold === 0 && creepRewards.xp === 0 && laneCreepKills === 0 && denies === 0) return arcane
+      return grantArcaneEconomy({
+        ...arcane,
+        laneCreepKills: arcane.laneCreepKills + laneCreepKills,
+        denies: arcane.denies + denies,
+      }, creepRewards.gold, creepRewards.xp)
     })
     next.creeps = next.creeps.filter((creep) => !deadCreepIds.has(creep.id))
   }
@@ -6343,7 +7024,8 @@ export function resolveDeaths(state: SimulationState): SimulationState {
     }, { dawn: { gold: 0, xp: 0 }, dusk: { gold: 0, xp: 0 } } satisfies Record<TeamId, { gold: number; xp: number }>)
     next.arcanes = next.arcanes.map((arcane) => {
       const reward = rewardsByTeam[arcane.team]
-      return grantArcaneEconomy(arcane, reward.gold, reward.xp)
+      const neutralKills = deadCamps.filter((camp) => camp.lastHitBy?.id === arcane.id).length
+      return grantArcaneEconomy({ ...arcane, neutralKills: arcane.neutralKills + neutralKills }, reward.gold, reward.xp)
     })
   }
 
@@ -6357,7 +7039,12 @@ export function resolveDeaths(state: SimulationState): SimulationState {
     }
     next.arcanes = next.arcanes.map((arcane) => {
       if (arcane.team !== rewardTeam) return arcane
-      return grantArcaneEconomy(arcane, 120, 400)
+      const securedBoss = deadBoss.lastHitBy?.id === arcane.id || deadBoss.lastHitBy?.id.startsWith(`${arcane.id}-`)
+      return grantArcaneEconomy({
+        ...arcane,
+        neutralKills: arcane.neutralKills + (securedBoss ? 1 : 0),
+        objectiveKills: arcane.objectiveKills + (securedBoss ? 1 : 0),
+      }, 120, 400)
     })
     next.arcanes
       .filter((arcane) => arcane.team === rewardTeam && arcane.stats.hp > 0 && arcane.respawn <= next.time)
@@ -6390,22 +7077,34 @@ export function resolveDeaths(state: SimulationState): SimulationState {
 
   if (deadArcanes.length) {
     const arcaneRewards = new Map<string, { gold: number; xp: number }>()
+    const kdaChanges = new Map<string, { kills: number; deaths: number; assists: number }>()
     const addArcaneReward = (arcaneId: string, gold: number, xp: number) => {
       const current = arcaneRewards.get(arcaneId) ?? { gold: 0, xp: 0 }
       arcaneRewards.set(arcaneId, { gold: current.gold + gold, xp: current.xp + xp })
     }
     const deathGoldLosses = new Map<string, number>()
+    const addKda = (arcaneId: string, change: Partial<{ kills: number; deaths: number; assists: number }>) => {
+      const current = kdaChanges.get(arcaneId) ?? { kills: 0, deaths: 0, assists: 0 }
+      kdaChanges.set(arcaneId, {
+        kills: current.kills + (change.kills ?? 0),
+        deaths: current.deaths + (change.deaths ?? 0),
+        assists: current.assists + (change.assists ?? 0),
+      })
+    }
 
     deadArcanes.forEach((arcane) => {
       const killerTeam: TeamId = arcane.team === 'dawn' ? 'dusk' : 'dawn'
       const killerSource = arcane.lastHitBy
       const killer = killerSource ?? { label: teamInfo[killerTeam].name, team: killerTeam }
       const killerArcane = killerSource
-        ? next.arcanes.find((candidate) => candidate.id === killerSource.id && candidate.team === killerTeam)
+        ? next.arcanes.find((candidate) => (
+          candidate.team === killerTeam &&
+          (candidate.id === killerSource.id || killerSource.id.startsWith(`${candidate.id}-`))
+        ))
         : undefined
       const isArcaneKill = killerArcane !== undefined
       if (isArcaneKill) next.kills[killerTeam] += 1
-      const assists = getAssistRecipients(next, arcane, killerArcane?.id)
+      const assists = killerArcane ? getAssistRecipients(next, arcane, killerArcane.id) : []
       const eligibleXpRecipients = killerArcane ? [killerArcane, ...assists] : assists
       const killerTeamNetWorth = getTeamNetWorth(next, killerTeam)
       const victimTeamNetWorth = getTeamNetWorth(next, arcane.team)
@@ -6432,6 +7131,9 @@ export function resolveDeaths(state: SimulationState): SimulationState {
 
       if (killerArcane) addArcaneReward(killerArcane.id, killerRewardGold, xpPerEligibleHero)
       assists.forEach((assist) => addArcaneReward(assist.id, assistRewardGold, xpPerEligibleHero))
+      if (killerArcane) addKda(killerArcane.id, { kills: 1 })
+      assists.forEach((assist) => addKda(assist.id, { assists: 1 }))
+      addKda(arcane.id, { deaths: 1 })
       deathGoldLosses.set(arcane.id, lostGold)
       next.teamMemory[arcane.team] = addAiMemoryEvent(next.teamMemory[arcane.team], {
         id: `memory-death-${arcane.id}-${next.time}`,
@@ -6469,12 +7171,14 @@ export function resolveDeaths(state: SimulationState): SimulationState {
     next.arcanes = next.arcanes.map((arcane) => {
       const reward = arcaneRewards.get(arcane.id)
       const lostGold = deathGoldLosses.get(arcane.id) ?? 0
+      const kda = kdaChanges.get(arcane.id)
+      const withKda = kda ? { ...arcane, kills: arcane.kills + kda.kills, deaths: arcane.deaths + kda.deaths, assists: arcane.assists + kda.assists } : arcane
       if (arcane.stats.hp > 0) {
-        if (!reward) return arcane
-        return grantArcaneEconomy(arcane, reward.gold, reward.xp)
+        if (!reward) return withKda
+        return grantArcaneEconomy(withKda, reward.gold, reward.xp)
       }
       return {
-        ...arcane,
+        ...withKda,
         respawn: next.time + getArcaneRespawnDuration(arcane.stats.level),
         lastHitBy: undefined,
         channeling: undefined,
@@ -6567,11 +7271,16 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   const targetTower = state.towers.find((tower) => tower.id === id)
   const targetStructure = state.structures.find((structure) => structure.id === id)
   const targetBase = state.bases.find((base) => base.id === id)
+  const targetBoss = state.boss.id === id ? state.boss : undefined
+  const sourceArcane = state.arcanes.find((arcane) => source.id === arcane.id || source.id.startsWith(`${arcane.id}-`))
   const damageType = source.damageType ?? 'physical'
   let finalDamage = damage
 
   if (targetArcane) {
     finalDamage = resolveIncomingArcaneDamage(state, targetArcane, damage, damageType)
+    if (sourceArcane && source.id !== sourceArcane.id) {
+      finalDamage *= genericHeroSkillDamageMultiplier
+    }
   } else if (targetTower) {
     finalDamage = getStructureIncomingDamage(state, targetTower, damage, source, damageType)
   } else if (targetStructure) {
@@ -6579,16 +7288,25 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   } else if (targetBase) {
     finalDamage = getStructureIncomingDamage(state, targetBase, damage, source, damageType)
   }
+  let targetCurrentHp = targetArcane?.stats.hp ?? targetTower?.hp ?? targetStructure?.hp ?? targetBase?.hp ?? targetBoss?.hp ?? finalDamage
 
   const hit = (value: number) => Math.max(0, value - finalDamage)
   recordObjectiveLossIfDestroyed(state, targetTower, finalDamage, source)
   recordObjectiveLossIfDestroyed(state, targetStructure, finalDamage, source)
   recordObjectiveLossIfDestroyed(state, targetBase, finalDamage, source)
-  state.creeps = state.creeps.map((creep) => creep.id === id ? { ...creep, hp: hit(creep.hp), lastHitBy: source } : creep)
+  state.creeps = state.creeps.map((creep) => {
+    if (creep.id !== id) return creep
+    targetCurrentHp = creep.hp
+    return { ...creep, hp: hit(creep.hp), lastHitBy: source }
+  })
   state.towers = state.towers.map((tower) => tower.id === id ? { ...tower, hp: hit(tower.hp) } : tower)
   state.structures = state.structures.map((structure) => structure.id === id ? { ...structure, hp: hit(structure.hp) } : structure)
   state.bases = state.bases.map((base) => base.id === id ? { ...base, hp: hit(base.hp) } : base)
-  state.camps = state.camps.map((camp) => camp.id === id ? { ...camp, hp: hit(camp.hp), lastHitBy: source } : camp)
+  state.camps = state.camps.map((camp) => {
+    if (camp.id !== id) return camp
+    targetCurrentHp = camp.hp
+    return { ...camp, hp: hit(camp.hp), lastHitBy: source }
+  })
   state.boss = state.boss.id === id
     ? {
       ...state.boss,
@@ -6598,7 +7316,21 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
       aggroUntil: state.time + 8,
     }
     : state.boss
-  state.arcanes = state.arcanes.map((arcane) => arcane.id === id ? { ...arcane, lastHitBy: source, stats: { ...arcane.stats, hp: hit(arcane.stats.hp) } } : arcane)
+  const appliedDamage = Math.min(Math.max(0, targetCurrentHp), Math.max(0, finalDamage))
+  state.arcanes = state.arcanes.map((arcane) => {
+    const isTarget = arcane.id === id
+    const isSource = sourceArcane?.id === arcane.id
+    if (!isTarget && !isSource) return arcane
+    return {
+      ...arcane,
+      lastHitBy: isTarget ? source : arcane.lastHitBy,
+      damageDealt: arcane.damageDealt + (isSource ? appliedDamage : 0),
+      heroDamageDealt: arcane.heroDamageDealt + (isSource && targetArcane ? appliedDamage : 0),
+      structureDamageDealt: arcane.structureDamageDealt + (isSource && (targetTower || targetStructure || targetBase) ? appliedDamage : 0),
+      damageTaken: arcane.damageTaken + (isTarget ? appliedDamage : 0),
+      stats: isTarget ? { ...arcane.stats, hp: hit(arcane.stats.hp) } : arcane.stats,
+    }
+  })
 }
 
 export function recordObjectiveLossIfDestroyed(
@@ -6608,6 +7340,9 @@ export function recordObjectiveLossIfDestroyed(
   source: CombatSource,
 ) {
   if (!objective || objective.hp <= 0 || objective.hp - damage > 0 || objective.team === source.team) return
+  state.arcanes = state.arcanes.map((arcane) => source.id === arcane.id || source.id.startsWith(`${arcane.id}-`)
+    ? { ...arcane, objectiveKills: arcane.objectiveKills + 1 }
+    : arcane)
   const label = getObjectiveMemoryLabel(objective)
   const lane = 'lane' in objective ? objective.lane : undefined
   const objectiveValue = 'tier' in objective
@@ -6839,10 +7574,37 @@ export function getStructureIncomingDamage(
     damageType,
     armor: getStructureArmor(target),
     magicResistance: getStructureMagicResistance(target),
+    sourceVsBuildingMultiplier: getSourceVsBuildingMultiplier(state, source),
     backdoorMultiplier: protectedByBackdoor ? 0.25 : 1,
   })
+  const timingMultiplier = getStructureTimingMultiplier(state, target)
 
-  return fortified ? mitigatedDamage * fortificationDamageMultiplier : mitigatedDamage
+  return (fortified ? mitigatedDamage * fortificationDamageMultiplier : mitigatedDamage) * timingMultiplier
+}
+
+export function getStructureTimingMultiplier(state: SimulationState, target: Tower | Structure | Base) {
+  const minutes = state.time / 60
+  if ('tier' in target) {
+    if (target.tier === 1) return minutes < 8 ? 0.5 : 1
+    if (target.tier === 2) return minutes < 16 ? 0.62 : 1
+    if (minutes < 24) return 0.34
+    if (minutes < 28) return 0.7
+    return 1
+  }
+
+  if (minutes < 24) return 0.28
+  if (minutes < 28) return 0.62
+  return 1
+}
+
+export function getSourceVsBuildingMultiplier(state: SimulationState, source: CombatSource) {
+  const creep = state.creeps.find((candidate) => candidate.id === source.id)
+  if (creep) return creep.type === 'siege' ? 1.5 : 0.5
+
+  const arcane = state.arcanes.find((candidate) => candidate.id === source.id || source.id.startsWith(`${candidate.id}-`))
+  if (arcane) return source.id === arcane.id ? 0.5 : 0.15
+
+  return 1
 }
 
 export function getMaxSimulationStepsPerFrame(speed: number) {
@@ -6855,6 +7617,7 @@ export const uiSnapshotIntervalSeconds = 0.5
 // teto de forma ADAPTATIVA (T5) — comeca nitido e cai para 1 se o FPS medio
 // ficar < 50 por ~3s seguidos (ver getCanvasDpr/reportRenderFps no App.tsx).
 export const maxCanvasDevicePixelRatio = 2
+export const genericHeroSkillDamageMultiplier = 0.2
 
 export function getEntityPosition(entity: Arcane | Creep | Tower | Structure | Base | Camp | Boss | MapRune | undefined) {
   if (!entity || !('pos' in entity)) return undefined
@@ -6982,6 +7745,34 @@ export function getTeamMemoryDanger(state: SimulationState, team: TeamId, point:
   return areaDangerFromMemory(state.teamMemory[team] ?? [], point, state.time, 20)
 }
 
+export function getArcaneOffensiveThreat(state: SimulationState, arcane: Arcane) {
+  const cached = offensiveThreatCache.get(arcane)
+  if (cached?.time === state.time) return cached
+
+  const offensiveSkills = (getHeroDefinition(arcane.heroDefinitionId).skills ?? [])
+    .filter((skill) => skill.kind !== 'passive' && !isPositiveSimpleSkill(skill))
+    .map((skill) => ({ skill, level: getSimpleSkillLevel(arcane, skill) }))
+    .filter(({ skill, level }) => (
+      level > 0 &&
+      arcane.stats.mana >= getSimpleSkillManaCost(arcane, skill, level) &&
+      (arcane.itemCooldowns[skill.id] ?? 0) <= state.time
+    ))
+
+  const threat = {
+    time: state.time,
+    range: offensiveSkills.reduce(
+      (range, { skill, level }) => Math.max(range, getSimpleSkillRange(arcane, skill, level)),
+      arcane.stats.range,
+    ),
+    readyDamage: offensiveSkills.reduce(
+      (damage, { skill, level }) => damage + getSimpleSkillDamage(arcane, skill, level),
+      0,
+    ) * genericHeroSkillDamageMultiplier,
+  }
+  offensiveThreatCache.set(arcane, threat)
+  return threat
+}
+
 export function getDangerScore(state: SimulationState, arcane: Arcane, visibleEnemies = state.arcanes.filter((enemy) => (
   enemy.team !== arcane.team &&
   enemy.stats.hp > 0 &&
@@ -7049,9 +7840,13 @@ export function getEnemyActionThreatScore(
       return score + 42
     }, 0)
   const visibleArcaneThreat = visibleEnemies.reduce((score, enemy) => {
-    const radius = enemy.stats.range + 2.2
+    const threat = getArcaneOffensiveThreat(state, enemy)
+    const radius = Math.max(enemy.stats.range + 2.2, threat.range + 1.4)
     if (distance(point, enemy.pos) > radius) return score
-    return score + (enemy.stats.hp / enemy.stats.maxHp > 0.45 ? 20 : 12)
+    const attackPressure = enemy.stats.hp / enemy.stats.maxHp > 0.45 ? 18 : 11
+    const spellPressure = Math.min(44, (threat.readyDamage / Math.max(1, arcane.stats.maxHp)) * 65)
+    const lethalPressure = threat.readyDamage >= arcane.stats.hp * 0.7 ? 24 : 0
+    return score + attackPressure + spellPressure + lethalPressure
   }, 0)
   const creepThreat = nearbyEnemyCreeps
     .filter((creep) => creep.team !== arcane.team)
@@ -7275,7 +8070,19 @@ export function projectPointToSegment(point: Point, start: Point, end: Point): P
 }
 
 export function distance(a: Point, b: Point) {
-  return Math.hypot(a.x - b.x, a.y - b.y)
+  const dx = a.x - b.x
+  const dy = a.y - b.y
+  return Math.sqrt(dx * dx + dy * dy)
+}
+
+export function getArcaneEmergencyRecoveryRatio(state: SimulationState, arcane: Arcane) {
+  const consumableHealing = arcane.items.reduce((total, name) => total + (getConsumableByName(name)?.heal ?? 0), 0)
+  const activeHot = state.timedEffects.reduce((total, effect) => (
+    effect.targetId === arcane.id && effect.kind === 'hot' && effect.expiresAt > state.time
+      ? total + effect.value * Math.max(0, effect.expiresAt - state.time)
+      : total
+  ), 0)
+  return Math.min(0.24, (consumableHealing + activeHot) / Math.max(1, arcane.stats.maxHp))
 }
 
 export function distanceSquared(a: Point, b: Point) {

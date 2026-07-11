@@ -1,0 +1,132 @@
+{
+  "capturedAtIso": "2026-07-11T00:59:53.083Z",
+  "officialHeroCount": 127,
+  "mappedUniqueHeroCount": 127,
+  "deprecatedLegacyHeroes": {
+    "h094_dark_paladin_2": {
+      "reason": "Duplicata antiga de h049_dark_paladin, ambos representavam Abaddon.",
+      "replacementHeroId": "h049_dark_paladin",
+      "sourceHeroId": 102
+    }
+  },
+  "unmappedOfficialHeroes": [],
+  "heroesWithNonFourStandardAbilityCount": [
+    {
+      "legacyHeroId": "h009_fluid_shifter",
+      "sourceHeroId": 10,
+      "sourceDisplayName": "Morphling",
+      "standardAbilityCount": 5,
+      "innateCount": 1,
+      "scepterGrantedCount": 0,
+      "shardGrantedCount": 0
+    },
+    {
+      "legacyHeroId": "h056_twin_dragon",
+      "sourceHeroId": 64,
+      "sourceDisplayName": "Jakiro",
+      "standardAbilityCount": 5,
+      "innateCount": 1,
+      "scepterGrantedCount": 0,
+      "shardGrantedCount": 0
+    },
+    {
+      "legacyHeroId": "h066_complex_mage",
+      "sourceHeroId": 74,
+      "sourceDisplayName": "Invoker",
+      "standardAbilityCount": 13,
+      "innateCount": 1,
+      "scepterGrantedCount": 0,
+      "shardGrantedCount": 0
+    },
+    {
+      "legacyHeroId": "h082_light_keeper",
+      "sourceHeroId": 90,
+      "sourceDisplayName": "Keeper of the Light",
+      "standardAbilityCount": 5,
+      "innateCount": 1,
+      "scepterGrantedCount": 1,
+      "shardGrantedCount": 0
+    },
+    {
+      "legacyHeroId": "h083_spirit_tether",
+      "sourceHeroId": 91,
+      "sourceDisplayName": "Io",
+      "standardAbilityCount": 6,
+      "innateCount": 1,
+      "scepterGrantedCount": 0,
+      "shardGrantedCount": 0
+    },
+    {
+      "legacyHeroId": "h087_troll_switcher",
+      "sourceHeroId": 95,
+      "sourceDisplayName": "Troll Warlord",
+      "standardAbilityCount": 5,
+      "innateCount": 1,
+      "scepterGrantedCount": 0,
+      "shardGrantedCount": 0
+    },
+    {
+      "legacyHeroId": "h098_ember_duelist",
+      "sourceHeroId": 106,
+      "sourceDisplayName": "Ember Spirit",
+      "standardAbilityCount": 5,
+      "innateCount": 1,
+      "scepterGrantedCount": 0,
+      "shardGrantedCount": 0
+    },
+    {
+      "legacyHeroId": "h106_monkey_warrior",
+      "sourceHeroId": 114,
+      "sourceDisplayName": "Monkey King",
+      "standardAbilityCount": 5,
+      "innateCount": 1,
+      "scepterGrantedCount": 0,
+      "shardGrantedCount": 0
+    },
+    {
+      "legacyHeroId": "h107_dark_fae",
+      "sourceHeroId": 119,
+      "sourceDisplayName": "Dark Willow",
+      "standardAbilityCount": 5,
+      "innateCount": 1,
+      "scepterGrantedCount": 0,
+      "shardGrantedCount": 0
+    },
+    {
+      "legacyHeroId": "h118_circus_controller",
+      "sourceHeroId": 131,
+      "sourceDisplayName": "Ringmaster",
+      "standardAbilityCount": 8,
+      "innateCount": 1,
+      "scepterGrantedCount": 0,
+      "shardGrantedCount": 1
+    },
+    {
+      "legacyHeroId": "h119_twin_blade_duelist",
+      "sourceHeroId": 145,
+      "sourceDisplayName": "Kez",
+      "standardAbilityCount": 8,
+      "innateCount": 1,
+      "scepterGrantedCount": 0,
+      "shardGrantedCount": 0
+    },
+    {
+      "legacyHeroId": "h120_heavy_artillery_commander",
+      "sourceHeroId": 155,
+      "sourceDisplayName": "Largo",
+      "standardAbilityCount": 7,
+      "innateCount": 1,
+      "scepterGrantedCount": 0,
+      "shardGrantedCount": 0
+    },
+    {
+      "legacyHeroId": "h124_stone_giant",
+      "sourceHeroId": 19,
+      "sourceDisplayName": "Tiny",
+      "standardAbilityCount": 5,
+      "innateCount": 1,
+      "scepterGrantedCount": 1,
+      "shardGrantedCount": 0
+    }
+  ]
+}

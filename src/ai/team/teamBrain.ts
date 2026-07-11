@@ -14,28 +14,37 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
   const ahead40 = relativeLead >= 0.4
   const behind20 = relativeLead <= -0.2
   const powerPlay = team.numbersAdvantage >= 2
-  const laningPenalty = phase === 'laning' && team.numbersAdvantage < 2 ? 45 : 0
-  const earlyFarmBonus = phase === 'laning' ? 25 : 0
+  const closingWindowBonus = phase === 'ultra_late' ? 58 : phase === 'late_game' ? 24 : 0
+  const pushTimingPenalty = phase === 'laning' ? 105 : phase === 'early_mid' ? 24 : 0
+  const pickoffTimingPenalty = phase === 'laning' ? 52 : 0
+  const farmTimingBonus = phase === 'laning' ? 42 : phase === 'early_mid' ? 14 : 0
+  const endGameTimingPenalty = phase === 'laning'
+    ? 220
+    : phase === 'early_mid'
+      ? 135
+      : phase === 'mid_game'
+        ? 32
+        : 0
   const advantageObjectiveBonus = ahead40 ? 80 : ahead20 ? 34 : 0
   const advantageRiskReduction = ahead40 ? 24 : ahead20 ? 12 : 0
   const comebackBonus = behind20 ? 20 + input.teamProfile.comebackPatience * 0.22 : 0
 
   return [
     makePlan(input, 'farm_map', {
-      expectedValue: team.safeFarm + input.teamProfile.greed * 0.4 + team.lowResourcePressure * 0.35 - team.structureAtRisk * 0.35 - team.baseThreat * 0.4 + earlyFarmBonus + comebackBonus,
+      expectedValue: team.safeFarm + input.teamProfile.greed * 0.4 + team.lowResourcePressure * 0.35 - team.structureAtRisk * 0.35 - team.baseThreat * 0.4 + farmTimingBonus + comebackBonus - closingWindowBonus * 0.45,
       urgency: Math.max(team.lowResourcePressure, behind20 ? 58 : 0),
       risk: 24 + team.baseThreat * 0.25,
       reasonTags: ['farm', 'resources'],
     }),
     makePlan(input, 'group_push', {
       expectedValue: objectiveConversionValue({
-        objectiveValue: team.pushPower + team.lanePressure * 0.7 + input.teamProfile.objectiveFocus * 0.35 + advantageObjectiveBonus + (powerPlay ? 36 : 0),
+        objectiveValue: team.pushPower + team.lanePressure * 0.7 + input.teamProfile.objectiveFocus * 0.35 + advantageObjectiveBonus + closingWindowBonus + (powerPlay ? 36 : 0),
         successChance: getPlanSuccessChance(team.fightReadiness, team.visionControl, team.numbersAdvantage, input.teamProfile.coordination),
         expectedLoss: Math.max(0, team.throwRisk * 0.55 + Math.max(0, -team.numbersAdvantage) * 12 - advantageRiskReduction - (powerPlay ? 18 : 0)),
         mapControlValue: team.lanePressure * 0.35,
         tempoValue: (highValueObjectiveAvailable ? 24 : 10) + (powerPlay ? 18 : 0),
-      }) - laningPenalty,
-      urgency: powerPlay ? 88 : Math.max(highValueObjectiveAvailable ? 72 : 48, ahead20 ? 70 : 0),
+      }) - pushTimingPenalty,
+      urgency: powerPlay ? 88 : Math.max(highValueObjectiveAvailable ? 72 : 48, ahead20 ? 70 : 0, closingWindowBonus + 36),
       risk: Math.max(8, team.throwRisk - advantageRiskReduction),
       reasonTags: ['push', 'objective', 'tempo', ...(ahead20 ? ['lead'] : []), ...(powerPlay ? ['power_play'] : [])],
     }),
@@ -74,7 +83,7 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
         expectedLoss: team.throwRisk * 0.5 + team.lowResourcePressure * 0.25 + Math.max(0, -team.numbersAdvantage) * 18,
         mapControlValue: team.visionControl * 0.18,
         tempoValue: team.numbersAdvantage > 0 ? 16 : 4,
-      }) - laningPenalty,
+      }) - pickoffTimingPenalty,
       urgency: Math.max(35, team.numbersAdvantage * 18 + team.visionControl * 0.35),
       risk: Math.max(16, 54 - team.visionControl * 0.28 - team.numbersAdvantage * 8),
       reasonTags: ['pickoff', 'vision', 'numbers'],
@@ -100,12 +109,12 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
     makePlan(input, 'end_game', {
       expectedValue: enemyBaseOpen
         ? objectiveConversionValue({
-          objectiveValue: 145 + team.pushPower * 0.7 + input.teamProfile.tempoAwareness * 0.45 + advantageObjectiveBonus,
+          objectiveValue: 145 + team.pushPower * 0.7 + input.teamProfile.tempoAwareness * 0.45 + advantageObjectiveBonus + closingWindowBonus,
           successChance: getPlanSuccessChance(team.fightReadiness, team.visionControl, team.numbersAdvantage, input.teamProfile.coordination),
           expectedLoss: Math.max(0, team.throwRisk * AI_RULES.teamPlans.highGroundRiskMultiplier + Math.max(0, -team.numbersAdvantage) * 18 - advantageRiskReduction),
           mapControlValue: team.lanePressure * 0.3,
           tempoValue: 28,
-        })
+        }) - endGameTimingPenalty
         : -80,
       urgency: enemyBaseOpen ? Math.max(82, ahead20 ? 88 : 0) : 0,
       risk: Math.max(8, team.throwRisk * AI_RULES.teamPlans.highGroundRiskMultiplier - advantageRiskReduction),
@@ -145,14 +154,32 @@ export function selectTeamPlan(input: TeamBrainInput): TeamPlan | undefined {
     if (bossPlan) return { ...bossPlan, urgency: Math.max(85, bossPlan.urgency), reasonTags: [...bossPlan.reasonTags, 'forced_power_play'] }
   }
 
-  if (team && powerPlay && input.analyzed.objectives.enemyBaseOpenByTeam[input.teamId] && team.baseThreat < 65) {
+  if (
+    team &&
+    powerPlay &&
+    (phase === 'late_game' || phase === 'ultra_late') &&
+    input.analyzed.objectives.enemyBaseOpenByTeam[input.teamId] &&
+    team.baseThreat < 65
+  ) {
     const endPlan = plans.find((plan) => plan.type === 'end_game')
     if (endPlan) return { ...endPlan, urgency: Math.max(88, endPlan.urgency), reasonTags: [...endPlan.reasonTags, 'forced_power_play'] }
   }
 
-  if (team && powerPlay && team.baseThreat < 65) {
+  if (team && powerPlay && phase !== 'laning' && team.baseThreat < 65) {
     const pushPlan = plans.find((plan) => plan.type === 'group_push')
     if (pushPlan) return { ...pushPlan, urgency: Math.max(85, pushPlan.urgency), reasonTags: [...pushPlan.reasonTags, 'forced_power_play'] }
+  }
+
+  if (team && phase === 'ultra_late' && team.baseThreat < 65) {
+    const planType = input.analyzed.objectives.enemyBaseOpenByTeam[input.teamId] ? 'end_game' : 'group_push'
+    const closingPlan = plans.find((plan) => plan.type === planType)
+    if (closingPlan) {
+      return {
+        ...closingPlan,
+        urgency: Math.max(90, closingPlan.urgency),
+        reasonTags: [...closingPlan.reasonTags, 'forced_closing_window'],
+      }
+    }
   }
 
   return plans[0]

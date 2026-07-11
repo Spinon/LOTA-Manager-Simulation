@@ -96,6 +96,7 @@ function makeSnapshot(overrides: Partial<RawAiGameSnapshot> = {}): RawAiGameSnap
 
 {
   const analyzed = analyzeGameState(makeSnapshot({
+    timeSeconds: 34 * 60,
     objectives: {
       ...makeSnapshot().objectives,
       bossAvailable: false,
@@ -184,6 +185,37 @@ function makeSnapshot(overrides: Partial<RawAiGameSnapshot> = {}): RawAiGameSnap
 
   assert.ok(farm && push)
   assert.ok(farm.expectedValue > push.expectedValue, 'laning should favor farming over immediate group push')
+}
+
+{
+  const analyzed = analyzeGameState(makeSnapshot({
+    timeSeconds: 6 * 60,
+    teams: {
+      dawn: {
+        ...makeSnapshot().teams.dawn,
+        aliveHeroes: 5,
+        deadHeroes: 0,
+        safeFarm: 70,
+      },
+      dusk: {
+        ...makeSnapshot().teams.dusk,
+        aliveHeroes: 3,
+        deadHeroes: 2,
+      },
+    },
+    objectives: {
+      ...makeSnapshot().objectives,
+      bossAvailable: false,
+      highValueObjectiveAvailableByTeam: { dawn: false, dusk: false },
+    },
+  }))
+  const plan = selectTeamPlan({
+    analyzed,
+    teamId: 'dawn',
+    teamProfile: DEFAULT_TEAM_AI_PROFILES.dawn,
+  })
+
+  assert.notEqual(plan?.type, 'group_push', 'an early power play should not force a five-player push')
 }
 
 {

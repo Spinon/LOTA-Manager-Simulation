@@ -57,8 +57,8 @@ function analyzeTeam(team: RawTeamSnapshot, opponent?: RawTeamSnapshot): Analyze
 
 function getAnalyzedPhase(timeSeconds: number): AnalyzedGameState['gameTime']['phase'] {
   const minutes = timeSeconds / 60
-  if (minutes < 8) return 'laning'
-  if (minutes < 16) return 'early_mid'
+  if (minutes < 10) return 'laning'
+  if (minutes < 18) return 'early_mid'
   if (minutes < 28) return 'mid_game'
   if (minutes < 45) return 'late_game'
   return 'ultra_late'

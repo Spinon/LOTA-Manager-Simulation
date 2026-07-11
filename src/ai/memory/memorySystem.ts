@@ -37,7 +37,9 @@ export function areaDangerFromMemory(
 }
 
 function distance(a: { x: number; y: number }, b: { x: number; y: number }) {
-  return Math.hypot(a.x - b.x, a.y - b.y)
+  const dx = a.x - b.x
+  const dy = a.y - b.y
+  return Math.sqrt(dx * dx + dy * dy)
 }
 
 function clamp(value: number, min: number, max: number) {

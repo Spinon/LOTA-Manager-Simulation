@@ -5,6 +5,29 @@ export type AttackType = 'melee' | 'ranged'
 export type DamageType = 'physical' | 'magical' | 'pure' | 'none'
 export type SkillKind = 'active' | 'passive' | 'toggle'
 export type SkillTarget = 'self' | 'unit' | 'point' | 'area' | 'global' | 'passive'
+export type SkillAiUsage = {
+  laning: number
+  farming: number
+  gank: number
+  teamfight: number
+  retreat: number
+  push: number
+  save: number
+  objective: number
+}
+export type SkillFlags = {
+  dispellable: boolean
+  piercesDebuffImmunity: boolean
+  canBeDisjointed: boolean
+  usesProjectile: boolean
+  canCrit: boolean
+  canLifesteal: boolean
+  canSpellLifesteal: boolean
+  affectsBuildings: boolean
+  affectsIllusions: boolean
+  breaksInvisibility: boolean
+  breakable: boolean
+}
 export type HeroRole =
   | 'carry'
   | 'support'
@@ -35,6 +58,7 @@ export interface HeroDefinition {
   roles: HeroRole[]
   complexity: 1 | 2 | 3
   skills?: HeroSkillDefinition[]
+  supplementalSkills?: HeroSkillDefinition[]
   baseAttributes: AttributeBlock
   attributeGrowth: AttributeGrowthBlock
   baseStats: {
@@ -61,14 +85,23 @@ export interface HeroDefinition {
 }
 
 export interface HeroSkillDefinition {
-  key: 'Q' | 'W' | 'E' | 'R'
+  key: string
   id: string
   name: string
   kind: SkillKind
   target: SkillTarget
   damageType: DamageType
+  sourceTag?: string
+  mechanics?: string[]
   tags: string[]
   values: Record<string, number | number[] | string | boolean>
+  flags?: SkillFlags
+  aiUsage?: SkillAiUsage
+  maxLevel?: number
+  category?: 'standard' | 'innate' | 'scepter_granted' | 'shard_granted' | 'other'
+  learnable?: boolean
+  sourceHeroId?: number
+  sourceAbilityId?: number
   scaling?: {
     attribute?: PrimaryAttribute | 'highest' | 'total'
     coefficient?: number
