@@ -5435,16 +5435,35 @@ export function tryCastSimpleSkill(state: SimulationState, arcane: Arcane, fallb
     ))
 
   for (const { skill, level } of usableSkills) {
+    const previousCooldown = arcane.itemCooldowns[skill.id]
+    const cooldownUntil = state.time + getSimpleSkillCooldown(skill, level)
+    setArcaneSkillCooldown(state, arcane, skill.id, cooldownUntil)
     if (castSimpleSkill(state, arcane, skill, level, fallbackTarget)) {
-      arcane.itemCooldowns = {
-        ...arcane.itemCooldowns,
-        [skill.id]: state.time + getSimpleSkillCooldown(skill, level),
-      }
+      setArcaneSkillCooldown(state, arcane, skill.id, cooldownUntil)
       return true
     }
+    restoreArcaneSkillCooldown(state, arcane, skill.id, previousCooldown)
   }
 
   return false
+}
+
+export function setArcaneSkillCooldown(state: SimulationState, arcane: Arcane, skillId: string, cooldownUntil: number) {
+  const liveArcane = state.arcanes.find((candidate) => candidate.id === arcane.id) ?? arcane
+  liveArcane.itemCooldowns = {
+    ...liveArcane.itemCooldowns,
+    [skillId]: cooldownUntil,
+  }
+  if (liveArcane !== arcane) arcane.itemCooldowns = liveArcane.itemCooldowns
+}
+
+export function restoreArcaneSkillCooldown(state: SimulationState, arcane: Arcane, skillId: string, previousCooldown: number | undefined) {
+  const liveArcane = state.arcanes.find((candidate) => candidate.id === arcane.id) ?? arcane
+  const cooldowns = { ...liveArcane.itemCooldowns }
+  if (previousCooldown === undefined) delete cooldowns[skillId]
+  else cooldowns[skillId] = previousCooldown
+  liveArcane.itemCooldowns = cooldowns
+  if (liveArcane !== arcane) arcane.itemCooldowns = cooldowns
 }
 
 export function getSimpleSkillLevel(arcane: Arcane, skill: HeroSkillDefinition) {
@@ -5941,12 +5960,13 @@ export function shouldCommitOffensiveSkill(
 }
 
 export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, skill: HeroSkillDefinition, manaCost: number, target: CombatTarget) {
-  arcane.stats = {
-    ...arcane.stats,
-    mana: Math.max(0, arcane.stats.mana - manaCost),
+  const liveArcane = state.arcanes.find((candidate) => candidate.id === arcane.id) ?? arcane
+  liveArcane.stats = {
+    ...liveArcane.stats,
+    mana: Math.max(0, liveArcane.stats.mana - manaCost),
   }
-  arcane.microDecision = `Castou ${skill.key}`
-  arcane.decision = `Castou ${skill.key}`
+  liveArcane.microDecision = `Castou ${skill.key}`
+  liveArcane.decision = `Castou ${skill.key}`
   state.skillMarkers = [
     ...state.skillMarkers.slice(-23),
     {
@@ -5960,7 +5980,7 @@ export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, sk
   ]
   if (hasAnySimpleSkillTag(skill, ['channel', 'aoe_channel', 'channel_disable'])) {
     const channelDuration = Math.min(4, Math.max(0.8, getSkillEffectProfile(skill, getSimpleSkillLevel(arcane, skill)).duration * 0.45))
-    arcane.channeling = {
+    liveArcane.channeling = {
       kind: 'skill',
       target: target.pos,
       startedAt: state.time,
@@ -5968,6 +5988,12 @@ export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, sk
       label: skill.name,
       effectLabel: `${skill.name} concluida`,
     }
+  }
+  if (liveArcane !== arcane) {
+    arcane.stats = liveArcane.stats
+    arcane.microDecision = liveArcane.microDecision
+    arcane.decision = liveArcane.decision
+    arcane.channeling = liveArcane.channeling
   }
 }
 

@@ -91,13 +91,16 @@ let state: SimulationState = initialState
 
   assert.equal(tryCastSimpleSkill(cooldownState, caster, enemy), true, 'ready skills should cast')
   const silence = getHeroDefinition(caster.heroDefinitionId).skills!.find((skill) => skill.key === 'Q')!
-  const cooldownUntil = caster.itemCooldowns[silence.id]
+  const liveCaster = cooldownState.arcanes.find((arcane) => arcane.id === caster.id)!
+  const liveEnemy = cooldownState.arcanes.find((arcane) => arcane.id === enemy.id)!
+  const cooldownUntil = liveCaster.itemCooldowns[silence.id]
   assert.equal(cooldownUntil, 122, 'official 22-second cooldown should be stored as an absolute game time')
-  caster.stats.mana = caster.stats.maxMana
+  assert.ok(liveCaster.stats.mana < liveCaster.stats.maxMana, 'mana cost should persist on the live caster after damage replaces state entities')
+  liveCaster.stats.mana = liveCaster.stats.maxMana
   cooldownState.time = 121.99
-  assert.equal(tryCastSimpleSkill(cooldownState, caster, enemy), false, 'skills must not cast before cooldown expires')
+  assert.equal(tryCastSimpleSkill(cooldownState, liveCaster, liveEnemy), false, 'skills must not cast before cooldown expires')
   cooldownState.time = cooldownUntil
-  assert.equal(tryCastSimpleSkill(cooldownState, caster, enemy), true, 'skills should cast again when cooldown expires')
+  assert.equal(tryCastSimpleSkill(cooldownState, liveCaster, liveEnemy), true, 'skills should cast again when cooldown expires')
 
   const globalSilence = getHeroDefinition(caster.heroDefinitionId).skills!.find((skill) => skill.key === 'R')!
   assert.equal(getSimpleSkillDamage(caster, globalSilence, 1), 0, 'global silence is control and should not damage every enemy')
