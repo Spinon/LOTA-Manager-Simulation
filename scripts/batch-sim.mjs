@@ -5,6 +5,7 @@ import {
   createInitialState,
   decisionGateSeconds,
   loadGameData,
+  matchPreparationStartSeconds,
   simulationFrameSeconds,
   tick,
 } from '../src/sim/simulation.ts'
@@ -23,7 +24,7 @@ const seedPrefix = getArg('seed', 'batch')
 const watchdogMinutes = Math.max(60, Number(getArg('watchdog-minutes', 90)) || 90)
 const watchdogSeconds = watchdogMinutes * 60
 // O watchdog apenas denuncia simulações travadas; nunca declara vencedor ou empate.
-const maxSimulationSteps = Math.ceil(watchdogSeconds / simulationFrameSeconds) + 100
+const maxSimulationSteps = Math.ceil((watchdogSeconds - matchPreparationStartSeconds) / simulationFrameSeconds) + 100
 const checkpointMinutes = [6, 10, 20, 40]
 
 await loadGameData()

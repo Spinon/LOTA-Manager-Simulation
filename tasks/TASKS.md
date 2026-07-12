@@ -270,6 +270,25 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
+### [x] T14.2 - Progressão de inventário e abertura da partida
+
+> Concluída em 2026-07-12 - Adicionei revenda e upgrade de inventário cheio, preparação jogável em `-01:00`, cronologia inicial de waves/campos/runas e suporte integral do replay ao relógio negativo.
+
+**Objetivo**: impedir que inventários cheios bloqueiem o scaling dos Arcanes e alinhar a preparação/spawns iniciais ao relógio competitivo da partida.
+
+**Escopo**:
+- Comparar itens antigos com upgrades desejados; vender o slot de menor valor por 50% quando a melhoria justificar a troca e considerar o valor de revenda na decisão de compra.
+- Permitir upgrade de botas sem duplicá-las, priorizar item permanente sobre novo consumível quando o inventário estiver cheio e reconstruir atributos preservando HP/mana atuais.
+- Iniciar a simulação e o replay em `-01:00`, usando esse período apenas para posicionamento de rota, sem combate, ouro passivo ou waves.
+- Spawnar a primeira wave e as runas de ouro em `00:00`, campos neutros em `01:00`, runas de poder a partir de `02:00` e runas de XP a partir de `07:00`.
+- Adaptar worker, seek, progresso de carregamento e relógio visual ao intervalo negativo.
+
+**Critérios**: testes de compra com seis slots e revenda, posicionamento pré-jogo, ausência/spawn de campos e cronologia de waves/runas; replay inclui frames de `-01:00` sem salto; testes, lint, build e benchmark verdes.
+
+**Medição**: auditoria de 45min registrou 7 substituições de itens e inventários de até 14,2k; a partida headless terminou organicamente em 69,2min, ainda acima do soft cap e mantendo conversão de highground como alvo do rebalance contínuo. Benchmark determinístico da timeline de 360s ficou em 50,4x nesta estação. A tentativa visual headless não saiu do pré-carregamento em 220s; cronologia, relógio e frame negativo foram validados por testes automatizados. Testes, lint e build verdes.
+
+---
+
 ### [ ] T15 - Auditoria e implementação integral de skills
 
 **Objetivo**: verificar todas as skills importadas e garantir que cada uma possua execução funcional, incluindo dano, targeting, cooldown, mana, scaling, passivas, summons e todos os efeitos favoráveis/adversos e status effects descritos.

@@ -4,6 +4,7 @@ import {
   campStrengthLabel,
   convertImportedSkillRange,
   formatCompactGold,
+  formatMatchTime,
   getArcaneBarrierAmount,
   getArcaneDamageRangeLabel,
   getArcaneNetWorth,
@@ -28,6 +29,7 @@ import {
   getLevelProgress,
   loadGameData,
   materializeMatchRenderFrame,
+  matchPreparationStartSeconds,
   getRuneGlyph,
   getRuneInspectorSubtitle,
   getRuneKindLabel,
@@ -218,7 +220,7 @@ function App() {
   const [uiDataReady, setUiDataReady] = useState(false)
   const [startupWaitDone, setStartupWaitDone] = useState(false)
   const [startupWaitProgress, setStartupWaitProgress] = useState(0)
-  const [bufferInfo, setBufferInfo] = useState({ simTime: 0, frameCount: 0, bufferAhead: 0 })
+  const [bufferInfo, setBufferInfo] = useState({ simTime: matchPreparationStartSeconds, frameCount: 0, bufferAhead: 0 })
   const [selected, setSelected] = useState<Selected>({ kind: 'arcane', id: 'd-quasar' })
   const [dataPanelOpen, setDataPanelOpen] = useState(false)
   const [matchWinner, setMatchWinner] = useState<TeamId | undefined>(undefined)
@@ -230,7 +232,7 @@ function App() {
   const activeTransportFrameRef = useRef<MatchRenderFrame | undefined>(undefined)
   const activeFrameRevisionRef = useRef(0)
   const frameIndexRef = useRef(0)
-  const playbackCursorRef = useRef(0)
+  const playbackCursorRef = useRef(matchPreparationStartSeconds)
   const lastPlaybackTick = useRef<number | null>(null)
   const lastStatePaintRef = useRef(0)
   const lastTeamPaintRef = useRef(0)
@@ -299,7 +301,7 @@ function App() {
     activeFrameRevisionRef.current = 0
     activeDetailsRef.current = undefined
     frameIndexRef.current = 0
-    playbackCursorRef.current = 0
+    playbackCursorRef.current = matchPreparationStartSeconds
     lastPlaybackTick.current = null
     currentFrameKeyRef.current = ''
     lastStatePaintRef.current = 0
@@ -335,15 +337,15 @@ function App() {
       setPlaybackStatus('ready')
       setStartupWaitDone(true)
       setStartupWaitProgress(1)
-      setBufferInfo({ simTime: adopting.simTime, frameCount: adopting.frames.length, bufferAhead: adopting.simTime })
+      setBufferInfo({ simTime: adopting.simTime, frameCount: adopting.frames.length, bufferAhead: adopting.simTime - matchPreparationStartSeconds })
     } else {
       setPlaybackStatus('loading')
       setStartupWaitDone(false)
       setStartupWaitProgress(0)
       setBufferInfo({
-        simTime: adopting?.simTime ?? 0,
+        simTime: adopting?.simTime ?? matchPreparationStartSeconds,
         frameCount: adopting?.frames.length ?? 0,
-        bufferAhead: adopting?.simTime ?? 0,
+        bufferAhead: adopting ? adopting.simTime - matchPreparationStartSeconds : 0,
       })
     }
     const startupStartedAt = performance.now()
@@ -365,7 +367,7 @@ function App() {
         runId: standbyRunId,
         frames: new ReplayFrameStore(),
         workerDone: false,
-        simTime: 0,
+        simTime: matchPreparationStartSeconds,
         staticData: undefined,
       }
       standbyWorker.onmessage = (event: MessageEvent<MatchWorkerResponse>) => {
@@ -620,15 +622,17 @@ function App() {
     dusk: state ? getTeamNetWorth(state, 'dusk') : 0,
   }), [state])
 
-  const isInitialBuffering = playbackCursorRef.current <= 0.001 && playbackStatus === 'buffering'
-  const precomputeProgress = precomputeDone ? 1 : Math.min(0.99, bufferInfo.simTime / softMatchDurationSeconds)
+  const isInitialBuffering = playbackCursorRef.current <= matchPreparationStartSeconds + 0.001 && playbackStatus === 'buffering'
+  const precomputeProgress = precomputeDone
+    ? 1
+    : Math.min(0.99, Math.max(0, (bufferInfo.simTime - matchPreparationStartSeconds) / (softMatchDurationSeconds - matchPreparationStartSeconds)))
   const replayDuration = Math.max(1, bufferInfo.simTime)
   const displayedWinner = winnerRevealed ? (matchWinner ?? state?.winner) : undefined
   const seekPlayback = (requestedTime: number) => {
     const frames = frameBufferRef.current
     if (frames.length === 0) return
     const latestTime = frames.getTime(frames.length - 1)
-    const targetTime = Math.max(0, Math.min(requestedTime, latestTime))
+    const targetTime = Math.max(matchPreparationStartSeconds, Math.min(requestedTime, latestTime))
     const frameIndex = frames.findIndexAtOrBefore(targetTime)
     frameIndexRef.current = frameIndex
     playbackCursorRef.current = targetTime
@@ -657,7 +661,7 @@ function App() {
         <div className="loading-panel">
           <strong>{loadingError ? 'Erro ao carregar LOTA' : 'Calculando partida'}</strong>
           {!loadingError && <progress value={precomputeProgress} max={1} />}
-          {!loadingError && <span>{Math.round(precomputeProgress * 100)}% / {formatTime(bufferInfo.simTime)}</span>}
+          {!loadingError && <span>{Math.round(precomputeProgress * 100)}% / {formatMatchTime(bufferInfo.simTime)}</span>}
         </div>
       </main>
     )
@@ -672,8 +676,8 @@ function App() {
         <TeamBadge team="dawn" side="left" />
         <ScoreStat team="dawn" icon="gold" value={formatCompactGold(teamNetWorth.dawn)} label="Net worth Aurora Forge" />
         <ScoreStat team="dawn" icon="kills" value={state.kills.dawn} label="Eliminações Aurora Forge" />
-        <div className="match-clock" aria-label={`${formatTime(state.time)} - ${getGamePhaseLabel(phase)} - ${getDayCycleLabel(dayCycle)}`}>
-          <strong>{formatTime(state.time)}</strong>
+        <div className="match-clock" aria-label={`${formatMatchTime(state.time)} - ${getGamePhaseLabel(phase)} - ${getDayCycleLabel(dayCycle)}`}>
+          <strong>{formatMatchTime(state.time)}</strong>
           <div className="match-meta">
             <small>{getGamePhaseLabel(phase)}</small>
             <small className={`cycle-label ${dayCycle}`}>{getDayCycleLabel(dayCycle)}</small>
@@ -744,8 +748,8 @@ function App() {
             </select>
           </label>
           <label className="replay-progress" title={`Seed ${matchSeed} / ${bufferInfo.frameCount} frames`}>
-            <span>{formatTime(state.time)} / {formatTime(replayDuration)}</span>
-            <input type="range" min={0} max={replayDuration} step={0.2} value={Math.min(replayDuration, state.time)} onChange={(event) => seekPlayback(Number(event.target.value))} aria-label="Progresso do replay" />
+            <span>{formatMatchTime(state.time)} / {formatMatchTime(replayDuration)}</span>
+            <input type="range" min={matchPreparationStartSeconds} max={replayDuration} step={0.2} value={Math.max(matchPreparationStartSeconds, Math.min(replayDuration, state.time))} onChange={(event) => seekPlayback(Number(event.target.value))} aria-label="Progresso do replay" />
           </label>
           <button className="skip-to-end" type="button" onClick={() => { seekPlayback(replayDuration); setRunning(false); setWinnerRevealed(true); setPlaybackStatus('ended') }} title="Pular para o resultado">
             Resultado
@@ -803,7 +807,7 @@ function EndScreen({ state, winner, onReview, onRestart }: { state: SimulationSt
         <div>
           <span>Resultado da partida</span>
           <strong>{winner ? `${teamInfo[winner].name} venceu` : 'Empate por limite de tempo'}</strong>
-          <small>{formatTime(state.time)} de partida</small>
+          <small>{formatMatchTime(state.time)} de partida</small>
         </div>
         <div className="end-final-score" aria-label={`Placar ${state.kills.dawn} a ${state.kills.dusk}`}>
           <b className="dawn">{state.kills.dawn}</b><i>:</i><b className="dusk">{state.kills.dusk}</b>
@@ -2103,7 +2107,7 @@ function EventFeed({ events }: { events: MatchEvent[] }) {
         <ol>
           {events.slice(0, 8).map((event) => (
             <li key={event.id} style={{ '--team': teamInfo[event.team].primary } as React.CSSProperties}>
-              <time>{formatTime(event.time)}</time>
+              <time>{formatMatchTime(event.time)}</time>
               <span>
                 <strong className="kill-line">
                   <b style={{ '--name-color': teamInfo[event.actorTeam].primary } as React.CSSProperties}>{event.actor}</b>
@@ -2334,7 +2338,7 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
           items={[
             ['Tipo', getRuneKindLabel(entity.kind)],
             ['Valor', getRuneRewardLabel(entity, state.time)],
-            ['Spawn', formatTime(entity.spawnedAt)],
+            ['Spawn', formatMatchTime(entity.spawnedAt)],
             ['Expira', entity.expiresAt ? `${Math.max(0, Math.ceil(entity.expiresAt - state.time))}s` : 'Acumula'],
           ]}
         />
@@ -3108,13 +3112,6 @@ function findSelected(state: SimulationState, selected: Selected) {
 function place(point: Point) {
   const bounded = clampToMapBounds(point)
   return { '--map-x': `${bounded.x}%`, '--map-y': `${bounded.y}%` }
-}
-
-function formatTime(time: number) {
-  const total = Math.floor(time)
-  const minutes = Math.floor(total / 60)
-  const seconds = total % 60
-  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
 export default App

@@ -22,10 +22,11 @@ export const NON_COMBAT_RULES = {
   },
   map: {
     waveIntervalSeconds: 30,
+    jungleStartTimeSeconds: 60,
     jungleRespawnIntervalSeconds: 60,
     bossRespawnIntervalSeconds: 60,
     powerRuneIntervalSeconds: 120,
-    powerRuneStartTimeSeconds: 360,
+    powerRuneStartTimeSeconds: 120,
     bountyRuneIntervalSeconds: 180,
     wisdomRuneIntervalSeconds: 420,
     wisdomRuneStartTimeSeconds: 420,

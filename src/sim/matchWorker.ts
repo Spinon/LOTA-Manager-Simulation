@@ -55,10 +55,10 @@ async function runMatch(seed: string, runId: number) {
     let state = createInitialState(seed)
     self.postMessage({ type: 'static', runId, data: createMatchStaticData(state) } satisfies MatchWorkerResponse)
     let decisionAccumulator = 0
-    let nextFrameAt = renderFrameIntervalSeconds
+    let nextFrameAt = state.time + renderFrameIntervalSeconds
     let frameCount = 0
-    let lastFrameTime = -1
-    let nextDetailsAt = 0
+    let lastFrameTime = state.time
+    let nextDetailsAt = state.time
     let pendingFrames: MatchRenderFrame[] = []
     const replayEncoder = new ReplayChunkEncoder()
 

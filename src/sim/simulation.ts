@@ -491,6 +491,8 @@ export const laneNames: Record<LaneId, string> = {
 }
 
 export const baseServiceRange = 6
+export const matchPreparationStartSeconds = -60
+export const aliveRespawnTimestamp = matchPreparationStartSeconds
 export const mapWallPadding = 3
 export const minimumMeleeMapAttackRange = 4
 export const teleportScrollCost = 100
@@ -501,6 +503,7 @@ export const teleportNearbyPenaltyRadius = 10
 export const teleportNearbyPenaltySeconds = 25
 export const teleportArrivalOffset = 2.8
 export const teleportManaCost = 75
+export const itemResaleRate = 0.5
 // 30Hz é suficiente para a física da sim: o playback consome frames a 5Hz com
 // interpolação visual, e as decisões de IA já são gated a 0.1s (decisionGateSeconds).
 // Dobrar o passo corta ~metade do custo de CPU da partida no worker.
@@ -639,6 +642,14 @@ export function getGamePhaseLabel(phase: GamePhase) {
 export function formatCompactGold(value: number) {
   if (Math.abs(value) >= 1000) return `${(value / 1000).toFixed(1)}k`
   return `${Math.round(value)}g`
+}
+
+export function formatMatchTime(time: number) {
+  const negative = time < 0
+  const total = negative ? Math.ceil(Math.abs(time)) : Math.floor(time)
+  const minutes = Math.floor(total / 60)
+  const seconds = total % 60
+  return `${negative ? '-' : ''}${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
 }
 
 export function getDayCycle(time: number): DayCycle {
@@ -860,6 +871,8 @@ export let consumableCatalog: ConsumableItem[] = []
 let shopItemById = new Map<string, ShopItem>()
 let shopItemByName = new Map<string, ShopItem>()
 let shopItemsByInventory = new WeakMap<string[], ShopItem[]>()
+let itemPurchasePlanByInventory = new WeakMap<string[], { plan?: ItemPurchasePlan }>()
+let shopCandidatePoolByHero = new Map<string, ShopItem[]>()
 export let getRecommendedBuildItemIdsForHero = (_heroDefinitionId: string): string[] => []
 export let getRecommendedStartingItemNamesForHero = (_heroDefinitionId: string, role: string): string[] => getFallbackStartingItemNames(role)
 export let getRuntimeItemSeedById: (id: string) => ItemSeed | undefined = () => undefined
@@ -878,6 +891,8 @@ export async function loadGameData() {
   shopItemById = new Map(shopCatalog.map((item) => [item.id, item]))
   shopItemByName = new Map(shopCatalog.map((item) => [item.name, item]))
   shopItemsByInventory = new WeakMap()
+  itemPurchasePlanByInventory = new WeakMap()
+  shopCandidatePoolByHero = new Map()
   consumableCatalog = itemModule.consumableCatalog
   getRecommendedBuildItemIdsForHero = itemModule.getRecommendedBuildItemIds
   getRecommendedStartingItemNamesForHero = itemModule.getRecommendedStartingItemNames
@@ -910,7 +925,7 @@ export function createInitialState(seed = 'lota-default-seed'): SimulationState 
       pos,
       target: lanePaths[arcane.team][arcane.lane][1],
       pathIndex: 1,
-      respawn: 0,
+      respawn: aliveRespawnTimestamp,
       lastAttack: -10,
       aggression: getRoleAggression(arcane.role),
       visionRange: getArcaneDefinitionVisionRange(arcane.heroDefinitionId, 'day'),
@@ -958,7 +973,7 @@ export function createInitialState(seed = 'lota-default-seed'): SimulationState 
 
   return {
     matchSeed: seed,
-    time: 0,
+    time: matchPreparationStartSeconds,
     nextWave: 0,
     kills: { dawn: 0, dusk: 0 },
     nextTeamDecisionAt: 0,
@@ -1060,7 +1075,7 @@ export function getHeroPortraitCode(hero: HeroDefinition) {
 }
 
 export function createInitialRunes(): MapRune[] {
-  return createBountyRunes(0, 0)
+  return []
 }
 
 export function getFallbackStartingItemNames(role: string) {
@@ -1208,13 +1223,13 @@ export function createNeutralCamps(): Camp[] {
       name,
       strength,
       pos: { x, y },
-      hp: stats.hp,
+      hp: 0,
       maxHp: stats.hp,
       damage: stats.damage,
       range: stats.range,
       lastAttack: -10,
       level: stats.level,
-      respawn: 0,
+      respawn: NON_COMBAT_RULES.map.jungleStartTimeSeconds,
       stackCount: 0,
       lastStackAttemptAt: -999,
     }
@@ -1447,14 +1462,14 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   const previousDayCycle = getDayCycle(next.time)
   const previousTime = next.time
   next.time = Number((next.time + delta).toFixed(3))
-  if (next.time >= next.nextWave) {
+  if (next.time >= 0 && next.time >= next.nextWave) {
     next.creeps.push(...spawnWave(next))
     next.nextWave += NON_COMBAT_RULES.map.waveIntervalSeconds
   }
   next.runes = spawnRunesForTick(next, previousTime)
   // Ouro passivo acumula na cadência do gate de decisão (mesma taxa por
   // segundo): conceder a cada tick clonava 10 arcanes/tick só para somar ouro.
-  const passiveGold = shouldDecide ? passiveGoldForTick(next.time, decisionGateSeconds) : 0
+  const passiveGold = shouldDecide && next.time >= 0 ? passiveGoldForTick(next.time, decisionGateSeconds) : 0
   next.effects = next.effects.filter((effect) => next.time - effect.createdAt < effect.duration)
   next.timedEffects = next.timedEffects.filter((effect) => effect.expiresAt > next.time)
   next = processTimedEffects(next)
@@ -1512,7 +1527,7 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   }
 
   next.arcanes = next.arcanes.map((arcane) => updateArcaneMovement(arcane, next, delta, shouldDecide))
-  next = collectRunes(next)
+  if (next.time >= 0) next = collectRunes(next)
   if (passiveGold > 0) {
     next.arcanes = next.arcanes.map((arcane) => (
       arcane.stats.hp > 0 && arcane.respawn <= next.time
@@ -1525,8 +1540,10 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   // ticks de decisão (10Hz) é indistinguível no playback de 5Hz e poupa CPU.
   if (shouldDecide) resolveUnitHitboxes(next)
   next = updateTeamFortifications(next)
-  next = resolveCombat(next, frameContext)
-  next = resolveDeaths(next)
+  if (next.time >= 0) {
+    next = resolveCombat(next, frameContext)
+    next = resolveDeaths(next)
+  }
   next.winner = next.bases.find((base) => base.hp <= 0)?.team === 'dawn' ? 'dusk' : next.bases.find((base) => base.hp <= 0)?.team === 'dusk' ? 'dawn' : undefined
   return next
 }
@@ -2409,14 +2426,14 @@ export function updateBoss(boss: Boss, time: number, delta: number): Boss {
 }
 
 export function respawnArcaneIfReady(arcane: Arcane, time: number, index: number): Arcane {
-  if (arcane.respawn === 0 || arcane.respawn > time) return arcane
+  if (arcane.respawn <= matchPreparationStartSeconds || arcane.respawn > time) return arcane
   const spawn = spreadPoint(teamInfo[arcane.team].base, index)
   return {
     ...arcane,
     pos: spawn,
     target: lanePaths[arcane.team][arcane.lane][1],
     pathIndex: 1,
-    respawn: 0,
+    respawn: aliveRespawnTimestamp,
     lastHitBy: undefined,
     macroDecision: 'Avancar rota',
     microDecision: 'Renasceu na base',
@@ -3269,12 +3286,12 @@ export function recordFailedExecutionMemory(
 }
 
 export function getItemTimingUrgency(arcane: Arcane, time: number) {
-  const item = nextShopItem(arcane)
-  if (!item) return 0
+  const purchase = getItemPurchasePlan(arcane)
+  if (!purchase) return 0
 
   const expectedGpm = getExpectedItemTimingGpm(arcane, time)
-  const timeToItem = expectedTimeToItemSeconds(item.cost, arcane.stats.gold, expectedGpm)
-  const progressScore = Math.min(100, (arcane.stats.gold / Math.max(1, item.cost)) * 100)
+  const timeToItem = expectedTimeToItemSeconds(purchase.netCost, arcane.stats.gold, expectedGpm)
+  const progressScore = Math.min(100, (arcane.stats.gold / Math.max(1, purchase.netCost)) * 100)
   const timeScore = timeToItem <= 0
     ? 100
     : timeToItem <= 30
@@ -3314,22 +3331,99 @@ export function getExpectedItemTimingGpm(arcane: Arcane, time: number) {
 }
 
 export function nextShopItem(arcane: Arcane) {
-  if (arcane.items.length >= 6) return undefined
-  const recommendedIds = getRecommendedBuildItemIdsForHero(arcane.heroDefinitionId)
-  const recommendedItem = recommendedIds
-    .map((id) => shopItemById.get(id))
-    .find((item) => item && !arcane.items.includes(item.name) && canRoleBuyItem(arcane, item))
-  if (recommendedItem) return recommendedItem
+  return getItemPurchasePlan(arcane)?.item
+}
 
-  return shopCatalog.find((candidate) => !arcane.items.includes(candidate.name) && canRoleBuyItem(arcane, candidate))
+export type ItemPurchasePlan = {
+  item: ShopItem
+  soldItemName?: string
+  resaleGold: number
+  netCost: number
+}
+
+export function getItemPurchasePlan(arcane: Arcane): ItemPurchasePlan | undefined {
+  const cached = itemPurchasePlanByInventory.get(arcane.items)
+  if (cached) return cached.plan
+  const plan = calculateItemPurchasePlan(arcane)
+  itemPurchasePlanByInventory.set(arcane.items, { plan })
+  return plan
+}
+
+export function calculateItemPurchasePlan(arcane: Arcane): ItemPurchasePlan | undefined {
+  const candidates = getShopCandidatePool(arcane)
+    .filter((item) => !arcane.items.includes(item.name) && canRoleBuyItem(arcane, item))
+
+  if (arcane.items.length < 6) {
+    const item = candidates[0]
+    return item ? { item, resaleGold: 0, netCost: item.cost } : undefined
+  }
+
+  for (const item of candidates) {
+    const replacement = getItemReplacementCandidate(arcane, item)
+    if (!replacement) continue
+    const minimumUpgrade = Math.max(300, replacement.value * 0.35)
+    if (item.cost < replacement.value + minimumUpgrade) continue
+    const resaleGold = Math.floor(replacement.value * itemResaleRate)
+    return {
+      item,
+      soldItemName: replacement.name,
+      resaleGold,
+      netCost: Math.max(0, item.cost - resaleGold),
+    }
+  }
+
+  return undefined
+}
+
+export function getShopCandidatePool(arcane: Arcane) {
+  const cacheKey = `${arcane.heroDefinitionId}:${arcane.role}:${arcane.stats.attackType}`
+  const cached = shopCandidatePoolByHero.get(cacheKey)
+  if (cached) return cached
+  const seen = new Set<string>()
+  const candidates: ShopItem[] = []
+  const addCandidate = (item: ShopItem | undefined) => {
+    if (!item || seen.has(item.id)) return
+    seen.add(item.id)
+    candidates.push(item)
+  }
+  getRecommendedBuildItemIdsForHero(arcane.heroDefinitionId).forEach((id) => addCandidate(shopItemById.get(id)))
+  shopCatalog.forEach(addCandidate)
+  shopCandidatePoolByHero.set(cacheKey, candidates)
+  return candidates
+}
+
+export function getItemReplacementCandidate(arcane: Arcane, upgrade: ShopItem) {
+  const owned = arcane.items.map((name, index) => {
+    const item = shopItemByName.get(name)
+    const consumable = getConsumableByName(name)
+    return {
+      name,
+      index,
+      item,
+      consumable,
+      value: item?.cost ?? consumable?.cost ?? 0,
+    }
+  })
+  const ownedBoots = owned.filter(({ item, name }) => item ? isBootItem(item) : name.toLowerCase().includes('boot'))
+  if (isBootItem(upgrade) && ownedBoots.length > 0) {
+    return ownedBoots.sort((a, b) => a.value - b.value || a.index - b.index)[0]
+  }
+  return owned.sort((a, b) => (
+    Number(Boolean(b.consumable)) - Number(Boolean(a.consumable)) ||
+    a.value - b.value ||
+    a.index - b.index
+  ))[0]
 }
 
 export function canRoleBuyItem(arcane: Arcane, item: ShopItem) {
   if (arcane.items.includes(item.name)) return false
-  if (isBootItem(item) && arcane.items.some((name) => {
-    const owned = shopItemByName.get(name)
-    return owned ? isBootItem(owned) : name.toLowerCase().includes('boot')
-  })) return false
+  if (isBootItem(item)) {
+    const ownedBootCosts = arcane.items.flatMap((name) => {
+      const owned = shopItemByName.get(name)
+      return owned && isBootItem(owned) ? [owned.cost] : name.toLowerCase().includes('boot') ? [0] : []
+    })
+    if (ownedBootCosts.length > 0 && item.cost <= Math.max(...ownedBootCosts) + 250) return false
+  }
   if (arcane.role.includes('Support') && item.cost > 4000 && getInventoryPowerItemCount(arcane) < 4) return false
   if (arcane.stats.attackType === 'melee' && item.id.includes('ranged')) return false
   if (arcane.stats.attackType === 'ranged' && item.id.includes('cleave')) return false
@@ -3855,6 +3949,30 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
   let aiFailure = arcane.aiFailure
   const ownBase = teamInfo[arcane.team].base
   const path = lanePaths[arcane.team][arcane.lane]
+  if (state.time < 0) {
+    const stagingStart = path[Math.min(1, path.length - 1)]
+    const stagingEnd = path[Math.min(2, path.length - 1)]
+    const stagingAnchor = {
+      x: stagingStart.x + (stagingEnd.x - stagingStart.x) * 0.72,
+      y: stagingStart.y + (stagingEnd.y - stagingStart.y) * 0.72,
+    }
+    const stagingPoint = formationPoint(stagingAnchor, arcane.id)
+    const nextPos = moveToward(arcane.pos, stagingPoint, getEffectiveArcaneMoveSpeed(state, arcane) * delta)
+    return {
+      ...arcane,
+      target: stagingPoint,
+      pathIndex: Math.min(2, path.length - 1),
+      macroDecision: 'Preparar rota',
+      microDecision: 'Posicionando antes da partida',
+      aiMode: 'push_lane',
+      aiReason: 'pre_game_positioning',
+      nextDecisionAt: 0,
+      forceDecision: state.time + delta >= 0,
+      lastDecisionPos: nextPos,
+      decision: 'Posicionando antes da partida',
+      pos: nextPos,
+    }
+  }
   const phase = getGamePhase(state.time)
   const atBase = distance(arcane.pos, ownBase) < baseServiceRange
   const canBuyAtBase = atBase && hasBasePurchaseOpportunity(state, arcane)
@@ -4365,6 +4483,8 @@ export function buyAtBase(state: SimulationState, arcane: Arcane): Arcane {
       },
     }
   }
+  const itemPurchase = buyItemAtBase(arcane)
+  if (itemPurchase !== arcane) return itemPurchase
   if (arcane.items.length >= 6) return arcane
   const consumable = getAffordableWantedConsumable(state, arcane)
   if (consumable) {
@@ -4378,25 +4498,25 @@ export function buyAtBase(state: SimulationState, arcane: Arcane): Arcane {
     }
   }
 
-  return buyItemAtBase(arcane)
+  return arcane
 }
 
 export function hasBasePurchaseOpportunity(state: SimulationState, arcane: Arcane) {
   return (arcane.tpScrolls < teleportScrollMaxCharges && arcane.stats.gold >= teleportScrollCost) ||
-    affordableShopItem(arcane) !== undefined ||
+    getAffordableItemPurchasePlan(arcane) !== undefined ||
     getAffordableWantedConsumable(state, arcane) !== undefined
 }
 
 export function buyItemAtBase(arcane: Arcane): Arcane {
-  if (arcane.items.length >= 6) return arcane
-  const item = affordableShopItem(arcane)
-  if (!item) return arcane
-  const items = [...arcane.items, item.name]
+  const purchase = getAffordableItemPurchasePlan(arcane)
+  if (!purchase) return arcane
+  const retainedItems = purchase.soldItemName ? removeFirstByName(arcane.items, purchase.soldItemName) : arcane.items
+  const items = [...retainedItems, purchase.item.name]
 
   return {
     ...arcane,
     items,
-    stats: rebuildArcaneStatsAfterItemChange(arcane, items, arcane.stats.gold - item.cost),
+    stats: rebuildArcaneStatsAfterItemChange(arcane, items, arcane.stats.gold - purchase.netCost),
   }
 }
 
@@ -4947,9 +5067,12 @@ export function dispelTimedEffects(state: SimulationState, targetId: string, pow
 }
 
 export function affordableShopItem(arcane: Arcane) {
-  if (arcane.items.length >= 6) return undefined
-  const item = nextShopItem(arcane)
-  return item && arcane.stats.gold >= item.cost ? item : undefined
+  return getAffordableItemPurchasePlan(arcane)?.item
+}
+
+export function getAffordableItemPurchasePlan(arcane: Arcane) {
+  const purchase = getItemPurchasePlan(arcane)
+  return purchase && arcane.stats.gold >= purchase.netCost ? purchase : undefined
 }
 
 export function getWantedConsumable(state: SimulationState, arcane: Arcane) {

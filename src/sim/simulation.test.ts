@@ -6,16 +6,19 @@ import {
   applySimpleSkillDisplacement,
   applySimpleSkillSummonPressure,
   applySimpleNegativeSkillEffects,
+  buyItemAtBase,
   canTargetWithSimpleDamageSkill,
   createInitialState,
   createMatchRenderFrame,
   createMatchStaticData,
   damageEntity,
   enrichTeamPlanWithMapTarget,
+  formatMatchTime,
   getGamePhase,
   getArcanePassiveCombatModifiers,
   getCampClearAssessment,
   getHeroDefinition,
+  getItemPurchasePlan,
   getHigherPriorityFarmAlly,
   getCreepXpShare,
   getDenyTarget,
@@ -36,10 +39,12 @@ import {
   isPositiveSimpleSkill,
   loadGameData,
   materializeMatchRenderFrame,
+  matchPreparationStartSeconds,
   resetDisengagedNeutralCamps,
   resolveDeaths,
   resolveCombat,
   simulationFrameSeconds,
+  shopCatalog,
   tryCastSimpleSkill,
   tick,
   updateBoss,
@@ -73,7 +78,80 @@ function createTickFrameContext(): TickFrameContext {
   }
 }
 
+function createStateAtGameStart(seed: string) {
+  const state = createInitialState(seed)
+  state.time = -simulationFrameSeconds
+  return tick(state, simulationFrameSeconds, true)
+}
+
 await loadGameData()
+
+{
+  const openingState = createInitialState('opening-timeline-test')
+  assert.equal(openingState.time, matchPreparationStartSeconds)
+  assert.equal(formatMatchTime(openingState.time), '-01:00')
+  assert.equal(formatMatchTime(-0.1), '-00:01')
+  assert.equal(openingState.creeps.length, 0)
+  assert.equal(openingState.runes.length, 0)
+  assert.ok(openingState.camps.every((camp) => camp.hp === 0 && camp.respawn === 60))
+
+  const openingArcane = openingState.arcanes[0]
+  const openingPosition = { ...openingArcane.pos }
+  const openingGold = openingArcane.stats.gold
+  const preparationTick = tick(openingState, 1, true)
+  assert.equal(preparationTick.time, -59)
+  assert.equal(preparationTick.arcanes[0].macroDecision, 'Preparar rota')
+  assert.notDeepEqual(preparationTick.arcanes[0].pos, openingPosition, 'Arcanes should move toward lane during preparation')
+  assert.equal(preparationTick.arcanes[0].stats.gold, openingGold, 'passive gold must not accrue before 00:00')
+  assert.equal(preparationTick.creeps.length, 0)
+
+  const openingEncoder = new ReplayChunkEncoder()
+  const openingStore = new ReplayFrameStore()
+  openingStore.appendChunk(openingEncoder.encode([createMatchRenderFrame(createInitialState('opening-replay-test'))]))
+  assert.equal(openingStore.getTime(0), matchPreparationStartSeconds, 'binary replay should preserve the negative preparation timestamp')
+
+  const zeroState = createInitialState('opening-zero-test')
+  zeroState.time = -0.01
+  const atZero = tick(zeroState, 0.02, true)
+  assert.ok(atZero.creeps.length > 0, 'the first lane wave should spawn at 00:00')
+  assert.equal(atZero.runes.filter((rune) => rune.kind === 'bounty').length, 4, 'gold runes should spawn at 00:00')
+  assert.equal(atZero.runes.some((rune) => rune.kind === 'power'), false)
+
+  const jungleState = createInitialState('opening-jungle-test')
+  jungleState.time = 59.99
+  const atOneMinute = tick(jungleState, 0.02, true)
+  assert.ok(atOneMinute.camps.every((camp) => camp.hp === camp.maxHp), 'neutral camps should first spawn at 01:00')
+
+  const powerState = createInitialState('opening-power-test')
+  powerState.time = 119.99
+  const atTwoMinutes = tick(powerState, 0.02, true)
+  assert.equal(atTwoMinutes.runes.filter((rune) => rune.kind === 'power').length, 1, 'power runes should start at 02:00')
+
+  const wisdomState = createInitialState('opening-wisdom-test')
+  wisdomState.time = 419.99
+  const atSevenMinutes = tick(wisdomState, 0.02, true)
+  assert.equal(atSevenMinutes.runes.filter((rune) => rune.kind === 'wisdom').length, 2, 'XP runes should start at 07:00')
+}
+
+{
+  const purchaseState = createInitialState('full-inventory-upgrade-test')
+  const shopper = purchaseState.arcanes[0]
+  const compatibleItems = shopCatalog.filter((item) => (
+    !(shopper.stats.attackType === 'melee' && item.id.includes('ranged')) &&
+    !(shopper.stats.attackType === 'ranged' && item.id.includes('cleave'))
+  ))
+  shopper.items = compatibleItems.slice(0, 6).map((item) => item.name)
+  shopper.stats.gold = 12_000
+  const plan = getItemPurchasePlan(shopper)
+  assert.ok(plan?.soldItemName, 'a full inventory should produce a replacement plan')
+  assert.ok(plan!.item.cost > (compatibleItems.find((item) => item.name === plan!.soldItemName)?.cost ?? 0))
+  const goldBefore = shopper.stats.gold
+  const upgraded = buyItemAtBase(shopper)
+  assert.equal(upgraded.items.length, 6)
+  assert.equal(upgraded.items.includes(plan!.soldItemName!), false)
+  assert.equal(upgraded.items.includes(plan!.item.name), true)
+  assert.equal(upgraded.stats.gold, goldBefore - plan!.netCost, 'the purchase should credit resale gold before buying the upgrade')
+}
 
 assert.ok(getRoleFarmPriority('Safe Lane') > getRoleFarmPriority('Mid'))
 assert.ok(getRoleFarmPriority('Mid') > getRoleFarmPriority('Offlane'))
@@ -143,6 +221,8 @@ assert.ok(getRoleFarmPriority('Greedy Support') > getRoleFarmPriority('Dedicated
 
 {
   const retaliationState = createInitialState('neutral-retaliation-test')
+  retaliationState.time = 120
+  retaliationState.camps.forEach((camp) => { camp.hp = camp.maxHp; camp.respawn = 0 })
   retaliationState.arcanes.forEach((arcane) => { arcane.pos = { x: 1, y: 1 } })
   const attacker = retaliationState.arcanes[0]
   const camp = retaliationState.camps[0]
@@ -229,7 +309,9 @@ const initialState = seededA
 let state: SimulationState = initialState
 
 {
-  const indexedState = tick(createInitialState('entity-index-regression'), simulationFrameSeconds, true)
+  const indexSeed = createInitialState('entity-index-regression')
+  indexSeed.time = -simulationFrameSeconds
+  const indexedState = tick(indexSeed, simulationFrameSeconds, true)
   const firstIndexes = getSimulationEntityIndexes(indexedState)
   assert.equal(firstIndexes.arcane.get(indexedState.arcanes[0].id), 0, 'arcane ids should resolve to their live array index')
   assert.equal(firstIndexes.creep.get(indexedState.creeps[0].id), 0, 'creep ids should resolve to their live array index')
@@ -275,7 +357,7 @@ let state: SimulationState = initialState
 }
 
 {
-  const targetedDamageState = tick(createInitialState('targeted-damage-regression'), simulationFrameSeconds, true)
+  const targetedDamageState = createStateAtGameStart('targeted-damage-regression')
   const creep = targetedDamageState.creeps[0]
   const source = { id: 'test-environment', label: 'Test', team: creep.team === 'dawn' ? 'dusk' : 'dawn', damageType: 'pure' } as const
   const collectionsBefore = {
@@ -297,7 +379,7 @@ let state: SimulationState = initialState
 }
 
 {
-  const scheduledState = tick(createInitialState('fixed-attack-schedule'), simulationFrameSeconds, true)
+  const scheduledState = createStateAtGameStart('fixed-attack-schedule')
   const tower = scheduledState.towers.find((candidate) => candidate.team === 'dawn')!
   const target = scheduledState.creeps.find((candidate) => candidate.team === 'dusk')!
   tower.lastAttack = -10
@@ -323,7 +405,7 @@ let state: SimulationState = initialState
 }
 
 {
-  const priorityState = tick(createInitialState('last-hit-before-deny'), simulationFrameSeconds, true)
+  const priorityState = createStateAtGameStart('last-hit-before-deny')
   const arcane = priorityState.arcanes.find((candidate) => candidate.team === 'dawn' && candidate.lane === 'top')!
   const enemyCreep = priorityState.creeps.find((candidate) => candidate.team === 'dusk' && candidate.lane === arcane.lane)!
   const alliedCreep = priorityState.creeps.find((candidate) => candidate.team === arcane.team && candidate.lane === arcane.lane)!
@@ -399,6 +481,7 @@ let state: SimulationState = initialState
 
 {
   const structureState = createInitialState('structure-pacing-seed')
+  structureState.time = 0
   const attacker = structureState.arcanes.find((arcane) => arcane.team === 'dawn')!
   const tower = structureState.towers.find((candidate) => candidate.team === 'dusk' && candidate.tier === 1)!
   const skill = (getHeroDefinition(attacker.heroDefinitionId).skills ?? []).find((candidate) => candidate.kind !== 'passive')
@@ -488,7 +571,7 @@ let state: SimulationState = initialState
   assert.ok(passiveDamage > passiveCarrier.stats.damage, 'leveled passive skills should modify continuous combat stats')
 }
 
-for (let step = 0; step < 600; step += 1) {
+for (let step = 0; step < 2400; step += 1) {
   state = tick(state, simulationFrameSeconds, step % 30 === 0)
 }
 

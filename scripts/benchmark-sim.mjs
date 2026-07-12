@@ -6,6 +6,7 @@ import {
   createMatchStaticData,
   decisionGateSeconds,
   loadGameData,
+  matchPreparationStartSeconds,
   simulationFrameSeconds,
   tick,
 } from '../src/sim/simulation.ts'
@@ -57,8 +58,8 @@ function createStateDigest(state) {
 function runBenchmark() {
   let state = createInitialState(seed)
   let decisionAccumulator = 0
-  let nextFrameAt = 0
-  let nextDetailsAt = 0
+  let nextFrameAt = state.time
+  let nextDetailsAt = state.time
   let pendingFrames = []
   let frameCount = 0
   let stepCount = 0
@@ -97,9 +98,9 @@ function runBenchmark() {
   return {
     wallSeconds,
     cpuSeconds,
-    simulatedSeconds: state.time,
-    simulationRate: state.time / wallSeconds,
-    cpuSimulationRate: state.time / cpuSeconds,
+    simulatedSeconds: state.time - matchPreparationStartSeconds,
+    simulationRate: (state.time - matchPreparationStartSeconds) / wallSeconds,
+    cpuSimulationRate: (state.time - matchPreparationStartSeconds) / cpuSeconds,
     steps: stepCount,
     frames: frameCount,
     digest: createStateDigest(state),
