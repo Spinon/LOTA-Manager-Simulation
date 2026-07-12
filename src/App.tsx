@@ -94,7 +94,7 @@ import { ReplayFrameStore } from './sim/replayStore'
 import './App.css'
 
 type PlaybackStatus = 'loading' | 'ready' | 'buffering' | 'ended' | 'error'
-const maxMatchSimulationSeconds = 50 * 60
+const softMatchDurationSeconds = 60 * 60
 
 // Partida standby: enquanto o jogador assiste a atual, um segundo worker
 // pré-simula a próxima seed até o teto de buffer. No restart, o worker e os
@@ -621,7 +621,7 @@ function App() {
   }), [state])
 
   const isInitialBuffering = playbackCursorRef.current <= 0.001 && playbackStatus === 'buffering'
-  const precomputeProgress = precomputeDone ? 1 : Math.min(0.99, bufferInfo.simTime / maxMatchSimulationSeconds)
+  const precomputeProgress = precomputeDone ? 1 : Math.min(0.99, bufferInfo.simTime / softMatchDurationSeconds)
   const replayDuration = Math.max(1, bufferInfo.simTime)
   const displayedWinner = winnerRevealed ? (matchWinner ?? state?.winner) : undefined
   const seekPlayback = (requestedTime: number) => {

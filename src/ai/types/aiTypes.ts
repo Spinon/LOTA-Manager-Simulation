@@ -141,6 +141,7 @@ export interface PlayerContext {
     currentMode?: PlayerModeType
     danger: number
     itemTimingUrgency: number
+    developmentNeed: number
   }
   local: {
     enemyNumbersAdvantage: number
@@ -180,6 +181,7 @@ export interface RawTeamSnapshot {
 
 export interface RawObjectiveSnapshot {
   bossAvailable: boolean
+  bossBuffActiveByTeam?: Record<AiTeamId, boolean>
   bossId?: string
   bossPosition?: { x: number; y: number }
   enemyBaseOpenByTeam: Record<AiTeamId, boolean>

@@ -26,6 +26,7 @@ export function selectPlayerMode(context: PlayerContext): PlayerModeScore {
 }
 
 function scoreRetreatMode(context: PlayerContext): PlayerModeScore {
+  const lateGameLifeRisk = getLateGameLifeRisk(context)
   const score =
     (1 - context.self.healthPct) * 95 +
     (context.self.healthPct < 0.32 ? (0.32 - context.self.healthPct) * 220 : 0) +
@@ -33,7 +34,8 @@ function scoreRetreatMode(context: PlayerContext): PlayerModeScore {
     context.local.enemyNumbersAdvantage * 13 +
     context.map.gankRisk * 0.2 -
     context.local.allySaveNeed * 0.22 -
-    context.profile.personality.riskTolerance * 0.18
+    context.profile.personality.riskTolerance * 0.18 +
+    lateGameLifeRisk * 0.72
 
   return makeScore('retreat', score, Math.min(100, score), context.self.danger, ['health', 'danger', 'numbers'])
 }
@@ -45,10 +47,12 @@ function scoreFarmLaneMode(context: PlayerContext): PlayerModeScore {
     getGpmDecisionBonus(context, context.map.laneFarmGpm) +
     context.self.itemTimingUrgency * 0.8 +
     context.profile.personality.farmBias * 0.25 +
-    context.profile.farmingEfficiency * 0.2 -
+    context.profile.farmingEfficiency * 0.2 +
+    getDevelopmentFarmBonus(context, 0.68) -
     farmPriorityPressure.penalty +
     farmPriorityPressure.bonus -
     getLowHealthFarmPenalty(context) -
+    getLateGameLifeRisk(context) * 0.5 -
     context.map.gankRisk * 0.9 -
     getTeamFightUrgency(context) * 0.45
 
@@ -66,10 +70,12 @@ function scoreFarmJungleMode(context: PlayerContext): PlayerModeScore {
     stackedEconomyPull +
     context.profile.farmingEfficiency * 0.18 +
     context.profile.personality.greed * 0.22 +
+    getDevelopmentFarmBonus(context, 0.76) +
     Math.max(0, context.map.gankRisk - 35) * 0.35 -
     farmPriorityPressure.penalty * 0.85 +
     farmPriorityPressure.bonus * 0.75 -
     getLowHealthFarmPenalty(context) -
+    getLateGameLifeRisk(context) * 0.5 -
     context.local.objectivePressure * 0.45 -
     getTeamFightUrgency(context) * 0.35
 
@@ -84,7 +90,9 @@ function scoreJoinFightMode(context: PlayerContext): PlayerModeScore {
     context.profile.teamfight * 0.22 -
     (1 - context.self.healthPct) * 38 -
     (1 - context.self.manaPct) * 14 -
-    context.self.itemTimingUrgency * 0.22
+    context.self.itemTimingUrgency * 0.22 -
+    context.self.developmentNeed * 0.24 -
+    getLateGameLifeRisk(context) * 0.52
 
   return makeScore('join_fight', score, getTeamFightUrgency(context), context.self.danger, ['fight', 'team_plan'])
 }
@@ -106,7 +114,8 @@ function scoreFinishEnemyMode(context: PlayerContext): PlayerModeScore {
     context.profile.aggression * 0.26 +
     context.profile.personality.playmakingBias * 0.28 -
     context.self.danger * 0.5 -
-    context.local.enemyNumbersAdvantage * 10
+    context.local.enemyNumbersAdvantage * 10 -
+    getLateGameLifeRisk(context) * 0.72
 
   return makeScore('finish_enemy', score, context.local.finishEnemyValue, context.self.danger, ['kill', 'pressure'])
 }
@@ -117,7 +126,9 @@ function scoreTakeObjectiveMode(context: PlayerContext): PlayerModeScore {
     (context.teamPlan?.type === 'group_push' || context.teamPlan?.type === 'take_boss' || context.teamPlan?.type === 'end_game' ? 24 : 0) +
     context.profile.personality.objectiveBias * 0.3 +
     context.team.fightReadiness * 0.22 -
-    context.self.danger * 0.42
+    context.self.danger * 0.42 -
+    getDevelopmentFarmBonus(context, 0.16) -
+    getLateGameLifeRisk(context) * 0.48
 
   return makeScore('take_objective', score, context.local.objectivePressure, context.self.danger, ['objective', 'team_plan'])
 }
@@ -128,10 +139,12 @@ function scorePushLaneMode(context: PlayerContext): PlayerModeScore {
     context.map.lanePushValue +
     getGpmDecisionBonus(context, context.map.lanePushGpm) * 0.65 +
     context.team.lanePressure * 0.25 +
-    context.profile.aggression * 0.16 -
+    context.profile.aggression * 0.16 +
+    getDevelopmentFarmBonus(context, 0.16) -
     farmPriorityPressure.penalty * 0.25 +
     farmPriorityPressure.bonus * 0.18 -
     getLowHealthFarmPenalty(context) * 0.35 -
+    getLateGameLifeRisk(context) * 0.28 -
     context.map.gankRisk * 0.5 -
     getTeamFightUrgency(context) * 0.2
 
@@ -157,6 +170,25 @@ function getGpmDecisionBonus(context: PlayerContext, optionGpm: number) {
 function getLowHealthFarmPenalty(context: PlayerContext) {
   if (context.self.healthPct >= 0.48) return 0
   return (0.48 - context.self.healthPct) * 110
+}
+
+function getDevelopmentFarmBonus(context: PlayerContext, weight: number) {
+  const healthConfidence = clamp((context.self.healthPct - 0.3) / 0.5, 0, 1)
+  const dangerConfidence = clamp(1 - context.self.danger / 100, 0, 1)
+  return context.self.developmentNeed * weight * healthConfidence * dangerConfidence
+}
+
+function getLateGameLifeRisk(context: PlayerContext) {
+  const phaseMultiplier = context.gameTime.phase === 'ultra_late'
+    ? 1
+    : context.gameTime.phase === 'late_game'
+      ? 0.72
+      : 0
+  if (phaseMultiplier === 0) return 0
+  const missingHealthRisk = Math.max(0, 0.86 - context.self.healthPct) * 105
+  const dangerRisk = context.self.danger * 0.28
+  const numbersRisk = context.local.enemyNumbersAdvantage * 12
+  return (missingHealthRisk + dangerRisk + numbersRisk) * phaseMultiplier
 }
 
 function applyRoleAndPersonality(context: PlayerContext, score: PlayerModeScore): PlayerModeScore {

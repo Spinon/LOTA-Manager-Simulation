@@ -1,5 +1,6 @@
 import { AI_RULES } from '../config/aiConstants.ts'
 import { decisionChance, objectiveConversionValue } from '../../game-systems/decisionFormulas.ts'
+import { XP_TO_REACH_LEVEL } from '../../game-systems/nonCombatFormulas.ts'
 import type { TeamBrainInput, TeamPlan, TeamPlanType } from '../types/aiTypes.ts'
 
 export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
@@ -8,13 +9,19 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
 
   const enemyBaseOpen = input.analyzed.objectives.enemyBaseOpenByTeam[input.teamId] ?? false
   const highValueObjectiveAvailable = input.analyzed.objectives.highValueObjectiveAvailableByTeam[input.teamId] ?? false
+  const bossAvailable = input.analyzed.objectives.bossAvailable && !(input.analyzed.objectives.bossBuffActiveByTeam?.[input.teamId] ?? false)
   const phase = input.analyzed.gameTime.phase
   const relativeLead = getRelativeNetWorthLead(input)
+  const developmentTargetXp = getTeamDevelopmentTargetXp(input.analyzed.gameTime.minutes)
+  const developmentRatio = team.xp / Math.max(1, developmentTargetXp)
+  const developmentDeficit = clamp((1 - developmentRatio) * 100, 0, 100)
+  const readyToClose = isTeamReadyToClose(input)
   const ahead20 = relativeLead >= 0.2
   const ahead40 = relativeLead >= 0.4
   const behind20 = relativeLead <= -0.2
   const powerPlay = team.numbersAdvantage >= 2
-  const closingWindowBonus = phase === 'ultra_late' ? 58 : phase === 'late_game' ? 24 : 0
+  const softCapPressure = getSoftCapClosingPressure(input.analyzed.gameTime.minutes)
+  const closingWindowBonus = (phase === 'ultra_late' ? 24 : phase === 'late_game' ? 12 : 0) + softCapPressure
   const pushTimingPenalty = phase === 'laning' ? 105 : phase === 'early_mid' ? 24 : 0
   const pickoffTimingPenalty = phase === 'laning' ? 52 : 0
   const farmTimingBonus = phase === 'laning' ? 42 : phase === 'early_mid' ? 14 : 0
@@ -31,8 +38,8 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
 
   return [
     makePlan(input, 'farm_map', {
-      expectedValue: team.safeFarm + input.teamProfile.greed * 0.4 + team.lowResourcePressure * 0.35 - team.structureAtRisk * 0.35 - team.baseThreat * 0.4 + farmTimingBonus + comebackBonus - closingWindowBonus * 0.45,
-      urgency: Math.max(team.lowResourcePressure, behind20 ? 58 : 0),
+      expectedValue: team.safeFarm + input.teamProfile.greed * 0.4 + team.lowResourcePressure * 0.35 - team.structureAtRisk * 0.35 - team.baseThreat * 0.4 + farmTimingBonus + comebackBonus + developmentDeficit * 0.72 * Math.max(0.08, 1 - team.baseThreat / 100) - closingWindowBonus * (readyToClose ? 0.62 : 0.12),
+      urgency: Math.max(team.lowResourcePressure, behind20 ? 58 : 0, developmentDeficit * 0.7),
       risk: 24 + team.baseThreat * 0.25,
       reasonTags: ['farm', 'resources'],
     }),
@@ -43,7 +50,7 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
         expectedLoss: Math.max(0, team.throwRisk * 0.55 + Math.max(0, -team.numbersAdvantage) * 12 - advantageRiskReduction - (powerPlay ? 18 : 0)),
         mapControlValue: team.lanePressure * 0.35,
         tempoValue: (highValueObjectiveAvailable ? 24 : 10) + (powerPlay ? 18 : 0),
-      }) - pushTimingPenalty,
+      }) - pushTimingPenalty - developmentDeficit * (powerPlay ? 0.12 : 0.38),
       urgency: powerPlay ? 88 : Math.max(highValueObjectiveAvailable ? 72 : 48, ahead20 ? 70 : 0, closingWindowBonus + 36),
       risk: Math.max(8, team.throwRisk - advantageRiskReduction),
       reasonTags: ['push', 'objective', 'tempo', ...(ahead20 ? ['lead'] : []), ...(powerPlay ? ['power_play'] : [])],
@@ -63,7 +70,7 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
     makePlan(input, 'take_boss', {
       targetId: input.analyzed.objectives.bossId,
       targetPosition: input.analyzed.objectives.bossPosition,
-      expectedValue: input.analyzed.objectives.bossAvailable
+      expectedValue: bossAvailable
         ? objectiveConversionValue({
           objectiveValue: 108 + input.teamProfile.bossPriority * 0.4 + input.teamProfile.objectiveFocus * 0.25 + advantageObjectiveBonus + (powerPlay ? 30 : 0),
           successChance: getPlanSuccessChance(team.bossDamage, team.visionControl, team.numbersAdvantage, input.teamProfile.coordination),
@@ -72,7 +79,7 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
           tempoValue: (phase === 'mid_game' || phase === 'late_game' || phase === 'ultra_late' ? 22 : 5) + (powerPlay ? 14 : 0),
         })
         : -100,
-      urgency: powerPlay && input.analyzed.objectives.bossAvailable && phase !== 'laning' ? 88 : Math.max(phase === 'late_game' || phase === 'ultra_late' ? 76 : 48, ahead20 ? 70 : 0),
+      urgency: powerPlay && bossAvailable && phase !== 'laning' ? 88 : Math.max(phase === 'late_game' || phase === 'ultra_late' ? 76 : 48, ahead20 ? 70 : 0),
       risk: Math.max(10, 65 - team.visionControl * 0.45 - team.numbersAdvantage * 8),
       reasonTags: ['boss', 'objective', 'vision', ...(ahead20 ? ['lead'] : []), ...(powerPlay ? ['power_play'] : [])],
     }),
@@ -114,7 +121,7 @@ export function generateTeamPlans(input: TeamBrainInput): TeamPlan[] {
           expectedLoss: Math.max(0, team.throwRisk * AI_RULES.teamPlans.highGroundRiskMultiplier + Math.max(0, -team.numbersAdvantage) * 18 - advantageRiskReduction),
           mapControlValue: team.lanePressure * 0.3,
           tempoValue: 28,
-        }) - endGameTimingPenalty
+        }) - endGameTimingPenalty - (readyToClose ? 0 : 110 + developmentDeficit * 0.55)
         : -80,
       urgency: enemyBaseOpen ? Math.max(82, ahead20 ? 88 : 0) : 0,
       risk: Math.max(8, team.throwRisk * AI_RULES.teamPlans.highGroundRiskMultiplier - advantageRiskReduction),
@@ -142,10 +149,35 @@ export function selectTeamPlan(input: TeamBrainInput): TeamPlan | undefined {
   const team = input.analyzed.teams[input.teamId]
   const phase = input.analyzed.gameTime.phase
   const powerPlay = team?.numbersAdvantage !== undefined && team.numbersAdvantage >= 2
+  const readyToClose = isTeamReadyToClose(input)
+  const afterSoftCap = input.analyzed.gameTime.minutes >= 60
+
+  if (team && afterSoftCap && team.baseThreat < 65) {
+    const developmentRatio = team.xp / Math.max(1, getTeamDevelopmentTargetXp(input.analyzed.gameTime.minutes))
+    const developed = developmentRatio >= 0.82
+    const canGroup = developed && team.aliveHeroes >= 4 && team.averageHealthPct >= 0.58 && team.lowResourcePressure <= 58 && team.numbersAdvantage >= 0
+    const bossWindow = input.analyzed.objectives.bossAvailable && !(input.analyzed.objectives.bossBuffActiveByTeam?.[input.teamId] ?? false)
+    const planType = readyToClose && input.analyzed.objectives.enemyBaseOpenByTeam[input.teamId]
+      ? 'end_game'
+      : canGroup && bossWindow
+        ? 'take_boss'
+        : canGroup
+          ? 'group_push'
+          : 'farm_map'
+    const softCapPlan = plans.find((plan) => plan.type === planType)
+    if (softCapPlan) {
+      return {
+        ...softCapPlan,
+        urgency: Math.max(88, softCapPlan.urgency),
+        reasonTags: [...softCapPlan.reasonTags, readyToClose ? 'soft_cap_conversion' : 'soft_cap_development'],
+      }
+    }
+  }
   if (
     team &&
     powerPlay &&
     input.analyzed.objectives.bossAvailable &&
+    !(input.analyzed.objectives.bossBuffActiveByTeam?.[input.teamId] ?? false) &&
     (phase === 'mid_game' || phase === 'late_game' || phase === 'ultra_late') &&
     team.lowResourcePressure <= 60 &&
     team.baseThreat < 65
@@ -157,6 +189,7 @@ export function selectTeamPlan(input: TeamBrainInput): TeamPlan | undefined {
   if (
     team &&
     powerPlay &&
+    readyToClose &&
     (phase === 'late_game' || phase === 'ultra_late') &&
     input.analyzed.objectives.enemyBaseOpenByTeam[input.teamId] &&
     team.baseThreat < 65
@@ -165,12 +198,12 @@ export function selectTeamPlan(input: TeamBrainInput): TeamPlan | undefined {
     if (endPlan) return { ...endPlan, urgency: Math.max(88, endPlan.urgency), reasonTags: [...endPlan.reasonTags, 'forced_power_play'] }
   }
 
-  if (team && powerPlay && phase !== 'laning' && team.baseThreat < 65) {
+  if (team && powerPlay && phase !== 'laning' && team.baseThreat < 65 && team.averageHealthPct >= 0.6 && team.lowResourcePressure <= 55) {
     const pushPlan = plans.find((plan) => plan.type === 'group_push')
     if (pushPlan) return { ...pushPlan, urgency: Math.max(85, pushPlan.urgency), reasonTags: [...pushPlan.reasonTags, 'forced_power_play'] }
   }
 
-  if (team && phase === 'ultra_late' && team.baseThreat < 65) {
+  if (team && phase === 'ultra_late' && team.baseThreat < 65 && readyToClose) {
     const planType = input.analyzed.objectives.enemyBaseOpenByTeam[input.teamId] ? 'end_game' : 'group_push'
     const closingPlan = plans.find((plan) => plan.type === planType)
     if (closingPlan) {
@@ -241,6 +274,44 @@ function getRelativeNetWorthLead(input: TeamBrainInput) {
     .find(([teamId]) => teamId !== input.teamId)?.[1]
   const referenceNetWorth = Math.max(1, opponent?.netWorth ?? team.netWorth)
   return team.netWorthLead / referenceNetWorth
+}
+
+export function getTeamDevelopmentTargetXp(minutes: number) {
+  const checkpoints = [
+    { minute: 0, xp: 0 },
+    { minute: 6, xp: XP_TO_REACH_LEVEL[6] * 3 + XP_TO_REACH_LEVEL[4] * 2 },
+    { minute: 10, xp: XP_TO_REACH_LEVEL[9] * 3 + XP_TO_REACH_LEVEL[7] * 2 },
+    { minute: 20, xp: XP_TO_REACH_LEVEL[15] * 3 + XP_TO_REACH_LEVEL[12] * 2 },
+    { minute: 40, xp: XP_TO_REACH_LEVEL[25] * 3 + XP_TO_REACH_LEVEL[22] * 2 },
+    { minute: 60, xp: XP_TO_REACH_LEVEL[30] * 3 + XP_TO_REACH_LEVEL[25] * 2 },
+  ]
+  const clampedMinute = Math.max(0, minutes)
+  const upperIndex = checkpoints.findIndex((checkpoint) => checkpoint.minute >= clampedMinute)
+  if (upperIndex === -1) return checkpoints[checkpoints.length - 1].xp
+  if (upperIndex === 0) return checkpoints[0].xp
+  const lower = checkpoints[upperIndex - 1]
+  const upper = checkpoints[upperIndex]
+  const ratio = (clampedMinute - lower.minute) / (upper.minute - lower.minute)
+  return Math.round(lower.xp + (upper.xp - lower.xp) * ratio)
+}
+
+export function isTeamReadyToClose(input: TeamBrainInput) {
+  const team = input.analyzed.teams[input.teamId]
+  if (!team) return false
+  const developmentRatio = team.xp / Math.max(1, getTeamDevelopmentTargetXp(input.analyzed.gameTime.minutes))
+  const relativeLead = getRelativeNetWorthLead(input)
+  return team.aliveHeroes >= 4 &&
+    team.averageHealthPct >= 0.68 &&
+    team.lowResourcePressure <= 45 &&
+    team.fightReadiness >= 65 &&
+    team.numbersAdvantage >= 0 &&
+    (developmentRatio >= 0.78 || relativeLead >= 0.22)
+}
+
+export function getSoftCapClosingPressure(minutes: number) {
+  if (minutes <= 50) return 0
+  if (minutes <= 60) return (minutes - 50) * 6
+  return Math.min(120, 60 + (minutes - 60) * 3)
 }
 
 function clamp(value: number, min: number, max: number) {

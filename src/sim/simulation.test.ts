@@ -11,9 +11,12 @@ import {
   createMatchRenderFrame,
   createMatchStaticData,
   damageEntity,
+  enrichTeamPlanWithMapTarget,
   getGamePhase,
   getArcanePassiveCombatModifiers,
   getHeroDefinition,
+  getHigherPriorityFarmAlly,
+  getCreepXpShare,
   getDenyTarget,
   getEffectiveArcaneDamage,
   getShopItemsForInventory,
@@ -23,6 +26,8 @@ import {
   getSimpleSkillExecuteMultiplier,
   getSimpleSkillDamage,
   getLastHitTarget,
+  getLastHitCandidateFromCreeps,
+  getRoleFarmPriority,
   hasTimedEffect,
   healArcaneDirectly,
   isPositiveSimpleSkill,
@@ -64,6 +69,61 @@ function createTickFrameContext(): TickFrameContext {
 }
 
 await loadGameData()
+
+assert.ok(getRoleFarmPriority('Safe Lane') > getRoleFarmPriority('Mid'))
+assert.ok(getRoleFarmPriority('Mid') > getRoleFarmPriority('Offlane'))
+assert.ok(getRoleFarmPriority('Offlane') > getRoleFarmPriority('Greedy Support'))
+assert.ok(getRoleFarmPriority('Greedy Support') > getRoleFarmPriority('Dedicated Support'))
+
+{
+  const farmState = createInitialState('farm-priority-test')
+  farmState.time = 120
+  const carry = farmState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Safe Lane')!
+  const support = farmState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Dedicated Support')!
+  carry.pos = { x: 40, y: 40 }
+  support.pos = { x: 41, y: 40 }
+  const creep: Creep = {
+    id: 'farm-priority-creep', team: 'dusk', lane: carry.lane, type: 'melee', seedId: 'lane_melee_creep',
+    pos: { x: 42, y: 40 }, pathIndex: 0, hp: 1, maxHp: 100, damage: 1, range: 1.5,
+    visionRange: 12, goldReward: 40, xpReward: 57, lastAttack: 0,
+  }
+  assert.equal(getHigherPriorityFarmAlly(farmState, support, creep.pos)?.id, carry.id)
+  assert.ok(getCreepXpShare(farmState, creep, carry) > getCreepXpShare(farmState, creep, support), 'lane XP should favor the higher-priority core')
+  assert.equal(getLastHitCandidateFromCreeps(farmState, support, [creep], 2), undefined, 'support should yield a last hit to the nearby carry')
+  assert.equal(getLastHitCandidateFromCreeps(farmState, carry, [creep], 2)?.id, creep.id)
+}
+
+{
+  const endState = createInitialState('end-game-target-test')
+  endState.towers.forEach((tower) => { if (tower.team === 'dusk') tower.hp = 0 })
+  endState.structures.forEach((structure) => { if (structure.team === 'dusk') structure.hp = 0 })
+  const plan = enrichTeamPlanWithMapTarget(endState, 'dawn', {
+    type: 'end_game', urgency: 90, risk: 20, expectedValue: 160, reasonTags: ['base'],
+  })
+  assert.equal(plan?.targetId, 'base-dusk', 'end-game plans should explicitly target the unlocked enemy base')
+}
+
+{
+  const jungleState = createInitialState('jungle-economy-test')
+  jungleState.time = 12 * 60
+  const carry = jungleState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Safe Lane')!
+  const support = jungleState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Dedicated Support')!
+  const camp = jungleState.camps[0]
+  carry.pos = { ...camp.pos }
+  support.pos = { x: camp.pos.x > 50 ? 5 : 95, y: camp.pos.y > 50 ? 5 : 95 }
+  camp.hp = 0
+  camp.lastHitBy = { id: carry.id, label: carry.player, team: carry.team }
+  const carryGoldBefore = carry.stats.gold
+  const carryXpBefore = carry.stats.xp
+  const supportGoldBefore = support.stats.gold
+  const supportXpBefore = support.stats.xp
+  resolveDeaths(jungleState)
+  const rewardedCarry = jungleState.arcanes.find((arcane) => arcane.id === carry.id)!
+  const distantSupport = jungleState.arcanes.find((arcane) => arcane.id === support.id)!
+  assert.ok(rewardedCarry.stats.gold > carryGoldBefore && rewardedCarry.stats.xp > carryXpBefore)
+  assert.equal(distantSupport.stats.gold, supportGoldBefore, 'neutral gold should not be granted to the whole team')
+  assert.equal(distantSupport.stats.xp, supportXpBefore, 'neutral XP should only be shared with nearby allies')
+}
 
 assert.equal(getGamePhase(9 * 60), 'early')
 assert.equal(getGamePhase(20 * 60), 'mid')

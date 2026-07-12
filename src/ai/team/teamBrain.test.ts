@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { DEFAULT_TEAM_AI_PROFILES } from '../config/aiConstants.ts'
 import { analyzeGameState } from '../analysis/gameStateAnalyzer.ts'
-import { generateTeamPlans, selectTeamPlan } from './teamBrain.ts'
+import { generateTeamPlans, getSoftCapClosingPressure, getTeamDevelopmentTargetXp, isTeamReadyToClose, selectTeamPlan } from './teamBrain.ts'
 import type { RawAiGameSnapshot } from '../types/aiTypes.ts'
 
 function makeSnapshot(overrides: Partial<RawAiGameSnapshot> = {}): RawAiGameSnapshot {
@@ -66,6 +66,48 @@ function makeSnapshot(overrides: Partial<RawAiGameSnapshot> = {}): RawAiGameSnap
 }
 
 {
+  assert.ok(getTeamDevelopmentTargetXp(40) > getTeamDevelopmentTargetXp(20))
+  assert.equal(getSoftCapClosingPressure(50), 0)
+  assert.equal(getSoftCapClosingPressure(60), 60)
+}
+
+{
+  const analyzed = analyzeGameState(makeSnapshot({
+    timeSeconds: 65 * 60,
+    teams: {
+      dawn: { ...makeSnapshot().teams.dawn, xp: 270000, aliveHeroes: 5 },
+      dusk: { ...makeSnapshot().teams.dusk, xp: 235000, aliveHeroes: 5, deadHeroes: 0 },
+    },
+    objectives: {
+      ...makeSnapshot().objectives,
+      enemyBaseOpenByTeam: { dawn: true, dusk: false },
+    },
+  }))
+  const input = { analyzed, teamId: 'dawn', teamProfile: DEFAULT_TEAM_AI_PROFILES.dawn }
+  assert.equal(isTeamReadyToClose(input), true)
+  assert.equal(selectTeamPlan(input)?.type, 'end_game', 'a developed and healthy team should convert after the soft cap')
+}
+
+{
+  const analyzed = analyzeGameState(makeSnapshot({
+    timeSeconds: 65 * 60,
+    teams: {
+      dawn: { ...makeSnapshot().teams.dawn, xp: 90000, aliveHeroes: 5 },
+      dusk: { ...makeSnapshot().teams.dusk, xp: 85000, aliveHeroes: 5, deadHeroes: 0 },
+    },
+    objectives: {
+      ...makeSnapshot().objectives,
+      enemyBaseOpenByTeam: { dawn: true, dusk: false },
+    },
+  }))
+  const input = { analyzed, teamId: 'dawn', teamProfile: DEFAULT_TEAM_AI_PROFILES.dawn }
+  assert.equal(isTeamReadyToClose(input), false)
+  const plan = selectTeamPlan(input)
+  assert.equal(plan?.type, 'farm_map', 'soft cap should request development instead of ending the game artificially')
+  assert.ok(plan?.reasonTags.includes('soft_cap_development'))
+}
+
+{
   const analyzed = analyzeGameState(makeSnapshot({
     teams: {
       dawn: {
@@ -97,6 +139,10 @@ function makeSnapshot(overrides: Partial<RawAiGameSnapshot> = {}): RawAiGameSnap
 {
   const analyzed = analyzeGameState(makeSnapshot({
     timeSeconds: 34 * 60,
+    teams: {
+      dawn: { ...makeSnapshot().teams.dawn, xp: 120000 },
+      dusk: { ...makeSnapshot().teams.dusk, xp: 98000 },
+    },
     objectives: {
       ...makeSnapshot().objectives,
       bossAvailable: false,

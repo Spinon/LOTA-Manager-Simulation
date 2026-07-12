@@ -223,7 +223,9 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T14 - Rebalance de progressão, duração e teamplay
+### [x] T14 - Rebalance de progressão, duração e teamplay
+
+> Concluída em 2026-07-12 - Removi o encerramento por relógio, calibrei XP/farm por role e implementei preparação de highground com recuperação, rally, wave e conversão coordenada de boss/vantagem.
 
 **Objetivo**: remover o encerramento por limite de tempo e fazer as partidas terminarem organicamente pela IA, com ritmo e prioridades próximos de um MOBA competitivo.
 
@@ -243,6 +245,8 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Criar relatório em lote com duração p50/p90, % acima de 60min, nível e GPM por role aos 6/10/20/40min, mortes no late game e conversão de vantagem em vitória.
 - Adicionar testes para prioridade de farm por role, proteção da vida no late game, agrupamento de highground e ausência de encerramento artificial.
 - Rodar lote suficiente para detectar partidas travadas e ajustar IA/economia até o soft cap funcionar por balanceamento.
+
+**Medição**: após corrigir rally/wave, quatro execuções consecutivas terminaram organicamente (48,8min, 53,4min, 55,8min e 60,8min), sem watchdog ou empate artificial. O lote final de duas seeds teve 2/2 conversões da liderança aos 20min, média de 51,1min e GPM na ordem HC > Mid > Off > Sup4 > Sup5; a calibração final aos 40min mediu níveis médios 25 / 23,5 / 24 para os três cores e 17,5 / 18,5 para os supports. Navegador validado com 18.255 frames, dois canvases e zero erros de console; testes, lint e build verdes.
 
 ---
 

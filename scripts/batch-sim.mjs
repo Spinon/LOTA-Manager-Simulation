@@ -20,9 +20,11 @@ function getArg(name, fallback) {
 const matchCount = Math.max(1, Number(getArg('matches', 20)) || 20)
 const seedPrefix = getArg('seed', 'batch')
 
-const maxSimulationSeconds = 50 * 60
-// Teto de segurança de ticks: garante término mesmo se state.time parar de avançar.
-const maxSimulationSteps = Math.ceil(maxSimulationSeconds / simulationFrameSeconds) + 100
+const watchdogMinutes = Math.max(60, Number(getArg('watchdog-minutes', 90)) || 90)
+const watchdogSeconds = watchdogMinutes * 60
+// O watchdog apenas denuncia simulações travadas; nunca declara vencedor ou empate.
+const maxSimulationSteps = Math.ceil(watchdogSeconds / simulationFrameSeconds) + 100
+const checkpointMinutes = [6, 10, 20, 40]
 
 await loadGameData()
 
@@ -39,12 +41,35 @@ for (let matchIndex = 0; matchIndex < matchCount; matchIndex += 1) {
 
   let decisionAccumulator = 0
   let steps = 0
-  while (!state.winner && state.time < maxSimulationSeconds && steps < maxSimulationSteps) {
+  let checkpointIndex = 0
+  const checkpoints = {}
+  let leaderAt20
+  let deathsAtLateStart
+  while (!state.winner && state.time < watchdogSeconds && steps < maxSimulationSteps) {
     decisionAccumulator += simulationFrameSeconds
     const shouldDecide = decisionAccumulator >= decisionGateSeconds
     if (shouldDecide) decisionAccumulator %= decisionGateSeconds
     state = tick(state, simulationFrameSeconds, shouldDecide)
     steps += 1
+    if (checkpointIndex < checkpointMinutes.length && state.time >= checkpointMinutes[checkpointIndex] * 60) {
+      const minute = checkpointMinutes[checkpointIndex]
+      checkpoints[minute] = state.arcanes.map((arcane) => ({
+        role: arcane.role,
+        level: arcane.stats.level,
+        gpm: arcane.earnedGold / Math.max(1, state.time) * 60,
+      }))
+      if (minute === 20) {
+        const netWorth = Object.fromEntries(['dawn', 'dusk'].map((team) => [
+          team,
+          state.arcanes.filter((arcane) => arcane.team === team).reduce((sum, arcane) => sum + arcane.earnedGold, 0),
+        ]))
+        leaderAt20 = Math.abs(netWorth.dawn - netWorth.dusk) < 500 ? undefined : netWorth.dawn > netWorth.dusk ? 'dawn' : 'dusk'
+      }
+      checkpointIndex += 1
+    }
+    if (deathsAtLateStart === undefined && state.time >= 28 * 60) {
+      deathsAtLateStart = state.arcanes.reduce((sum, arcane) => sum + arcane.deaths, 0)
+    }
   }
 
   const wallSeconds = (performance.now() - matchStartedAt) / 1000
@@ -54,6 +79,25 @@ for (let matchIndex = 0; matchIndex < matchCount; matchIndex += 1) {
     durationSeconds: state.time,
     kills: { ...state.kills },
     wallSeconds,
+    checkpoints,
+    leaderAt20,
+    lateDeaths: Math.max(0, state.arcanes.reduce((sum, arcane) => sum + arcane.deaths, 0) - (deathsAtLateStart ?? 0)),
+    stalled: !state.winner,
+    finalState: !state.winner ? {
+      bases: state.bases.map((base) => ({ id: base.id, hp: Math.round(base.hp) })),
+      towersAlive: state.towers.filter((tower) => tower.hp > 0).map((tower) => tower.id),
+      structuresAlive: state.structures.filter((structure) => structure.hp > 0).map((structure) => structure.id),
+      plans: state.teamPlans,
+      calls: state.teamCalls,
+      arcanes: state.arcanes.map((arcane) => ({
+        team: arcane.team,
+        role: arcane.role,
+        level: arcane.stats.level,
+        hp: Math.round(arcane.stats.hp / Math.max(1, arcane.stats.maxHp) * 100),
+        macro: arcane.macroDecision,
+        micro: arcane.microDecision,
+      })),
+    } : undefined,
   })
 
   for (const team of ['dawn', 'dusk']) {
@@ -66,7 +110,7 @@ for (let matchIndex = 0; matchIndex < matchCount; matchIndex += 1) {
   }
 
   console.log(
-    `[${matchIndex + 1}/${matchCount}] ${seed}: ${state.winner ?? 'sem vencedor (teto)'} ` +
+    `[${matchIndex + 1}/${matchCount}] ${seed}: ${state.winner ?? 'travada no watchdog'} ` +
     `em ${(state.time / 60).toFixed(1)}min | kills ${state.kills.dawn}/${state.kills.dusk} | ${wallSeconds.toFixed(0)}s de CPU`,
   )
 }
@@ -79,16 +123,45 @@ const averageMinutes = finished.length > 0
   : 0
 const averageKills = results.reduce((total, result) => total + result.kills.dawn + result.kills.dusk, 0) / results.length
 const totalWallMinutes = (performance.now() - batchStartedAt) / 60000
+const durations = finished.map((result) => result.durationSeconds).sort((a, b) => a - b)
+const percentile = (values, ratio) => values.length === 0 ? 0 : values[Math.min(values.length - 1, Math.floor((values.length - 1) * ratio))]
+const above60 = results.filter((result) => result.durationSeconds > 60 * 60).length
+const conversionCandidates = results.filter((result) => result.leaderAt20 && result.winner)
+const convertedLeads = conversionCandidates.filter((result) => result.leaderAt20 === result.winner).length
+const averageLateDeaths = results.reduce((sum, result) => sum + result.lateDeaths, 0) / results.length
 
 console.log('')
 console.log('=== Relatório de balanceamento ===')
 console.log(`Partidas: ${results.length} (${totalWallMinutes.toFixed(1)}min de CPU)`)
-console.log(`Terminaram antes do teto de ${maxSimulationSeconds / 60}min: ${finished.length}/${results.length} (${Math.round((finished.length / results.length) * 100)}%)`)
+console.log(`Terminaram organicamente: ${finished.length}/${results.length} (${Math.round((finished.length / results.length) * 100)}%)`)
+console.log(`Watchdog de diagnóstico (${watchdogMinutes}min): ${results.length - finished.length} partida(s) travada(s)`)
+console.log(`Duração p50/p90: ${(percentile(durations, 0.5) / 60).toFixed(1)} / ${(percentile(durations, 0.9) / 60).toFixed(1)}min`)
+console.log(`Acima de 60min: ${above60}/${results.length} (${Math.round((above60 / results.length) * 100)}%)`)
 if (finished.length > 0) {
   console.log(`Vitórias — dawn: ${dawnWins} (${Math.round((dawnWins / finished.length) * 100)}%) | dusk: ${duskWins} (${Math.round((duskWins / finished.length) * 100)}%)`)
   console.log(`Duração média (partidas com vencedor): ${averageMinutes.toFixed(1)}min`)
 }
 console.log(`Kills médios por partida (somando os dois times): ${averageKills.toFixed(1)}`)
+console.log(`Mortes médias após 28min: ${averageLateDeaths.toFixed(1)}`)
+console.log(`Conversão da liderança aos 20min: ${convertedLeads}/${conversionCandidates.length} (${conversionCandidates.length > 0 ? Math.round((convertedLeads / conversionCandidates.length) * 100) : 0}%)`)
+results.filter((result) => result.stalled).forEach((result) => {
+  console.log(`Diagnóstico ${result.seed}: ${JSON.stringify(result.finalState)}`)
+})
+
+console.log('')
+console.log('Progressão média por role (nível | GPM):')
+for (const minute of checkpointMinutes) {
+  const rows = results.flatMap((result) => result.checkpoints[minute] ?? [])
+  const roles = ['Safe Lane', 'Mid', 'Offlane', 'Greedy Support', 'Dedicated Support']
+  console.log(`  ${minute}min`)
+  for (const role of roles) {
+    const roleRows = rows.filter((row) => row.role === role)
+    if (roleRows.length === 0) continue
+    const level = roleRows.reduce((sum, row) => sum + row.level, 0) / roleRows.length
+    const gpm = roleRows.reduce((sum, row) => sum + row.gpm, 0) / roleRows.length
+    console.log(`    ${role.padEnd(18)} ${level.toFixed(1).padStart(4)} | ${Math.round(gpm).toString().padStart(4)}`)
+  }
+}
 
 console.log('')
 console.log('Winrate por herói (jogos | vitórias | %):')

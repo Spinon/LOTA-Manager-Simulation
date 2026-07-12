@@ -62,6 +62,7 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
       manaPct: 0.7,
       danger: 18,
       itemTimingUrgency: 78,
+      developmentNeed: 20,
     },
     local: {
       enemyNumbersAdvantage: 0,
@@ -106,6 +107,16 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
     },
   }))
   assert.equal(selected.mode, 'farm_jungle')
+}
+
+{
+  const selected = selectPlayerMode(makeContext({
+    gameTime: { seconds: 52 * 60, minutes: 52, phase: 'ultra_late' },
+    teamPlan: { type: 'end_game', urgency: 94, risk: 58, expectedValue: 140, reasonTags: ['base'] },
+    self: { ...makeContext().self, healthPct: 0.42, manaPct: 0.5, danger: 58, itemTimingUrgency: 10 },
+    local: { ...makeContext().local, nearbyFightValue: 85, finishEnemyValue: 70, objectivePressure: 96 },
+  }))
+  assert.equal(selected.mode, 'retreat', 'late-game bots should preserve their life before forcing highground')
 }
 
 {

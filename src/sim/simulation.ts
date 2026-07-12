@@ -24,6 +24,7 @@ import {
   passiveGoldForTick,
   resourceRegenForTick,
   respawnDurationSeconds,
+  scaledExperienceReward,
   stackSuccessChance,
   stackedCampValue,
   wisdomRuneXp,
@@ -51,7 +52,7 @@ export type CampStrength = 'weak' | 'medium' | 'strong'
 export type RuneKind = 'bounty' | 'power' | 'wisdom' | 'lotus'
 export type PowerRuneKind = 'haste' | 'arcane' | 'shield' | 'damage'
 export type StructureKind = 'barracks_melee' | 'barracks_ranged' | 'tower_tier_4'
-export type TeamObjectiveKind = 'tower' | 'structure' | 'boss' | 'pickoff'
+export type TeamObjectiveKind = 'tower' | 'structure' | 'base' | 'boss' | 'pickoff'
 export type DecisionStatus = 'sharp' | 'steady' | 'hesitant' | 'tilted'
 export type Selected = { kind: EntityKind; id: string } | undefined
 
@@ -599,6 +600,24 @@ export function getRoleGpmDecisionBias(role: string) {
   if (role === 'Offlane') return 58
   if (role === 'Greedy Support') return 42
   return 24
+}
+
+export function getRoleLevelTarget(role: string, time: number) {
+  const minutes = Math.max(0, time / 60)
+  const core = !role.includes('Support')
+  const checkpoints = core
+    ? [[0, 1], [6, 6], [10, 9], [20, 15], [40, 25], [60, 30]]
+    : [[0, 1], [6, 4], [10, 7], [20, 12], [40, 21], [60, 26]]
+  const upperIndex = checkpoints.findIndex(([minute]) => minute >= minutes)
+  if (upperIndex === -1) return checkpoints[checkpoints.length - 1][1]
+  if (upperIndex === 0) return checkpoints[0][1]
+  const [lowerMinute, lowerLevel] = checkpoints[upperIndex - 1]
+  const [upperMinute, upperLevel] = checkpoints[upperIndex]
+  return lowerLevel + (upperLevel - lowerLevel) * ((minutes - lowerMinute) / (upperMinute - lowerMinute))
+}
+
+export function getArcaneDevelopmentNeed(arcane: Arcane, time: number) {
+  return clampNumber((getRoleLevelTarget(arcane.role, time) - arcane.stats.level) * 10, 0, 100)
 }
 
 export function getGamePhase(time: number): GamePhase {
@@ -1204,7 +1223,7 @@ export function getCampRewards(camp: Camp, time: number) {
   const reward = getNeutralCampReward(getCampTier(camp.strength), time)
   return {
     gold: Math.round(stackedCampValue(reward.gold, camp.stackCount)),
-    xp: Math.round(stackedCampValue(reward.xp, camp.stackCount)),
+    xp: scaledExperienceReward(stackedCampValue(reward.xp, camp.stackCount), time),
   }
 }
 
@@ -2362,7 +2381,7 @@ export function updateTeamPlans(state: SimulationState): SimulationState {
 
 export function enrichTeamPlanWithMapTarget(state: SimulationState, team: TeamId, plan: TeamPlan | undefined): TeamPlan | undefined {
   if (!plan) return undefined
-  if (plan.type !== 'group_push' || plan.targetPosition) return plan
+  if ((plan.type !== 'group_push' && plan.type !== 'end_game') || plan.targetPosition) return plan
   const objective = getBestGroupPushObjective(state, team)
   if (!objective) return plan
   return {
@@ -2412,6 +2431,7 @@ export function updateTeamCalls(state: SimulationState): SimulationState {
 export function isTeamCallTargetAlive(state: SimulationState, call: TeamCall) {
   if (call.kind === 'tower') return state.towers.some((tower) => tower.id === call.targetId && tower.hp > 0 && isTowerUnlocked(state, call.team, tower))
   if (call.kind === 'structure') return state.structures.some((structure) => structure.id === call.targetId && structure.hp > 0 && isStructureUnlocked(state, call.team, structure))
+  if (call.kind === 'base') return state.bases.some((base) => base.id === call.targetId && base.hp > 0 && base.team !== call.team && isEnemyBaseUnlocked(state, call.team))
   if (call.kind === 'boss') return state.boss.id === call.targetId && state.boss.hp > 0
   return state.arcanes.some((arcane) => arcane.id === call.targetId && arcane.stats.hp > 0 && arcane.respawn <= state.time)
 }
@@ -2425,7 +2445,8 @@ export function getPlannedMapObjective(state: SimulationState, team: TeamId, tar
 }
 
 export function getTeamObjectiveKind(objective: Tower | Structure | Base): Exclude<TeamObjectiveKind, 'boss' | 'pickoff'> {
-  return 'tier' in objective ? 'tower' : 'structure'
+  if ('tier' in objective) return 'tower'
+  return 'kind' in objective ? 'structure' : 'base'
 }
 
 export function getRelativeTeamLead(analyzed: AnalyzedGameState, team: TeamId) {
@@ -2467,6 +2488,10 @@ export function createAiGameSnapshot(state: SimulationState): RawAiGameSnapshot 
     teams,
     objectives: {
       bossAvailable: state.boss.hp > 0,
+      bossBuffActiveByTeam: {
+        dawn: state.teamAuras.dawn !== undefined,
+        dusk: state.teamAuras.dusk !== undefined,
+      },
       bossId: state.boss.id,
       bossPosition: state.boss.pos,
       enemyBaseOpenByTeam: {
@@ -2536,7 +2561,17 @@ export function createTeamCall(state: SimulationState, caller: Arcane, phase: Ga
       targetId: getStructureId(plannedObjective),
       targetName: 'Executar plano de rota',
       pos: plannedObjective.pos,
-      score: 76 + teamPlan.urgency * 0.35 + Math.max(0, teamState?.numbersAdvantage ?? 0) * 10,
+      score: 122 + teamPlan.urgency * 0.35 + Math.max(0, teamState?.numbersAdvantage ?? 0) * 10,
+    })
+  }
+
+  if (teamPlan?.type === 'take_boss' && state.boss.hp > 0 && !state.teamAuras[caller.team]) {
+    objectives.push({
+      kind: 'boss',
+      targetId: state.boss.id,
+      targetName: `${state.boss.name} (20%)`,
+      pos: mapEdgeApproachPoint(state.boss.pos),
+      score: 138 + teamPlan.urgency * 0.35 + Math.max(0, teamState?.numbersAdvantage ?? 0) * 10,
     })
   }
 
@@ -2682,7 +2717,7 @@ export function createTeamCall(state: SimulationState, caller: Arcane, phase: Ga
         boss: state.boss,
         localNumbers,
         bossWindowOpen,
-        score: 58 + (teamPlan?.type === 'take_boss' ? 20 : planWantsQuietMap ? -12 : 0) + (phase === 'late' ? 22 : 0) + Math.max(0, localNumbers.advantage) * 14 - Math.max(0, -localNumbers.advantage) * 22 - distance(caller.pos, state.boss.pos) * 0.42 - resourcePenalty,
+        score: 58 + (teamPlan?.type === 'take_boss' ? 62 : planWantsQuietMap ? -12 : 0) + (phase === 'late' ? 22 : 0) + Math.max(0, localNumbers.advantage) * 14 - Math.max(0, -localNumbers.advantage) * 22 - distance(caller.pos, state.boss.pos) * 0.42 - resourcePenalty,
       }
     })()
     : undefined
@@ -2717,15 +2752,44 @@ export function createTeamCall(state: SimulationState, caller: Arcane, phase: Ga
 }
 
 export function getTeamCallPoint(state: SimulationState, call: TeamCall): Point | undefined {
-  if (call.kind === 'tower') return state.towers.find((tower) => tower.id === call.targetId && tower.hp > 0)?.pos
-  if (call.kind === 'structure') return state.structures.find((structure) => structure.id === call.targetId && structure.hp > 0)?.pos
+  if (call.kind === 'tower') {
+    const tower = state.towers.find((candidate) => candidate.id === call.targetId && candidate.hp > 0)
+    return tower ? getObjectiveRallyPoint(state, call.team, tower) : undefined
+  }
+  if (call.kind === 'structure') {
+    const structure = state.structures.find((candidate) => candidate.id === call.targetId && candidate.hp > 0)
+    return structure ? getObjectiveRallyPoint(state, call.team, structure) : undefined
+  }
+  if (call.kind === 'base') {
+    const base = state.bases.find((candidate) => candidate.id === call.targetId && candidate.hp > 0)
+    return base ? getObjectiveRallyPoint(state, call.team, base) : undefined
+  }
   if (call.kind === 'boss') return state.boss.id === call.targetId && state.boss.hp > 0 ? mapEdgeApproachPoint(state.boss.pos) : undefined
   return state.arcanes.find((arcane) => arcane.id === call.targetId && arcane.stats.hp > 0 && arcane.respawn <= state.time)?.pos
 }
 
 export function getTeamCallObjectivePoint(state: SimulationState, call: TeamCall): Point | undefined {
   if (call.kind === 'boss') return state.boss.id === call.targetId && state.boss.hp > 0 ? state.boss.pos : undefined
-  return getTeamCallPoint(state, call)
+  if (call.kind === 'tower') return state.towers.find((tower) => tower.id === call.targetId && tower.hp > 0)?.pos
+  if (call.kind === 'structure') return state.structures.find((structure) => structure.id === call.targetId && structure.hp > 0)?.pos
+  if (call.kind === 'base') return state.bases.find((base) => base.id === call.targetId && base.hp > 0)?.pos
+  return state.arcanes.find((arcane) => arcane.id === call.targetId && arcane.stats.hp > 0 && arcane.respawn <= state.time)?.pos
+}
+
+export function getObjectiveRallyPoint(state: SimulationState, team: TeamId, objective: Tower | Structure | Base) {
+  const lane = 'lane' in objective && objective.lane ? objective.lane : nearestLaneId(team, objective.pos)
+  const alliedWave = nearest(objective.pos, state.creeps.filter((creep) => (
+    creep.team === team && creep.hp > 0 && creep.lane === lane
+  )), 20)
+  if (alliedWave) return alliedWave.pos
+  const ownBase = teamInfo[team].base
+  const deltaX = ownBase.x - objective.pos.x
+  const deltaY = ownBase.y - objective.pos.y
+  const length = Math.max(0.01, Math.hypot(deltaX, deltaY))
+  return {
+    x: objective.pos.x + deltaX / length * 12,
+    y: objective.pos.y + deltaY / length * 12,
+  }
 }
 
 export function isTowerUnlocked(state: SimulationState, team: TeamId, tower: Tower) {
@@ -3038,6 +3102,7 @@ export function createPlayerAiContext(input: {
       currentMode: input.arcane.aiMode,
       danger: input.dangerScore,
       itemTimingUrgency,
+      developmentNeed: getArcaneDevelopmentNeed(input.arcane, input.state.time),
     },
     local: {
       enemyNumbersAdvantage: Math.max(0, -localNumbers.advantage),
@@ -3802,11 +3867,12 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     const rotateTarget = getRotateTarget(state, arcane, visibleEnemies, targetThreatLimit, effectiveDanger)
     const initiateTarget = getInitiateTarget(state, arcane, visibleEnemies, targetThreatLimit, effectiveDanger)
     const laneEnemyCreeps = safeEnemyCreeps.filter((creep) => creep.lane === arcane.lane)
-    const laneCreep = nearest(arcane.pos, laneEnemyCreeps, phase === 'early' ? 13 : 10)
-    const lastHitCreep = getLastHitCandidateFromCreeps(state, arcane, laneEnemyCreeps, 1.06)
-    const prepareLastHitCreep = getLastHitCandidateFromCreeps(state, arcane, laneEnemyCreeps, 1.85) ?? getWavePushTarget(arcane, laneEnemyCreeps)
-    const wavePushCreep = getWavePushTarget(arcane, laneEnemyCreeps)
-    const distantLaneCreep = nearest(arcane.pos, safeEnemyCreeps, phase === 'early' ? 18 : phase === 'mid' ? 28 : 34)
+    const claimableLaneCreeps = laneEnemyCreeps.filter((creep) => canArcaneClaimFarmAt(state, arcane, creep.pos))
+    const laneCreep = nearest(arcane.pos, claimableLaneCreeps, phase === 'early' ? 13 : 10)
+    const lastHitCreep = getLastHitCandidateFromCreeps(state, arcane, claimableLaneCreeps, 1.06)
+    const prepareLastHitCreep = getLastHitCandidateFromCreeps(state, arcane, claimableLaneCreeps, 1.85) ?? getWavePushTarget(arcane, claimableLaneCreeps)
+    const wavePushCreep = getWavePushTarget(arcane, claimableLaneCreeps)
+    const distantLaneCreep = nearest(arcane.pos, safeEnemyCreeps.filter((creep) => canArcaneClaimFarmAt(state, arcane, creep.pos)), phase === 'early' ? 18 : phase === 'mid' ? 28 : 34)
     const denyCreep = nearest(arcane.pos, state.creeps.filter((creep) => (
       creep.team === arcane.team &&
       creep.lane === arcane.lane &&
@@ -3869,6 +3935,16 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     const teamCallObjectivePoint = teamCall ? getTeamCallObjectivePoint(state, teamCall) : undefined
     const callerArcane = teamCall ? state.arcanes.find((ally) => ally.id === teamCall.callerId && ally.stats.hp > 0 && ally.respawn <= state.time) : undefined
     const baseThreat = phase !== 'early' ? getBaseThreat(state, arcane.team) : undefined
+    const plannedObjective = teamPlan?.targetId ? getPlannedMapObjective(state, arcane.team, teamPlan.targetId) : undefined
+    const preparingHighGround = phase === 'late' && (
+      teamPlan?.type === 'end_game' ||
+      (teamPlan?.type === 'group_push' && plannedObjective !== undefined && (
+        !('tier' in plannedObjective) || plannedObjective.tier === 3
+      )) ||
+      teamCall?.kind === 'base' ||
+      teamCall?.kind === 'structure'
+    )
+    const needsHighGroundRecovery = preparingHighGround && hpRatio < 0.78 && !baseThreat?.urgent
     const shouldDefendBase = baseThreat?.urgent &&
       baseThreat.target &&
       hpRatio > 0.48 &&
@@ -3917,7 +3993,8 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       alliedLaneCreepNearTower &&
       hpRatio > (alreadyPressuringTower ? enemyTower.tier === 3 ? 0.74 : 0.68 : modeWantsObjective ? enemyTower.tier === 3 ? 0.82 : 0.76 : enemyTower.tier === 3 ? 0.9 : 0.84) &&
       effectiveDanger < (alreadyPressuringTower ? enemyTower.tier === 3 ? 58 : 64 : modeWantsObjective ? enemyTower.tier === 3 ? 48 : 56 : enemyTower.tier === 3 ? 34 : 42) &&
-      (towerNumbers?.advantage ?? -99) >= (alreadyPressuringTower ? enemyTower.tier === 3 ? 0.25 : -0.65 : modeWantsObjective ? enemyTower.tier === 3 ? 0.55 : -0.35 : enemyTower.tier === 3 ? 1.1 : -0.15)
+      (towerNumbers?.advantage ?? -99) >= (alreadyPressuringTower ? enemyTower.tier === 3 ? 0.25 : -0.65 : modeWantsObjective ? enemyTower.tier === 3 ? 0.55 : -0.35 : enemyTower.tier === 3 ? 1.1 : -0.15) &&
+      (enemyTower.tier !== 3 || (towerNumbers?.allies ?? 0) >= 4)
 
     if (needsBaseRecovery) {
       target = ownBase
@@ -3929,6 +4006,10 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       microDecision = baseThreat.target && 'player' in baseThreat.target
         ? `Defendendo base contra ${baseThreat.target.player}`
         : 'Limpando invasao na base'
+    } else if (needsHighGroundRecovery) {
+      target = ownBase
+      macroDecision = 'Preparar highground'
+      microDecision = 'Recuperando recursos antes de agrupar'
     } else if (shouldTacticallyDisengage) {
       const laneDistance = getLaneDistanceAlongPath(arcane.pos, path)
       target = formationPoint(getLanePointAtDistance(path, Math.max(0, laneDistance - (8 + repeatedDeathCaution * 30))), arcane.id)
@@ -3959,7 +4040,7 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       target = initiateTarget.pos
       macroDecision = 'Lutar em equipe'
       microDecision = `Iniciando luta em ${initiateTarget.name}`
-    } else if (teamCall && teamCallPoint && teamCallObjectivePoint && phase !== 'early' && hpRatio > (teamCall.kind === 'boss' ? 0.72 : 0.58) && effectiveDanger < (teamCall.kind === 'boss' ? 48 : 60)) {
+    } else if (teamCall && teamCallPoint && teamCallObjectivePoint && phase !== 'early' && hpRatio > (teamCall.kind === 'boss' ? 0.72 : teamCall.kind === 'base' ? 0.78 : 0.58) && effectiveDanger < (teamCall.kind === 'boss' ? 48 : teamCall.kind === 'base' ? 50 : 60)) {
       const callAge = state.time - teamCall.createdAt
       const callerNearObjective = callerArcane ? distance(callerArcane.pos, teamCallPoint) <= 12 : false
       const gatherPoint = callerArcane && callerNearObjective && callAge < 6 ? callerArcane.pos : teamCallPoint
@@ -3972,9 +4053,16 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
         ally.respawn <= state.time &&
         distance(ally.pos, teamCallPoint) <= 12
       )).length
+      const calledTower = teamCall.kind === 'tower' ? state.towers.find((tower) => tower.id === teamCall.targetId) : undefined
+      const isHighGroundCall = teamCall.kind === 'base' || teamCall.kind === 'structure' || calledTower?.tier === 3
+      const requiredAllies = teamCall.kind === 'boss' ? 3 : isHighGroundCall ? 4 : 2
+      const requiresSiegeWave = teamCall.kind === 'tower' || teamCall.kind === 'structure' || teamCall.kind === 'base'
+      const hasSiegeWave = !requiresSiegeWave || state.creeps.some((creep) => (
+        creep.team === arcane.team && creep.hp > 0 && distance(creep.pos, teamCallObjectivePoint) <= 14
+      ))
       const readyToExecuteCall = teamCall.kind === 'boss'
-        ? bossReadyToHit
-        : !farFromGroup && (callAge > 2.5 || alliesAtCall >= 2 || distance(arcane.pos, teamCallPoint) <= 6)
+        ? bossReadyToHit && alliesAtCall >= requiredAllies
+        : !farFromGroup && hasSiegeWave && alliesAtCall >= requiredAllies && (callAge > 2.5 || distance(arcane.pos, teamCallPoint) <= 6)
       target = farFromGroup ? gatherPoint : readyToExecuteCall ? teamCallObjectivePoint : teamCallPoint
       macroDecision = isCaller
         ? readyToExecuteCall
@@ -4384,7 +4472,7 @@ export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Ar
     if (creepTarget) {
       const bonusGold = getActiveItemNumber(active.values, 'bonusGold') ?? 120
       const bonusXpPct = getActiveItemNumber(active.values, 'bonusXpPct') ?? 100
-      nextArcane = grantArcaneEconomy(nextArcane, bonusGold, Math.round(getCreepXpReward(creepTarget) * (bonusXpPct / 100)))
+      nextArcane = grantArcaneEconomy(nextArcane, bonusGold, Math.round(getCreepXpReward(creepTarget, state.time) * (bonusXpPct / 100)))
       damageEntity(state, creepTarget.id, creepTarget.hp + 1, {
         id: item.id,
         label: `${arcane.player}: ${item.name}`,
@@ -7081,8 +7169,8 @@ export function getCreepGoldReward(creep: Creep) {
   return creep.goldReward
 }
 
-export function getCreepXpReward(creep: Creep) {
-  return creep.xpReward
+export function getCreepXpReward(creep: Creep, time = 0) {
+  return scaledExperienceReward(creep.xpReward, time)
 }
 
 export function getCreepVisionRange(creep: Creep) {
@@ -7132,6 +7220,20 @@ export function getCreepXpRecipients(state: SimulationState, creep: Creep) {
   ))
 }
 
+export function getCreepXpShare(state: SimulationState, creep: Creep, arcane: Arcane) {
+  const recipients = getCreepXpRecipients(state, creep)
+  if (!recipients.some((recipient) => recipient.id === arcane.id)) return 0
+  const getWeight = (recipient: Arcane) => {
+    if (recipient.role === 'Safe Lane') return 1.35
+    if (recipient.role === 'Mid') return 1.25
+    if (recipient.role === 'Offlane') return 1.3
+    if (recipient.role === 'Greedy Support') return 0.55
+    return 0.45
+  }
+  const totalWeight = recipients.reduce((sum, recipient) => sum + getWeight(recipient), 0)
+  return getWeight(arcane) / Math.max(0.01, totalWeight)
+}
+
 export function getDenyTarget(state: SimulationState, arcane: Arcane, creepIndices?: number[]) {
   const laneCreeps = creepIndices
     ? creepIndices.map((index) => state.creeps[index])
@@ -7158,6 +7260,29 @@ export function getLastHitTarget(state: SimulationState, arcane: Arcane, creepIn
   )
 }
 
+export function getHigherPriorityFarmAlly(state: SimulationState, arcane: Arcane, point: Point, radius = 12) {
+  const ownPriority = getRoleFarmPriority(arcane.role)
+  return state.arcanes
+    .filter((ally) => (
+      ally.team === arcane.team &&
+      ally.id !== arcane.id &&
+      ally.stats.hp > ally.stats.maxHp * 0.38 &&
+      ally.respawn <= state.time &&
+      getRoleFarmPriority(ally.role) > ownPriority &&
+      distance(ally.pos, point) <= radius &&
+      ally.aiMode !== 'retreat' &&
+      !ally.macroDecision.startsWith('Recuar')
+    ))
+    .sort((a, b) => (
+      getRoleFarmPriority(b.role) - getRoleFarmPriority(a.role) ||
+      distance(a.pos, point) - distance(b.pos, point)
+    ))[0]
+}
+
+export function canArcaneClaimFarmAt(state: SimulationState, arcane: Arcane, point: Point, radius = 12) {
+  return getHigherPriorityFarmAlly(state, arcane, point, radius) === undefined
+}
+
 export function getLastHitCandidateFromCreeps(
   state: SimulationState,
   arcane: Arcane,
@@ -7170,6 +7295,7 @@ export function getLastHitCandidateFromCreeps(
     .filter((creep) => (
       creep.hp > 0 &&
       creep.hp <= hitDamage * damageWindow &&
+      canArcaneClaimFarmAt(state, arcane, creep.pos) &&
       (!reachableOnly || distance(arcane.pos, creep.pos) <= getArcaneAttackCenterRange(arcane, creep))
     ))
     .sort((a, b) => {
@@ -7285,10 +7411,8 @@ export function resolveDeaths(state: SimulationState): SimulationState {
       const creepRewards = deadCreeps.reduce((total, creep) => {
         if (isDeniedCreep(creep)) return total
         const lastHitGold = creep.lastHitBy?.id === arcane.id ? getCreepGoldReward(creep) : 0
-        const xpRecipients = getCreepXpRecipients(next, creep)
-        const sharedXp = xpRecipients.some((recipient) => recipient.id === arcane.id)
-          ? Math.ceil(getCreepXpReward(creep) / xpRecipients.length)
-          : 0
+        const xpShare = getCreepXpShare(next, creep, arcane)
+        const sharedXp = xpShare > 0 ? Math.ceil(getCreepXpReward(creep, next.time) * xpShare) : 0
 
         return {
           gold: total.gold + lastHitGold,
@@ -7308,22 +7432,39 @@ export function resolveDeaths(state: SimulationState): SimulationState {
 
   if (deadCamps.length) {
     next.camps = next.camps.map((camp) => camp.hp <= 0 ? { ...camp, respawn: next.time + NON_COMBAT_RULES.map.jungleRespawnIntervalSeconds } : camp)
-    const rewardsByTeam = deadCamps.reduce((total, camp) => {
-      const campReward = getCampRewards(camp, next.time)
-      const rewardTeam = camp.lastHitBy?.team
-      if (!rewardTeam) return total
-      return {
-        ...total,
-        [rewardTeam]: {
-          gold: total[rewardTeam].gold + campReward.gold,
-          xp: total[rewardTeam].xp + campReward.xp,
-        },
-      }
-    }, { dawn: { gold: 0, xp: 0 }, dusk: { gold: 0, xp: 0 } } satisfies Record<TeamId, { gold: number; xp: number }>)
+    const rewardsByArcane = new Map<string, { gold: number; xp: number; neutralKills: number }>()
+    const addCampReward = (arcaneId: string, gold: number, xp: number, neutralKills = 0) => {
+      const current = rewardsByArcane.get(arcaneId) ?? { gold: 0, xp: 0, neutralKills: 0 }
+      rewardsByArcane.set(arcaneId, {
+        gold: current.gold + gold,
+        xp: current.xp + xp,
+        neutralKills: current.neutralKills + neutralKills,
+      })
+    }
+    deadCamps.forEach((camp) => {
+      const source = camp.lastHitBy
+      if (!source) return
+      const killer = next.arcanes.find((arcane) => (
+        arcane.team === source.team &&
+        (arcane.id === source.id || source.id.startsWith(`${arcane.id}-`))
+      ))
+      if (!killer) return
+      const reward = getCampRewards(camp, next.time)
+      const nearbyRecipients = next.arcanes.filter((arcane) => (
+        arcane.team === killer.team &&
+        arcane.stats.hp > 0 &&
+        arcane.respawn <= next.time &&
+        distance(arcane.pos, camp.pos) <= 14
+      ))
+      const xpRecipients = nearbyRecipients.length > 0 ? nearbyRecipients : [killer]
+      addCampReward(killer.id, reward.gold, 0, 1)
+      const sharedXp = Math.ceil(reward.xp / xpRecipients.length)
+      xpRecipients.forEach((recipient) => addCampReward(recipient.id, 0, sharedXp))
+    })
     next.arcanes = next.arcanes.map((arcane) => {
-      const reward = rewardsByTeam[arcane.team]
-      const neutralKills = deadCamps.filter((camp) => camp.lastHitBy?.id === arcane.id).length
-      return grantArcaneEconomy({ ...arcane, neutralKills: arcane.neutralKills + neutralKills }, reward.gold, reward.xp)
+      const reward = rewardsByArcane.get(arcane.id)
+      if (!reward) return arcane
+      return grantArcaneEconomy({ ...arcane, neutralKills: arcane.neutralKills + reward.neutralKills }, reward.gold, reward.xp)
     })
   }
 
@@ -7342,7 +7483,7 @@ export function resolveDeaths(state: SimulationState): SimulationState {
         ...arcane,
         neutralKills: arcane.neutralKills + (securedBoss ? 1 : 0),
         objectiveKills: arcane.objectiveKills + (securedBoss ? 1 : 0),
-      }, 120, 400)
+      }, 120, scaledExperienceReward(400, next.time))
     })
     next.arcanes
       .filter((arcane) => arcane.team === rewardTeam && arcane.stats.hp > 0 && arcane.respawn <= next.time)
@@ -7419,12 +7560,12 @@ export function resolveDeaths(state: SimulationState): SimulationState {
         victimTeamNetWorth,
         assists.length,
       )
-      const xpPerEligibleHero = killXp(
+      const xpPerEligibleHero = scaledExperienceReward(killXp(
         arcane.stats.level,
         getTeamXp(next, killerTeam),
         getTeamXp(next, arcane.team),
         eligibleXpRecipients.length,
-      )
+      ), next.time)
       const lostGold = Math.min(arcane.stats.gold, deathGoldLoss(getArcaneNetWorth(arcane)))
 
       if (killerArcane) addArcaneReward(killerArcane.id, killerRewardGold, xpPerEligibleHero)

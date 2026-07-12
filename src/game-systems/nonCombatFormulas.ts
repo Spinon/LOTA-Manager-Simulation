@@ -139,6 +139,18 @@ export function wisdomRuneXp(spawnIndex: number): number {
   return 280 + 280 * Math.max(0, Math.floor(spawnIndex))
 }
 
+export function experiencePacingMultiplier(gameTimeSeconds: number): number {
+  const minute = Math.max(0, gameTimeSeconds / 60)
+  if (minute <= 6) return 1.75
+  if (minute <= 20) return lerp(1.75, 2.25, (minute - 6) / 14)
+  if (minute <= 40) return lerp(2.25, 4, (minute - 20) / 20)
+  return Math.min(4.8, 4 + (minute - 40) * 0.025)
+}
+
+export function scaledExperienceReward(baseXp: number, gameTimeSeconds: number): number {
+  return Math.round(Math.max(0, baseXp) * experiencePacingMultiplier(gameTimeSeconds))
+}
+
 export function healingLotusValue(lotusCount = 1): number {
   if (lotusCount >= 6) return 900
   if (lotusCount >= 3) return 400
@@ -259,6 +271,10 @@ export function respawnDurationSeconds(level: number, extraPenaltySeconds = 0, r
     NON_COMBAT_RULES.respawn.minimumSeconds,
     RESPAWN_TABLE_SECONDS[validatedLevel] + extraPenaltySeconds - respawnReductionSeconds,
   )
+}
+
+function lerp(start: number, end: number, ratio: number) {
+  return start + (end - start) * clamp(ratio, 0, 1)
 }
 
 export function resourceRegenForTick(

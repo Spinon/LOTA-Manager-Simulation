@@ -8,6 +8,7 @@ import {
   comebackKillGoldBonus,
   deathGoldLoss,
   expectedTimeToItemSeconds,
+  experiencePacingMultiplier,
   getLevelFromXp,
   getLevelProgress,
   healingLotusValue,
@@ -16,6 +17,7 @@ import {
   passiveGoldForTick,
   passiveGpmAtMinute,
   resourceRegenForTick,
+  scaledExperienceReward,
   respawnDurationSeconds,
   stackSuccessChance,
   stackedCampValue,
@@ -32,6 +34,14 @@ function closeTo(actual: number, expected: number, epsilon = 0.0001) {
   assert.equal(passiveGpmAtMinute(20), 112)
   assert.equal(passiveGpmAtMinute(40), 120)
   closeTo(passiveGoldForTick(0, 3), 5)
+}
+
+{
+  closeTo(experiencePacingMultiplier(6 * 60), 1.75)
+  closeTo(experiencePacingMultiplier(20 * 60), 2.25)
+  closeTo(experiencePacingMultiplier(40 * 60), 4)
+  assert.equal(scaledExperienceReward(100, 40 * 60), 400)
+  assert.ok(experiencePacingMultiplier(70 * 60) <= 4.8, 'late-game XP pacing must remain bounded')
 }
 
 {

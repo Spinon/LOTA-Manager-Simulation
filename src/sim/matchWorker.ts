@@ -26,7 +26,6 @@ export type MatchWorkerResponse =
 
 const renderFrameIntervalSeconds = 0.2
 const renderDetailsIntervalSeconds = 2
-const maxSimulationSeconds = 50 * 60
 // Chunks curtos: cada flush vira um postMessage que o main thread precisa
 // desserializar de forma síncrona — lotes de ~5s de jogo (~25 frames) mantêm
 // esse bloqueio abaixo de ~15ms e deixam o worker responder rápido ao cursor.
@@ -89,7 +88,7 @@ async function runMatch(seed: string, runId: number) {
     const runChunk = () => {
       if (runId !== activeRunId) return
 
-      for (let step = 0; step < simulationChunkSteps && !state.winner && state.time < maxSimulationSeconds; step += 1) {
+      for (let step = 0; step < simulationChunkSteps && !state.winner; step += 1) {
         decisionAccumulator += simulationFrameSeconds
         const shouldDecide = decisionAccumulator >= decisionGateSeconds
         if (shouldDecide) decisionAccumulator %= decisionGateSeconds
@@ -102,7 +101,7 @@ async function runMatch(seed: string, runId: number) {
       }
       // A vitória pode ocorrer entre dois frames de 0,2s. Sem este snapshot
       // final, o replay para no estado anterior à queda da base.
-      if ((state.winner || state.time >= maxSimulationSeconds) && lastFrameTime + 0.0001 < state.time) {
+      if (state.winner && lastFrameTime + 0.0001 < state.time) {
         postFrame()
       }
       flushFrames()
@@ -112,11 +111,11 @@ async function runMatch(seed: string, runId: number) {
         runId,
         simTime: state.time,
         frameCount,
-        done: Boolean(state.winner) || state.time >= maxSimulationSeconds,
+        done: Boolean(state.winner),
       }
       self.postMessage(progress)
 
-      if (state.winner || state.time >= maxSimulationSeconds) {
+      if (state.winner) {
         const done: MatchWorkerResponse = {
           type: 'done',
           runId,

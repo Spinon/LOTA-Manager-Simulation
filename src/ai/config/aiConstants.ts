@@ -66,10 +66,10 @@ export const ROLE_MODE_WEIGHTS: Record<PlayerRole, Partial<Record<PlayerModeType
     push_lane: 1.05,
   },
   offlane: {
-    farm_lane: 0.92,
-    farm_jungle: 0.72,
+    farm_lane: 1.08,
+    farm_jungle: 0.92,
     push_lane: 1.15,
-    join_fight: 1.2,
+    join_fight: 1.12,
     take_objective: 1.1,
     retreat: 0.95,
   },
