@@ -19,6 +19,7 @@ import {
   getCampClearAssessment,
   getHeroDefinition,
   getItemPurchasePlan,
+  getJungleStackChance,
   getHigherPriorityFarmAlly,
   getCreepXpShare,
   getDenyTarget,
@@ -41,6 +42,7 @@ import {
   materializeMatchRenderFrame,
   matchPreparationStartSeconds,
   resetDisengagedNeutralCamps,
+  processJungleStacks,
   resolveDeaths,
   resolveCombat,
   simulationFrameSeconds,
@@ -237,6 +239,42 @@ assert.ok(getRoleFarmPriority('Greedy Support') > getRoleFarmPriority('Dedicated
   resolveCombat(retaliationState, createTickFrameContext())
   assert.ok(attacker.stats.hp > 0)
   assert.ok(retaliationState.arcanes[0].stats.hp < hpBefore, 'a ranged aggressor inside the leash should receive neutral retaliation')
+}
+
+{
+  const disciplineState = createInitialState('neutral-target-discipline-test')
+  disciplineState.time = 180
+  disciplineState.camps.forEach((camp) => { camp.hp = camp.maxHp; camp.respawn = 0 })
+  disciplineState.arcanes.forEach((arcane) => { arcane.pos = { x: 1, y: 1 } })
+  const ranged = disciplineState.arcanes.find((arcane) => arcane.stats.attackType === 'ranged')!
+  const camp = disciplineState.camps.find((candidate) => candidate.strength === 'weak')!
+  ranged.pos = { x: camp.pos.x + Math.max(camp.range + 0.4, Math.min(ranged.stats.range, 6)), y: camp.pos.y }
+  ranged.microDecision = 'Avancando rota'
+  const campHpBefore = camp.hp
+  resolveCombat(disciplineState, createTickFrameContext())
+  assert.equal(disciplineState.camps.find((candidate) => candidate.id === camp.id)!.hp, campHpBefore, 'a non-jungling Arcane should not poke a neutral camp opportunistically')
+}
+
+{
+  const stackState = createInitialState('single-stacker-per-minute-test')
+  stackState.time = 111.99
+  stackState.camps.forEach((camp) => {
+    camp.pos = { x: 50, y: 50 }
+    camp.hp = camp.maxHp
+    camp.respawn = 0
+  })
+  stackState.arcanes.forEach((arcane) => {
+    arcane.stats.hp = 0
+    arcane.pos = { x: 1, y: 1 }
+  })
+  const stacker = stackState.arcanes.find((arcane) => arcane.role === 'Dedicated Support')!
+  stacker.stats.hp = stacker.stats.maxHp
+  stacker.pos = { x: 50, y: 50 }
+  stacker.microDecision = 'Aguardando oportunidade'
+  stackState.time = 112.01
+  processJungleStacks(stackState, 111.99)
+  assert.ok(stackState.camps.filter((camp) => camp.stackCount > 0).length <= 1, 'one Arcane may only stack one camp per minute')
+  assert.ok(getJungleStackChance(stackState, stackState.camps[0], stacker) <= 0.5, 'stack chance should remain capped')
 }
 
 {
@@ -441,6 +479,7 @@ let state: SimulationState = initialState
   caster.heroDefinitionId = 'h067_silence_warden'
   caster.skillLevels = { Q: 1 }
   caster.stats.mana = caster.stats.maxMana
+  caster.microDecision = 'Limpando campo neutro'
   caster.pos = { x: 50, y: 50 }
   enemy.pos = { x: 51, y: 50 }
   enemy.stats.hp = enemy.stats.maxHp * 0.5
@@ -452,6 +491,7 @@ let state: SimulationState = initialState
   const liveEnemy = cooldownState.arcanes.find((arcane) => arcane.id === enemy.id)!
   const cooldownUntil = liveCaster.itemCooldowns[silence.id]
   assert.equal(cooldownUntil, 122, 'official 22-second cooldown should be stored as an absolute game time')
+  assert.equal(liveCaster.microDecision, 'Limpando campo neutro', 'casting a skill should not erase the current tactical commitment')
   assert.ok(liveCaster.stats.mana < liveCaster.stats.maxMana, 'mana cost should persist on the live caster after damage replaces state entities')
   liveCaster.stats.mana = liveCaster.stats.maxMana
   cooldownState.time = 121.99

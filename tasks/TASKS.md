@@ -289,6 +289,25 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
+### [x] T14.3 - Consistência do farm neutro
+
+> Concluída em 2026-07-12 - Reduzi o dano neutro, corrigi ataques acidentais e casts que apagavam a decisão, mantive compromisso de clear e disciplinei stacks por jogador/minuto.
+
+**Objetivo**: fazer Arcanes escolherem, iniciarem e concluírem campos adequados à própria força, sem ataques acidentais, abandono repetido ou proliferação artificial de stacks.
+
+**Escopo**:
+- Nerfar moderadamente o dano agregado dos campos e recalibrar a estimativa conservadora de dano recebido/tempo de clear.
+- Restringir ataques a campos à decisão explícita de farm ou ao aggro já assumido, impedindo pokes ocasionais fora da rotina de selva.
+- Manter compromisso com o campo escolhido até o clear ou até surgir risco real de morte, inimigo, defesa urgente ou chamada de equipe.
+- Limitar cada Arcane a uma tentativa de stack por minuto, reduzir a chance excessiva e o scaling ofensivo dos stacks sem remover seu valor econômico.
+- Instrumentar e comparar clears, decisões, campos danificados e resets em uma janela de 20min.
+
+**Critérios**: aumento material de clears por 20min, forte redução de resets sem clear, stacks mais raros e concentrados, prioridade HC > Mid > Off > Sup4 > Sup5 preservada; testes, lint e build verdes.
+
+**Medição**: na mesma seed de auditoria, os clears aos 20min subiram de 5 para 18 e os resets caíram de aproximadamente 340 para 43; distribuição de clears HC 11 > Mid 5 > Off 2 > supports 0. Nove dos 16 campos terminaram sem stack. A partida longa terminou organicamente em 42,5min, sem watchdog e com conversão da liderança; testes, lint e build verdes.
+
+---
+
 ### [ ] T15 - Auditoria e implementação integral de skills
 
 **Objetivo**: verificar todas as skills importadas e garantir que cada uma possua execução funcional, incluindo dano, targeting, cooldown, mana, scaling, passivas, summons e todos os efeitos favoráveis/adversos e status effects descritos.

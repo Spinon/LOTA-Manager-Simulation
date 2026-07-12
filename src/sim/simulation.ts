@@ -2009,12 +2009,14 @@ export function processJungleStacks(state: SimulationState, previousTime: number
 
   const next = state
   const stackMinute = Math.floor(state.time / 60)
+  const assignedStackers = new Set<string>()
   next.camps = next.camps.map((camp) => {
     if (camp.hp <= 0 || camp.stackCount >= NON_COMBAT_RULES.map.maxJungleStacks) return camp
     if (Math.floor(camp.lastStackAttemptAt / 60) === stackMinute) return camp
 
-    const stacker = getJungleStacker(next, camp)
+    const stacker = getJungleStacker(next, camp, assignedStackers)
     if (!stacker) return { ...camp, lastStackAttemptAt: next.time }
+    assignedStackers.add(stacker.id)
 
     const chance = getJungleStackChance(next, camp, stacker)
     const roll = deterministicPercent(`${camp.id}-${stacker.id}`, stackMinute)
@@ -2029,7 +2031,7 @@ export function processJungleStacks(state: SimulationState, previousTime: number
       ...camp,
       hp: camp.hp + extraHp,
       maxHp: Math.round(stackedCampValue(baseStats.hp, newStackCount)),
-      damage: Math.round(baseStats.damage * (1 + newStackCount * 0.16)),
+      damage: Math.round(baseStats.damage * (1 + newStackCount * 0.1)),
       stackCount: newStackCount,
       lastStackAttemptAt: next.time,
     }
@@ -2045,9 +2047,10 @@ export function crossedMinuteSecond(previousTime: number, currentTime: number, s
   return currentBucket > previousBucket
 }
 
-export function getJungleStacker(state: SimulationState, camp: Camp) {
+export function getJungleStacker(state: SimulationState, camp: Camp, excludedArcaneIds = new Set<string>()) {
   return state.arcanes
     .filter((arcane) => (
+      !excludedArcaneIds.has(arcane.id) &&
       arcane.stats.hp > 0 &&
       arcane.respawn <= state.time &&
       distance(arcane.pos, camp.pos) <= getJungleStackRadius(arcane, camp) &&
@@ -2101,7 +2104,7 @@ export function getJungleStackChance(state: SimulationState, camp: Camp, stacker
   )).length
   const visionSafety = isPointVisibleToTeam(state, stacker.team, camp.pos) ? 0.16 : 0.05
   const enemyContestRisk = nearbyEnemyPressure * 0.18 + getTeamMemoryDanger(state, stacker.team, camp.pos) / 260
-  return stackSuccessChance(supportSkill, heroModifier, visionSafety, enemyContestRisk)
+  return clampNumber(stackSuccessChance(supportSkill, heroModifier, visionSafety, enemyContestRisk) * 0.55, 0.08, 0.5)
 }
 
 export function getBestJungleCampForArcane(state: SimulationState, arcane: Arcane, range: number, visibleEnemies: Arcane[]) {
@@ -2125,11 +2128,11 @@ export function getCampClearAssessment(state: SimulationState, arcane: Arcane, c
   const damagePerSecond = effectiveDamage / attackCooldown
   const clearSeconds = camp.hp / Math.max(20, damagePerSecond)
   const incomingDamage = Math.max(1, resolveIncomingArcaneDamage(state, arcane, camp.damage, 'physical'))
-  const expectedHits = Math.max(1, Math.ceil(clearSeconds / 1.35))
+  const expectedHits = Math.max(1, Math.floor(clearSeconds / 1.35))
   const expectedDamage = incomingDamage * expectedHits
   const healthAfterClear = arcane.stats.hp - expectedDamage
-  const reserveHp = Math.max(arcane.stats.maxHp * 0.22, incomingDamage * 1.5)
-  const canClear = clearSeconds <= 45 && healthAfterClear >= reserveHp
+  const reserveHp = Math.max(arcane.stats.maxHp * 0.18, incomingDamage * 1.25)
+  const canClear = clearSeconds <= 52 && healthAfterClear >= reserveHp
 
   return {
     canClear,
@@ -4100,8 +4103,16 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       : laneBlocker
         ? getAlliedWaveNearObjective(state, arcane.team, arcane.lane, laneBlocker)
         : undefined
-    const weakCamp = getBestJungleCampForArcane(state, arcane, phase === 'early' ? isSupport ? 10 : 6 : isSupport ? 9 : 12, visibleEnemies)
-    const economyCamp = getBestJungleCampForArcane(state, arcane, phase === 'early' ? isSupport ? 16 : 9 : isSupport ? 15 : 22, visibleEnemies)
+    const weakCamp = getBestJungleCampForArcane(state, arcane, phase === 'early' ? isSupport ? 10 : 7.5 : isSupport ? 10 : 14, visibleEnemies)
+    const economyCamp = getBestJungleCampForArcane(state, arcane, phase === 'early' ? isSupport ? 17 : 11 : isSupport ? 17 : 24, visibleEnemies)
+    const committedCamp = isJungleFarmMicroDecision(arcane.microDecision)
+      ? nearest(arcane.target, state.camps.filter((camp) => camp.hp > 0), 7)
+      : undefined
+    const committedCampAssessment = committedCamp ? getCampClearAssessment(state, arcane, committedCamp) : undefined
+    const canFinishCommittedCamp = committedCamp !== undefined && committedCampAssessment !== undefined &&
+      committedCampAssessment.clearSeconds <= 60 &&
+      committedCampAssessment.healthAfterClear >= Math.max(arcane.stats.maxHp * 0.12, committedCampAssessment.incomingDamage) &&
+      effectiveDanger < 60
     const emergencyRecovery = getArcaneEmergencyRecoveryRatio(state, arcane)
     const lowHp = hpRatio < Math.max(0.22, 0.36 - emergencyRecovery * 0.6)
     const alreadyPressuringTower = arcane.macroDecision.startsWith('Pressionar torre') || arcane.microDecision.startsWith('Batendo torre')
@@ -4225,6 +4236,10 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       target = ownBase
       macroDecision = 'Recuar'
       microDecision = effectiveDanger >= 68 || modeWantsRetreat ? 'Recuando por perigo alto' : 'Recuando para curar'
+    } else if (canFinishCommittedCamp && committedCamp && !nearbyEnemy && !teamCall) {
+      target = mapEdgeApproachPoint(committedCamp.pos)
+      macroDecision = 'Farmar selva'
+      microDecision = 'Limpando campo neutro'
     } else if (cannotAdvanceLane && !teamCall && !modeWantsFight && !modeWantsObjective && economyCamp && hpRatio > 0.68 && effectiveDanger < 52) {
       target = mapEdgeApproachPoint(economyCamp.pos)
       macroDecision = 'Farmar enquanto aguarda wave'
@@ -5172,7 +5187,7 @@ export function getCombatMoveTargetNearPoint(state: SimulationState, arcane: Arc
     )), 5)
   }
 
-  if (microDecision.startsWith('Limpando campo') || microDecision.startsWith('Acumulando patrimonio na selva')) {
+  if (isJungleFarmMicroDecision(microDecision)) {
     return nearest(target, state.camps.filter((camp) => camp.hp > 0), 6)
   }
 
@@ -5189,6 +5204,10 @@ export function getCombatMoveTargetNearPoint(state: SimulationState, arcane: Arc
   }
 
   return undefined
+}
+
+export function isJungleFarmMicroDecision(microDecision: string) {
+  return microDecision.startsWith('Limpando campo') || microDecision.startsWith('Acumulando patrimonio na selva')
 }
 
 export function getFocusedObjectiveTarget(state: SimulationState, arcane: Arcane): Tower | Structure | Base | undefined {
@@ -6511,7 +6530,6 @@ export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, sk
     ...liveArcane.stats,
     mana: Math.max(0, liveArcane.stats.mana - manaCost),
   }
-  liveArcane.microDecision = `Castou ${skill.key}`
   liveArcane.decision = `Castou ${skill.key}`
   state.skillMarkers = [
     ...state.skillMarkers.slice(-23),
@@ -7087,8 +7105,9 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     const bossTarget = canAttackBoss && distance(arcane.pos, next.boss.pos) <= getArcaneAttackCenterRange(arcane, next.boss) ? next.boss : undefined
     const objectiveTarget = getFocusedObjectiveTarget(next, arcane)
     const enemyTeam = arcane.team === 'dawn' ? 'dusk' : 'dawn'
-    const lastHitTarget = getLastHitTarget(next, arcane, creepIndicesByTeamLane[enemyTeam][arcane.lane])
-    const denyTarget = getDenyTarget(next, arcane, creepIndicesByTeamLane[arcane.team][arcane.lane])
+    const farmingJungle = isJungleFarmMicroDecision(arcane.microDecision)
+    const lastHitTarget = farmingJungle ? undefined : getLastHitTarget(next, arcane, creepIndicesByTeamLane[enemyTeam][arcane.lane])
+    const denyTarget = farmingJungle ? undefined : getDenyTarget(next, arcane, creepIndicesByTeamLane[arcane.team][arcane.lane])
     const laneControl = isLaningControlMicroDecision(arcane.microDecision)
     let target: CombatTarget | undefined = bossTarget ?? objectiveTarget ?? lastHitTarget ?? denyTarget
     if (!target) {
@@ -7098,9 +7117,16 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
         const creep = next.creeps[index]
         if (!laneControl || creep.lane !== arcane.lane) fallbackEnemyCreeps.push(creep)
       }
-      target = enemyArcaneTarget ?? nearestReachableByArcane(arcane, [
+      const intendedCamp = farmingJungle
+        ? nearest(arcane.target, next.camps.filter((camp) => camp.hp > 0), 7)
+        : undefined
+      const campTarget = intendedCamp && distance(arcane.pos, intendedCamp.pos) <= getArcaneAttackCenterRange(arcane, intendedCamp)
+        ? intendedCamp
+        : farmingJungle
+          ? nearestReachableByArcane(arcane, next.camps.filter((camp) => camp.hp > 0))
+          : undefined
+      target = enemyArcaneTarget ?? campTarget ?? nearestReachableByArcane(arcane, [
         ...fallbackEnemyCreeps,
-        ...next.camps.filter((camp) => camp.hp > 0),
         ...(canAttackBoss ? [next.boss] : []),
       ])
     }

@@ -28,7 +28,7 @@ import {
   const ancientStats = getNeutralCampStats('ancient')
   const ancientReward = getNeutralCampReward('ancient', 0)
   assert.ok(weakStats.hp > 500)
-  assert.ok(weakStats.damage > 30, 'camp damage should represent multiple creatures retaliating')
+  assert.ok(weakStats.damage > 24, 'camp damage should represent multiple creatures retaliating after mitigation')
   assert.ok(mediumStats.damage > weakStats.damage)
   assert.ok(ancientStats.damage > mediumStats.damage)
   assert.ok(weakStats.range >= 5.2, 'neutral camps should retaliate beyond their static marker radius')

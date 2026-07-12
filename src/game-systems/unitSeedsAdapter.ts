@@ -86,7 +86,7 @@ export function getNeutralCampStats(tier: CampTier) {
   const minimumRetaliationRange = tier === 'ancient' || tier === 'large' ? 6 : tier === 'medium' ? 5.6 : 5.2
   return {
     hp: seeds.reduce((sum, seed) => sum + seed.baseStats.maxHealth, 0),
-    damage: Math.round(aggregateDamage * 0.62),
+    damage: Math.round(aggregateDamage * 0.5),
     range: Math.max(minimumRetaliationRange, convertRange(Math.max(...seeds.map((seed) => seed.baseStats.attackRange)))),
     level: tier === 'ancient' || tier === 'large' ? 3 : tier === 'medium' ? 2 : 1,
     leaderSeedId: leader.id,
