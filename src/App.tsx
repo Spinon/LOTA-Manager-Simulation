@@ -27,6 +27,7 @@ import {
   getLaneWinAssessment,
   getLevelProgress,
   loadGameData,
+  materializeMatchRenderFrame,
   getRuneGlyph,
   getRuneInspectorSubtitle,
   getRuneKindLabel,
@@ -77,6 +78,8 @@ import {
   type LaneId,
   type MapRune,
   type MatchRenderFrame,
+  type MatchRenderDetails,
+  type MatchStaticData,
   type MatchEvent,
   type PlayerModeType,
   type Point,
@@ -109,6 +112,7 @@ type StandbyMatch = {
   frames: MatchRenderFrame[]
   workerDone: boolean
   simTime: number
+  staticData?: MatchStaticData
 }
 
 // O espectador só recebe a partida depois que o worker fecha o replay inteiro.
@@ -134,7 +138,19 @@ function createBrowserMatchSeed() {
 }
 
 function getFrameKey(frame: MatchRenderFrame) {
-  return `${frame.matchSeed}:${frame.time}:${frame.events.length}:${frame.effects.length}:${frame.winner ?? 'playing'}`
+  return `${frame.matchSeed}:${frame.time}:${frame.effects.length}:${frame.winner ?? 'playing'}`
+}
+
+function materializeFrame(frame: MatchRenderFrame, staticData: MatchStaticData | undefined, details = frame.details) {
+  if (!staticData) throw new Error('Catálogo estático da partida não foi recebido')
+  return materializeMatchRenderFrame(frame, staticData, details)
+}
+
+function findFrameDetails(frames: MatchRenderFrame[], index: number) {
+  for (let cursor = index; cursor >= 0; cursor -= 1) {
+    if (frames[cursor].details) return frames[cursor].details
+  }
+  return undefined
 }
 
 function paintBufferInfoThrottled(
@@ -150,7 +166,7 @@ function paintBufferInfoThrottled(
 }
 
 function App() {
-  const [state, setState] = useState<MatchRenderFrame | undefined>(undefined)
+  const [state, setState] = useState<SimulationState | undefined>(undefined)
   const [loadingError, setLoadingError] = useState<string | undefined>(undefined)
   const [running, setRunning] = useState(true)
   const [speed, setSpeed] = useState(1)
@@ -166,6 +182,9 @@ function App() {
   const [winnerRevealed, setWinnerRevealed] = useState(false)
   const [precomputeDone, setPrecomputeDone] = useState(false)
   const frameBufferRef = useRef<MatchRenderFrame[]>([])
+  const staticDataRef = useRef<MatchStaticData | undefined>(undefined)
+  const activeDetailsRef = useRef<MatchRenderDetails | undefined>(undefined)
+  const activeTransportFrameRef = useRef<MatchRenderFrame | undefined>(undefined)
   const frameIndexRef = useRef(0)
   const playbackCursorRef = useRef(0)
   const lastPlaybackTick = useRef<number | null>(null)
@@ -177,7 +196,7 @@ function App() {
   const workerDoneRef = useRef(false)
   const standbyRef = useRef<StandbyMatch | undefined>(undefined)
   const currentFrameKeyRef = useRef('')
-  const stateRef = useRef<MatchRenderFrame | undefined>(undefined)
+  const stateRef = useRef<SimulationState | undefined>(undefined)
   if (import.meta.env.DEV) {
     ;(window as unknown as { __lotaStateRef?: typeof stateRef }).__lotaStateRef = stateRef
     ;(window as unknown as { __lotaPlayback?: unknown }).__lotaPlayback = {
@@ -226,6 +245,9 @@ function App() {
     runIdRef.current = runId
     workerDoneRef.current = adopting?.workerDone ?? false
     frameBufferRef.current = adopting?.frames ?? []
+    staticDataRef.current = adopting?.staticData
+    activeTransportFrameRef.current = undefined
+    activeDetailsRef.current = undefined
     frameIndexRef.current = 0
     playbackCursorRef.current = 0
     lastPlaybackTick.current = null
@@ -243,13 +265,16 @@ function App() {
 
     // Standby com buffer de largada completo: entra direto no playback,
     // sem tela de loading nem espera mínima.
-    const adoptedReady = Boolean(adopting && adopting.frames.length > 0 &&
+    const adoptedReady = Boolean(adopting?.staticData && adopting.frames.length > 0 &&
       (adopting.workerDone || adopting.simTime >= startupBufferSeconds))
     if (adopting && adoptedReady) {
       const firstFrame = adopting.frames[0]
-      stateRef.current = firstFrame
+      activeDetailsRef.current = firstFrame.details
+      const firstState = materializeFrame(firstFrame, adopting.staticData, activeDetailsRef.current)
+      activeTransportFrameRef.current = firstFrame
+      stateRef.current = firstState
       currentFrameKeyRef.current = getFrameKey(firstFrame)
-      setState(firstFrame)
+      setState(firstState)
       setPlaybackStatus('ready')
       setStartupWaitDone(true)
       setStartupWaitProgress(1)
@@ -284,6 +309,7 @@ function App() {
         frames: [],
         workerDone: false,
         simTime: 0,
+        staticData: undefined,
       }
       standbyWorker.onmessage = (event: MessageEvent<MatchWorkerResponse>) => {
         const message = event.data
@@ -293,7 +319,10 @@ function App() {
           if (standbyRef.current === nextStandby) standbyRef.current = undefined
           return
         }
-        if (message.type === 'static') return
+        if (message.type === 'static') {
+          nextStandby.staticData = message.data
+          return
+        }
         if (message.type === 'frame' || message.type === 'frames') {
           const incomingFrames = message.type === 'frame' ? [message.frame] : message.frames
           nextStandby.frames.push(...incomingFrames)
@@ -320,7 +349,10 @@ function App() {
 
       // O catálogo estático será usado pela materialização dos frames compactos.
       // Por enquanto o frame compatível segue completo durante a migração.
-      if (message.type === 'static') return
+      if (message.type === 'static') {
+        staticDataRef.current = message.data
+        return
+      }
 
       if (message.type === 'frame' || message.type === 'frames') {
         const incomingFrames = message.type === 'frame' ? [message.frame] : message.frames
@@ -337,9 +369,12 @@ function App() {
 
         if (!stateRef.current) {
           const firstFrame = frameBufferRef.current[0]
-          stateRef.current = firstFrame
+          activeDetailsRef.current = firstFrame.details
+          const firstState = materializeFrame(firstFrame, staticDataRef.current, activeDetailsRef.current)
+          activeTransportFrameRef.current = firstFrame
+          stateRef.current = firstState
           currentFrameKeyRef.current = getFrameKey(firstFrame)
-          setState(firstFrame)
+          setState(firstState)
           paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
             simTime: latestTime,
             frameCount: frameBufferRef.current.length,
@@ -381,9 +416,12 @@ function App() {
       }, true)
       if (!stateRef.current && frameBufferRef.current[0]) {
         const firstFrame = frameBufferRef.current[0]
-        stateRef.current = firstFrame
+        activeDetailsRef.current = firstFrame.details
+        const firstState = materializeFrame(firstFrame, staticDataRef.current, activeDetailsRef.current)
+        activeTransportFrameRef.current = firstFrame
+        stateRef.current = firstState
         currentFrameKeyRef.current = getFrameKey(firstFrame)
-        setState(firstFrame)
+        setState(firstState)
       }
       completionTimer = window.setTimeout(() => {
         setPlaybackStatus((status) => status === 'loading' || status === 'buffering' ? 'ready' : status)
@@ -472,7 +510,12 @@ function App() {
 
             const currentFrame = frames[frameIndexRef.current]
             if (currentFrame) {
-              stateRef.current = currentFrame
+              if (activeTransportFrameRef.current !== currentFrame) {
+                activeTransportFrameRef.current = currentFrame
+                if (currentFrame.details) activeDetailsRef.current = currentFrame.details
+                stateRef.current = materializeFrame(currentFrame, staticDataRef.current, activeDetailsRef.current)
+              }
+              const currentState = stateRef.current
               const frameKey = getFrameKey(currentFrame)
               const reachedEnd = workerDoneRef.current && frameIndexRef.current >= frames.length - 1 && Boolean(currentFrame.winner)
               // Os canvases leem stateRef a cada rAF; o setState só alimenta os
@@ -484,7 +527,7 @@ function App() {
               if (frameKey !== currentFrameKeyRef.current && (reachedEnd || now - lastStatePaintRef.current >= 300)) {
                 currentFrameKeyRef.current = frameKey
                 lastStatePaintRef.current = now
-                startTransition(() => setState(currentFrame))
+                startTransition(() => setState(currentState))
               }
               if (reachedEnd) {
                 setWinnerRevealed(true)
@@ -528,9 +571,12 @@ function App() {
     playbackCursorRef.current = targetTime
     setWinnerRevealed(targetTime >= frames[frames.length - 1].time)
     const frame = frames[low]
-    stateRef.current = frame
+    activeDetailsRef.current = findFrameDetails(frames, low)
+    const nextState = materializeFrame(frame, staticDataRef.current, activeDetailsRef.current)
+    activeTransportFrameRef.current = frame
+    stateRef.current = nextState
     currentFrameKeyRef.current = getFrameKey(frame)
-    setState(frame)
+    setState(nextState)
   }
 
   if (!state || !uiDataReady || !startupWaitDone || playbackStatus === 'loading' || isInitialBuffering) {

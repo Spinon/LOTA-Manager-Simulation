@@ -1525,7 +1525,65 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
 // enquanto `createMatchRenderFrame` só materializa os campos que eles exibem.
 // Campos de mecânica (pathfinding, aggro, last-hit e decisões antigas) nunca
 // cruzam a fronteira do worker.
-export interface MatchRenderFrame extends SimulationState {}
+type RenderStatsFrame = [
+  number, number, number, number, number, number, number, number, AttackType,
+  number, number, number, number, number, number, number, number, number,
+]
+
+type RenderArcaneDetailFrame = [
+  number, number, number, number, number, number, string, string, PlayerModeType,
+  string, number, number, ExecutionFailureType | undefined, DecisionStatus, number,
+  string[], Record<string, number>, number, number, ChannelingAction | undefined,
+  SkillLevels, number, number, number, number, number, number, number, number,
+  number, number, number, number, number, number, number, number, RenderStatsFrame,
+]
+
+type RenderArcaneFrame = [
+  number, number, number, number, number, number, number, number,
+  ChannelingAction | undefined,
+]
+
+type RenderCreepFrame = [string, TeamId, LaneId, LaneCreepKind, number, number, number, number, number]
+type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number]
+type RenderMarkerFrame = [TeamId, number, number, number, number]
+type RenderGoldMarkerFrame = [...RenderMarkerFrame, number]
+type RenderSkillMarkerFrame = [...RenderMarkerFrame, string]
+type RenderRuneFrame = [string, RuneKind, number, number, number, number | undefined, PowerRuneKind | undefined, TeamId | undefined, number]
+
+// Compact worker-to-UI transport. Stable entities use MatchStaticData and only
+// dynamic values cross the worker boundary on every frame.
+export type MatchRenderFrame = {
+  matchSeed: string
+  time: number
+  kills: [number, number]
+  winner?: TeamId
+  details?: MatchRenderDetails
+  effects: RenderAttackEffectFrame[]
+  timedEffects: TimedEffect[]
+  deathMarkers: Array<[string, ...RenderMarkerFrame]>
+  denyMarkers: RenderMarkerFrame[]
+  goldMarkers: RenderGoldMarkerFrame[]
+  skillMarkers: RenderSkillMarkerFrame[]
+  recentTeleports: Array<[TeamId, number, number, number]>
+  arcanes: RenderArcaneFrame[]
+  creeps: RenderCreepFrame[]
+  towerHp: number[]
+  structureHp: number[]
+  baseHp: number[]
+  camps: Array<[number, number, number, number]>
+  runes: RenderRuneFrame[]
+  boss: [number, number, number, number, number]
+}
+
+export type MatchRenderDetails = {
+  teamPlans: Partial<Record<TeamId, TeamPlan>>
+  teamMemory: Record<TeamId, AiMemoryEvent[]>
+  teamAuras: Partial<Record<TeamId, TeamAura>>
+  teamFortifications: [TeamFortification, TeamFortification]
+  events: MatchEvent[]
+  arcanes: RenderArcaneDetailFrame[]
+  creeps: Array<[string, number, number]>
+}
 
 // Dados cuja identidade não muda durante uma partida. Este catálogo é enviado
 // uma única vez antes do replay; a próxima etapa troca as cópias por-frame por
@@ -1537,6 +1595,7 @@ export type MatchStaticData = {
   structures: Array<Pick<Structure, 'id' | 'team' | 'kind' | 'lane' | 'side' | 'pos' | 'maxHp' | 'damage' | 'range'>>
   bases: Array<Pick<Base, 'id' | 'team' | 'pos' | 'maxHp'>>
   camps: Array<Pick<Camp, 'id' | 'name' | 'strength' | 'pos' | 'maxHp' | 'damage' | 'range'>>
+  boss: Pick<Boss, 'id' | 'name' | 'damage' | 'range'>
 }
 
 export function createMatchStaticData(state: SimulationState): MatchStaticData {
@@ -1547,15 +1606,16 @@ export function createMatchStaticData(state: SimulationState): MatchStaticData {
     structures: state.structures.map(({ id, team, kind, lane, side, pos, maxHp, damage, range }) => ({ id, team, kind, lane, side, pos: { ...pos }, maxHp, damage, range })),
     bases: state.bases.map(({ id, team, pos, maxHp }) => ({ id, team, pos: { ...pos }, maxHp })),
     camps: state.camps.map(({ id, name, strength, pos, maxHp, damage, range }) => ({ id, name, strength, pos: { ...pos }, maxHp, damage, range })),
+    boss: { id: state.boss.id, name: state.boss.name, damage: state.boss.damage, range: state.boss.range },
   }
 }
 
-export function createMatchRenderFrame(state: SimulationState): MatchRenderFrame {
+function renderNumber(value: number) {
+  return Math.round(value * 1000) / 1000
+}
+
+function createMatchRenderDetails(state: SimulationState): MatchRenderDetails {
   return {
-    matchSeed: state.matchSeed,
-    time: state.time,
-    kills: { ...state.kills },
-    winner: state.winner,
     teamPlans: Object.fromEntries(Object.entries(state.teamPlans).map(([team, plan]) => [
       team,
       plan ? { ...plan, targetPosition: plan.targetPosition ? { ...plan.targetPosition } : undefined, reasonTags: [...plan.reasonTags] } : undefined,
@@ -1565,92 +1625,191 @@ export function createMatchRenderFrame(state: SimulationState): MatchRenderFrame
       dusk: state.teamMemory.dusk.map((event) => ({ ...event, position: { ...event.position }, tags: [...event.tags] })),
     },
     teamAuras: { ...state.teamAuras },
-    teamFortifications: {
-      dawn: { ...state.teamFortifications.dawn },
-      dusk: { ...state.teamFortifications.dusk },
-    },
+    teamFortifications: [{ ...state.teamFortifications.dawn }, { ...state.teamFortifications.dusk }],
     events: state.events.map((event) => ({ ...event })),
-    effects: state.effects.map((effect) => ({ ...effect, from: { ...effect.from }, to: { ...effect.to } })),
+    arcanes: state.arcanes.map((arcane) => [
+      renderNumber(arcane.pos.x), renderNumber(arcane.pos.y), renderNumber(arcane.respawn), arcane.aggression,
+      arcane.visionRange, arcane.shotcalling, arcane.macroDecision,
+      arcane.microDecision, arcane.aiMode, arcane.aiReason,
+      arcane.aiExecutionChance, arcane.aiExecutionDelay, arcane.aiFailure,
+      arcane.decisionStatus, arcane.nextDecisionAt, [...arcane.items],
+      { ...arcane.itemCooldowns }, arcane.tpScrolls, arcane.tpCooldownUntil,
+      arcane.channeling ? { ...arcane.channeling, target: { ...arcane.channeling.target } } : undefined,
+      { ...arcane.skillLevels }, arcane.unspentSkillPoints, arcane.statBonusLevels,
+      arcane.earnedGold, arcane.kills, arcane.deaths, arcane.assists,
+      arcane.damageDealt, arcane.heroDamageDealt, arcane.structureDamageDealt,
+      arcane.damageTaken, arcane.healingDone, arcane.healingReceived,
+      arcane.laneCreepKills, arcane.denies, arcane.neutralKills,
+      arcane.objectiveKills, statsToRenderFrame(arcane.stats),
+    ]),
+    creeps: state.creeps.map((creep) => [creep.id, renderNumber(creep.damage), renderNumber(creep.visionRange)]),
+  }
+}
+
+export function createMatchRenderFrame(state: SimulationState, includeDetails = true): MatchRenderFrame {
+  return {
+    matchSeed: state.matchSeed,
+    time: state.time,
+    kills: [state.kills.dawn, state.kills.dusk],
+    winner: state.winner,
+    details: includeDetails ? createMatchRenderDetails(state) : undefined,
+    effects: state.effects.map((effect) => [effect.kind, effect.targetKind, effect.team, renderNumber(effect.from.x), renderNumber(effect.from.y), renderNumber(effect.to.x), renderNumber(effect.to.y), renderNumber(effect.createdAt), effect.duration]),
     timedEffects: state.timedEffects.map((effect) => ({ ...effect, modifiers: effect.modifiers ? { ...effect.modifiers } : undefined })),
-    deathMarkers: state.deathMarkers.map((marker) => ({ ...marker, pos: { ...marker.pos } })),
-    denyMarkers: state.denyMarkers.map((marker) => ({ ...marker, pos: { ...marker.pos } })),
-    goldMarkers: state.goldMarkers.map((marker) => ({ ...marker, pos: { ...marker.pos } })),
-    skillMarkers: state.skillMarkers.map((marker) => ({ ...marker, pos: { ...marker.pos } })),
-    recentTeleports: state.recentTeleports.map((record) => ({ ...record, pos: { ...record.pos } })),
-    arcanes: state.arcanes.map((arcane) => ({
-      id: arcane.id,
-      team: arcane.team,
-      player: arcane.player,
-      name: arcane.name,
-      heroDefinitionId: arcane.heroDefinitionId,
-      role: arcane.role,
-      lane: arcane.lane,
-      portrait: arcane.portrait,
-      pos: { ...arcane.pos },
-      respawn: arcane.respawn,
-      aggression: arcane.aggression,
-      visionRange: arcane.visionRange,
-      shotcalling: arcane.shotcalling,
-      macroDecision: arcane.macroDecision,
-      microDecision: arcane.microDecision,
-      aiMode: arcane.aiMode,
-      aiReason: arcane.aiReason,
-      aiExecutionChance: arcane.aiExecutionChance,
-      aiExecutionDelay: arcane.aiExecutionDelay,
-      aiFailure: arcane.aiFailure,
-      decisionStatus: arcane.decisionStatus,
-      nextDecisionAt: arcane.nextDecisionAt,
-      items: [...arcane.items],
-      itemCooldowns: { ...arcane.itemCooldowns },
-      tpScrolls: arcane.tpScrolls,
-      tpCooldownUntil: arcane.tpCooldownUntil,
-      channeling: arcane.channeling ? { ...arcane.channeling, target: { ...arcane.channeling.target } } : undefined,
-      skillLevels: { ...arcane.skillLevels },
-      unspentSkillPoints: arcane.unspentSkillPoints,
-      statBonusLevels: arcane.statBonusLevels,
-      earnedGold: arcane.earnedGold,
-      kills: arcane.kills,
-      deaths: arcane.deaths,
-      assists: arcane.assists,
-      damageDealt: arcane.damageDealt,
-      heroDamageDealt: arcane.heroDamageDealt,
-      structureDamageDealt: arcane.structureDamageDealt,
-      damageTaken: arcane.damageTaken,
-      healingDone: arcane.healingDone,
-      healingReceived: arcane.healingReceived,
-      laneCreepKills: arcane.laneCreepKills,
-      denies: arcane.denies,
-      neutralKills: arcane.neutralKills,
-      objectiveKills: arcane.objectiveKills,
-      stats: { ...arcane.stats },
+    deathMarkers: state.deathMarkers.map((marker) => [marker.arcane, marker.team, marker.pos.x, marker.pos.y, marker.createdAt, marker.expiresAt]),
+    denyMarkers: state.denyMarkers.map((marker) => [marker.team, marker.pos.x, marker.pos.y, marker.createdAt, marker.expiresAt]),
+    goldMarkers: state.goldMarkers.map((marker) => [marker.team, marker.pos.x, marker.pos.y, marker.createdAt, marker.expiresAt, marker.amount]),
+    skillMarkers: state.skillMarkers.map((marker) => [marker.team, marker.pos.x, marker.pos.y, marker.createdAt, marker.expiresAt, marker.label]),
+    recentTeleports: state.recentTeleports.map((record) => [record.team, record.pos.x, record.pos.y, record.startedAt]),
+    arcanes: state.arcanes.map((arcane) => [
+      renderNumber(arcane.pos.x), renderNumber(arcane.pos.y), renderNumber(arcane.respawn), renderNumber(arcane.stats.maxHp),
+      renderNumber(arcane.stats.hp), renderNumber(arcane.stats.maxMana), renderNumber(arcane.stats.mana), renderNumber(arcane.stats.range),
+      arcane.channeling ? { ...arcane.channeling, target: { ...arcane.channeling.target } } : undefined,
+    ]),
+    creeps: state.creeps.map((creep) => [
+      creep.id, creep.team, creep.lane, creep.type, renderNumber(creep.pos.x),
+      renderNumber(creep.pos.y), renderNumber(creep.hp), renderNumber(creep.maxHp),
+      renderNumber(creep.range),
+    ]),
+    towerHp: state.towers.map((tower) => renderNumber(tower.hp)),
+    structureHp: state.structures.map((structure) => renderNumber(structure.hp)),
+    baseHp: state.bases.map((base) => renderNumber(base.hp)),
+    camps: state.camps.map((camp) => [renderNumber(camp.hp), camp.level, renderNumber(camp.respawn), camp.stackCount]),
+    runes: state.runes.map((rune) => [rune.id, rune.kind, renderNumber(rune.pos.x), renderNumber(rune.pos.y), renderNumber(rune.spawnedAt), rune.expiresAt === undefined ? undefined : renderNumber(rune.expiresAt), rune.power, rune.side, rune.spawnIndex]),
+    boss: [renderNumber(state.boss.pos.x), renderNumber(state.boss.pos.y), renderNumber(state.boss.hp), renderNumber(state.boss.maxHp), renderNumber(state.boss.respawn)],
+  }
+}
+
+function statsToRenderFrame(stats: Stats): RenderStatsFrame {
+  return [
+    renderNumber(stats.maxHp), renderNumber(stats.hp), renderNumber(stats.maxMana), renderNumber(stats.mana), renderNumber(stats.damage),
+    renderNumber(stats.damageMin), renderNumber(stats.damageMax), renderNumber(stats.range), stats.attackType,
+    renderNumber(stats.attackSpeed), renderNumber(stats.armor), renderNumber(stats.magicResistance),
+    renderNumber(stats.statusResistance), renderNumber(stats.slowResistance), renderNumber(stats.moveSpeed),
+    stats.level, renderNumber(stats.xp), renderNumber(stats.gold),
+  ]
+}
+
+function statsFromRenderFrame(stats: RenderStatsFrame): Stats {
+  return {
+    maxHp: stats[0], hp: stats[1], maxMana: stats[2], mana: stats[3],
+    damage: stats[4], damageMin: stats[5], damageMax: stats[6], range: stats[7],
+    attackType: stats[8], attackSpeed: stats[9], armor: stats[10],
+    magicResistance: stats[11], statusResistance: stats[12],
+    slowResistance: stats[13], moveSpeed: stats[14], level: stats[15],
+    xp: stats[16], gold: stats[17],
+  }
+}
+
+// Only the currently displayed frame is expanded. Buffered frames remain in
+// their compact transport form, sharing immutable data from this catalog.
+export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData: MatchStaticData, details = frame.details): SimulationState {
+  if (!details) throw new Error('Frame de detalhes ausente durante a materialização')
+  const creepDetails = new Map(details.creeps.map(([id, damage, visionRange]) => [id, [damage, visionRange] as const]))
+  const arcanes = details.arcanes.map((arcane, index): Arcane => {
+    const fixed = staticData.arcanes[index]
+    const motion = frame.arcanes[index]
+    const pos = { x: motion[0], y: motion[1] }
+    const stats = statsFromRenderFrame(arcane[37])
+    stats.maxHp = motion[3]
+    stats.hp = motion[4]
+    stats.maxMana = motion[5]
+    stats.mana = motion[6]
+    stats.range = motion[7]
+    return {
+      ...fixed,
+      pos,
+      target: { ...pos },
+      pathIndex: 0,
+      respawn: motion[2],
+      lastAttack: 0,
+      aggression: arcane[3],
+      visionRange: arcane[4],
+      shotcalling: arcane[5],
+      macroDecision: arcane[6],
+      microDecision: arcane[7],
+      aiMode: arcane[8],
+      aiReason: arcane[9],
+      aiExecutionChance: arcane[10],
+      aiExecutionDelay: arcane[11],
+      aiFailure: arcane[12],
+      decisionStatus: arcane[13],
+      decisionTempo: 1,
+      nextDecisionAt: arcane[14],
+      lastDecisionAt: 0,
+      forceDecision: false,
+      lastDecisionHpRatio: 1,
+      lastDecisionManaRatio: 1,
+      lastDecisionPos: { ...pos },
+      decision: arcane[7],
+      items: arcane[15],
+      itemCooldowns: arcane[16],
+      tpScrolls: arcane[17],
+      tpCooldownUntil: arcane[18],
+      channeling: motion[8],
+      skillLevels: arcane[20],
+      unspentSkillPoints: arcane[21],
+      statBonusLevels: arcane[22],
+      earnedGold: arcane[23],
+      kills: arcane[24], deaths: arcane[25], assists: arcane[26],
+      damageDealt: arcane[27], heroDamageDealt: arcane[28],
+      structureDamageDealt: arcane[29], damageTaken: arcane[30],
+      healingDone: arcane[31], healingReceived: arcane[32],
+      laneCreepKills: arcane[33], denies: arcane[34], neutralKills: arcane[35],
+      objectiveKills: arcane[36], stats,
+    }
+  })
+
+  return {
+    matchSeed: frame.matchSeed,
+    time: frame.time,
+    nextWave: 0,
+    kills: { dawn: frame.kills[0], dusk: frame.kills[1] },
+    winner: frame.winner,
+    nextTeamDecisionAt: 0,
+    teamPlans: details.teamPlans,
+    teamMemory: details.teamMemory,
+    teamCalls: {},
+    teamAuras: details.teamAuras,
+    teamFortifications: { dawn: details.teamFortifications[0], dusk: details.teamFortifications[1] },
+    events: details.events,
+    effects: frame.effects.map((effect, index) => ({
+      id: `fx-${frame.time}-${index}`,
+      kind: effect[0], targetKind: effect[1], team: effect[2],
+      from: { x: effect[3], y: effect[4] }, to: { x: effect[5], y: effect[6] },
+      createdAt: effect[7], duration: effect[8],
     })),
-    creeps: state.creeps.map((creep) => ({
-      id: creep.id,
-      team: creep.team,
-      lane: creep.lane,
-      type: creep.type,
-      pos: { ...creep.pos },
-      hp: creep.hp,
-      maxHp: creep.maxHp,
-      damage: creep.damage,
-      range: creep.range,
-      visionRange: creep.visionRange,
+    timedEffects: frame.timedEffects,
+    deathMarkers: frame.deathMarkers.map((marker, index) => ({ id: `death-${frame.time}-${index}`, arcane: marker[0], team: marker[1], pos: { x: marker[2], y: marker[3] }, createdAt: marker[4], expiresAt: marker[5] })),
+    denyMarkers: frame.denyMarkers.map((marker, index) => ({ id: `deny-${frame.time}-${index}`, team: marker[0], pos: { x: marker[1], y: marker[2] }, createdAt: marker[3], expiresAt: marker[4] })),
+    goldMarkers: frame.goldMarkers.map((marker, index) => ({ id: `gold-${frame.time}-${index}`, team: marker[0], pos: { x: marker[1], y: marker[2] }, createdAt: marker[3], expiresAt: marker[4], amount: marker[5] })),
+    skillMarkers: frame.skillMarkers.map((marker, index) => ({ id: `skill-${frame.time}-${index}`, team: marker[0], pos: { x: marker[1], y: marker[2] }, createdAt: marker[3], expiresAt: marker[4], label: marker[5] })),
+    recentTeleports: frame.recentTeleports.map((record) => ({ team: record[0], pos: { x: record[1], y: record[2] }, startedAt: record[3] })),
+    arcanes,
+    creeps: frame.creeps.map((creep): Creep => {
+      const detail = creepDetails.get(creep[0])
+      const fallback = detail ? undefined : getLaneCreepStats(creep[3], frame.time, 'normal')
+      return {
+        id: creep[0], team: creep[1], lane: creep[2], type: creep[3], seedId: fallback?.seedId ?? creep[3],
+        pos: { x: creep[4], y: creep[5] }, pathIndex: 0, hp: creep[6], maxHp: creep[7],
+        damage: detail?.[0] ?? fallback?.damage ?? 0, range: creep[8],
+        visionRange: detail?.[1] ?? fallback?.visionRange ?? 0,
+        goldReward: 0, xpReward: 0, lastAttack: 0,
+      }
+    }),
+    towers: staticData.towers.map((tower, index): Tower => ({ ...tower, pos: tower.pos, hp: frame.towerHp[index] ?? 0, lastAttack: 0 })),
+    structures: staticData.structures.map((structure, index): Structure => ({ ...structure, pos: structure.pos, hp: frame.structureHp[index] ?? 0, lastAttack: 0 })),
+    bases: staticData.bases.map((base, index): Base => ({ ...base, pos: base.pos, hp: frame.baseHp[index] ?? 0 })),
+    camps: staticData.camps.map((camp, index): Camp => ({
+      ...camp, pos: camp.pos, hp: frame.camps[index]?.[0] ?? 0,
+      level: frame.camps[index]?.[1] ?? 1, respawn: frame.camps[index]?.[2] ?? 0,
+      stackCount: frame.camps[index]?.[3] ?? 0, lastAttack: 0, lastStackAttemptAt: 0,
     })),
-    towers: state.towers.map((tower) => ({
-      id: tower.id, team: tower.team, lane: tower.lane, tier: tower.tier, pos: { ...tower.pos }, hp: tower.hp, maxHp: tower.maxHp, damage: tower.damage, range: tower.range,
-    })),
-    structures: state.structures.map((structure) => ({
-      id: structure.id, team: structure.team, kind: structure.kind, lane: structure.lane, side: structure.side, pos: { ...structure.pos }, hp: structure.hp, maxHp: structure.maxHp, damage: structure.damage, range: structure.range,
-    })),
-    bases: state.bases.map((base) => ({ ...base, pos: { ...base.pos } })),
-    camps: state.camps.map((camp) => ({
-      id: camp.id, name: camp.name, strength: camp.strength, pos: { ...camp.pos }, hp: camp.hp, maxHp: camp.maxHp, damage: camp.damage, range: camp.range, level: camp.level, respawn: camp.respawn, stackCount: camp.stackCount,
-    })),
-    runes: state.runes.map((rune) => ({ ...rune, pos: { ...rune.pos } })),
+    runes: frame.runes.map((rune): MapRune => ({ id: rune[0], kind: rune[1], pos: { x: rune[2], y: rune[3] }, spawnedAt: rune[4], expiresAt: rune[5], power: rune[6], side: rune[7], spawnIndex: rune[8] })),
     boss: {
-      id: state.boss.id, name: state.boss.name, pos: { ...state.boss.pos }, hp: state.boss.hp, maxHp: state.boss.maxHp, damage: state.boss.damage, range: state.boss.range, respawn: state.boss.respawn,
+      ...staticData.boss, pos: { x: frame.boss[0], y: frame.boss[1] }, pathIndex: 0,
+      hp: frame.boss[2], maxHp: frame.boss[3], respawn: frame.boss[4], lastAttack: 0,
     },
-  } as MatchRenderFrame
+  }
 }
 
 export function spawnRunesForTick(state: SimulationState, previousTime: number) {

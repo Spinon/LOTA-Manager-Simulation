@@ -9,6 +9,7 @@ import {
   canTargetWithSimpleDamageSkill,
   createInitialState,
   createMatchRenderFrame,
+  createMatchStaticData,
   damageEntity,
   getGamePhase,
   getHeroDefinition,
@@ -20,6 +21,7 @@ import {
   healArcaneDirectly,
   isPositiveSimpleSkill,
   loadGameData,
+  materializeMatchRenderFrame,
   resolveDeaths,
   simulationFrameSeconds,
   tryCastSimpleSkill,
@@ -222,11 +224,17 @@ assert.ok(state.creeps.length > 0, 'lane creeps should spawn')
 assert.ok(state.arcanes.some((arcane) => arcane.stats.hp > 0), 'at least one arcane should be alive')
 
 const renderFrame = createMatchRenderFrame(state)
+const motionFrame = createMatchRenderFrame(state, false)
+const hydratedFrame = materializeMatchRenderFrame(motionFrame, createMatchStaticData(state), renderFrame.details)
 assert.equal(renderFrame.time, state.time, 'render frame should preserve simulation time')
 assert.equal(renderFrame.arcanes.length, state.arcanes.length, 'render frame should preserve arcanes')
 assert.equal(renderFrame.creeps.length, state.creeps.length, 'render frame should preserve creeps')
 assert.equal('pathIndex' in renderFrame.arcanes[0], false, 'render frame should omit arcane pathfinding state')
 assert.equal('aggroTargetId' in renderFrame.creeps[0], false, 'render frame should omit creep aggro state')
+assert.equal(motionFrame.details, undefined, 'motion frames should omit repeated inspector details')
+assert.equal(hydratedFrame.arcanes[0].id, state.arcanes[0].id, 'hydration should restore static arcane identity')
+assert.ok(Math.abs(hydratedFrame.arcanes[0].stats.hp - state.arcanes[0].stats.hp) <= 0.001, 'hydration should preserve dynamic arcane health')
+assert.ok(JSON.stringify(motionFrame).length < JSON.stringify(state).length * 0.35, 'motion frame should be substantially smaller than simulation state')
 
 for (const arcane of state.arcanes as Arcane[]) {
   assertFinitePoint(arcane)

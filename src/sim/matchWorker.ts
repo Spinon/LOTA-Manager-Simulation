@@ -25,6 +25,7 @@ export type MatchWorkerResponse =
   | { type: 'error'; runId: number; message: string }
 
 const renderFrameIntervalSeconds = 0.2
+const renderDetailsIntervalSeconds = 2
 const maxSimulationSeconds = 50 * 60
 // Chunks curtos: cada flush vira um postMessage que o main thread precisa
 // desserializar de forma síncrona — lotes de ~5s de jogo (~25 frames) mantêm
@@ -58,10 +59,13 @@ async function runMatch(seed: string, runId: number) {
     let nextFrameAt = renderFrameIntervalSeconds
     let frameCount = 0
     let lastFrameTime = -1
+    let nextDetailsAt = 0
     let pendingFrames: MatchRenderFrame[] = []
 
     const postFrame = () => {
-      pendingFrames.push(createMatchRenderFrame(state))
+      const includeDetails = state.time + 0.0001 >= nextDetailsAt
+      pendingFrames.push(createMatchRenderFrame(state, includeDetails))
+      if (includeDetails) nextDetailsAt = state.time + renderDetailsIntervalSeconds
       frameCount += 1
       lastFrameTime = state.time
     }
