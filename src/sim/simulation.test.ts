@@ -17,6 +17,7 @@ import {
   getEffectiveArcaneDamage,
   getShopItemsForInventory,
   getSimulationEntityIndexes,
+  getTeamMatchOutcome,
   getSimpleSkillAffectedTargets,
   getSimpleSkillExecuteMultiplier,
   getSimpleSkillDamage,
@@ -53,6 +54,10 @@ await loadGameData()
 assert.equal(getGamePhase(9 * 60), 'early')
 assert.equal(getGamePhase(20 * 60), 'mid')
 assert.equal(getGamePhase(29 * 60), 'late')
+assert.equal(getTeamMatchOutcome(undefined, 'dawn'), 'draw', 'a capped match must not mark either team as defeated')
+assert.equal(getTeamMatchOutcome(undefined, 'dusk'), 'draw', 'both teams should draw when there is no winner')
+assert.equal(getTeamMatchOutcome('dawn', 'dawn'), 'winner', 'the winning team should be identified')
+assert.equal(getTeamMatchOutcome('dawn', 'dusk'), 'loser', 'only the opposing team should be defeated')
 
 const seededA = createInitialState('simulation-smoke-seed')
 const seededB = createInitialState('simulation-smoke-seed')

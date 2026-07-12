@@ -46,6 +46,7 @@ import {
   laneNames,
   lanePaths,
   getTeamMemoryDanger,
+  getTeamMatchOutcome,
   getDangerScore,
   distance,
   clampToMapBounds,
@@ -815,7 +816,7 @@ function EndScreen({ state, winner, onReview, onRestart }: { state: SimulationSt
         <div className={`end-victor-mark ${winner ?? 'draw'}`}><Swords size={22} /></div>
         <div>
           <span>Resultado da partida</span>
-          <strong>{winner ? `${teamInfo[winner].name} venceu` : 'Partida encerrada'}</strong>
+          <strong>{winner ? `${teamInfo[winner].name} venceu` : 'Empate por limite de tempo'}</strong>
           <small>{formatTime(state.time)} de partida</small>
         </div>
         <div className="end-final-score" aria-label={`Placar ${state.kills.dawn} a ${state.kills.dusk}`}>
@@ -831,15 +832,16 @@ function EndScreen({ state, winner, onReview, onRestart }: { state: SimulationSt
 
       <div className="end-teams">
         {teams.map((team) => {
+          const outcome = getTeamMatchOutcome(winner, team)
           const arcanes = state.arcanes.filter((arcane) => arcane.team === team)
           const teamDamage = arcanes.reduce((total, arcane) => total + arcane.damageDealt, 0)
           const teamHeroDamage = arcanes.reduce((total, arcane) => total + arcane.heroDamageDealt, 0)
           const teamHealing = arcanes.reduce((total, arcane) => total + arcane.healingDone, 0)
           const teamNetWorth = getTeamNetWorth(state, team)
           return (
-            <section className={`end-team ${team} ${winner === team ? 'winner' : ''}`} key={team}>
+            <section className={`end-team ${team} ${outcome === 'winner' ? 'winner' : ''}`} key={team}>
               <header className="end-team-header">
-                <div><strong>{teamInfo[team].name}</strong><span>{winner === team ? 'Vencedor' : 'Derrotado'}</span></div>
+                <div><strong>{teamInfo[team].name}</strong><span>{outcome === 'winner' ? 'Vencedor' : outcome === 'loser' ? 'Derrotado' : 'Empate'}</span></div>
                 <dl>
                   <div><dt>Eliminações</dt><dd>{state.kills[team]}</dd></div>
                   <div><dt>Net worth</dt><dd>{formatCompactGold(teamNetWorth)}</dd></div>

@@ -42,6 +42,7 @@ import {
 import { isDay } from '../game-systems/visionFormulas.ts'
 
 export type TeamId = 'dawn' | 'dusk'
+export type TeamMatchOutcome = 'winner' | 'loser' | 'draw'
 export type LaneId = 'top' | 'mid' | 'bot'
 export type EntityKind = 'arcane' | 'creep' | 'tower' | 'structure' | 'base' | 'camp' | 'boss' | 'rune'
 export type GamePhase = 'early' | 'mid' | 'late'
@@ -1327,6 +1328,11 @@ export function createBase(team: TeamId): Base {
 
 export function getSeedTeam(team: TeamId) {
   return team === 'dawn' ? 'blue' : 'red'
+}
+
+export function getTeamMatchOutcome(winner: TeamId | undefined, team: TeamId): TeamMatchOutcome {
+  if (!winner) return 'draw'
+  return winner === team ? 'winner' : 'loser'
 }
 
 export function getSeedLane(lane: LaneId) {
