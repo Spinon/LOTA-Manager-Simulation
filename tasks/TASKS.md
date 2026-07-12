@@ -199,11 +199,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T12 - Scheduler de combate orientado a eventos
+### [x] T12 - Scheduler de combate orientado a eventos
+
+> Concluída em 2026-07-12 - Cooldowns fixos agora saem antes da aquisição de alvo, prioridades de Arcanes são avaliadas sob demanda e loops de combate evitam coleções temporárias.
 
 **Especificação**: P5 em `tasks/PERFORMANCE_TASKS.md`.
 
 **Critérios**: prioridade de last hit/deny e tempos de ataque preservados; digest ou diferenças explicitamente aprovadas; testes, lint e build verdes.
+
+**Medição** (`180s`, 3 runs, seed `performance-reference`, comparação lado a lado): commit anterior = 6,22s wall / 5,16s CPU; T12 = 4,89s wall / 5,06s CPU. Digest preservado `2b7432ccfc848dee`; testes cobrem o instante de ataque e last hit antes de deny.
 
 ---
 

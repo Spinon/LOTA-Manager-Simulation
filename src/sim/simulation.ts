@@ -5420,6 +5420,8 @@ export function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: 
 }
 
 export function isCachedRouteCreepAttackTargetValid(creep: Creep, target: CombatTarget, state: SimulationState) {
+  if ('team' in target && target.team === creep.team) return false
+  if ('lane' in target && 'type' in target && target.lane !== creep.lane) return false
   if ('player' in target && (target.stats.hp <= 0 || target.respawn > state.time)) return false
   if ('type' in target && target.hp <= 0) return false
   if ('tier' in target && target.hp <= 0) return false
@@ -6569,8 +6571,9 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   }
 
   next.creeps.forEach((creep) => {
+    if (next.time < creep.lastAttack + 1.25) return
     const target = getCachedRouteCreepTarget(creep, next, 'attack', frameContext)
-    if (target && next.time - creep.lastAttack >= 1.25) {
+    if (target) {
       if (!isCachedRouteCreepAttackTargetValid(creep, target, next)) return
       creep.lastAttack = next.time
       next.effects = addAttackEffect(next.effects, {
@@ -6590,14 +6593,16 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     }
   })
 
-  next.towers.filter((tower) => tower.hp > 0).forEach((tower) => {
+  for (const tower of next.towers) {
+    if (tower.hp <= 0) continue
+    if (next.time < tower.lastAttack + 1.2) continue
     const aggroTarget = tower.aggroUntil && tower.aggroUntil > next.time
       ? next.arcanes.find((arcane) => arcane.id === tower.aggroTargetId && arcane.stats.hp > 0 && arcane.respawn <= next.time && distance(tower.pos, arcane.pos) <= tower.range)
       : undefined
     const target = aggroTarget
       ?? nearestCreepAtIndices(tower.pos, next.creeps, enemyCreepIndicesByTeam[tower.team], tower.range)
-      ?? nearest(tower.pos, next.arcanes.filter((arcane) => arcane.team !== tower.team && arcane.stats.hp > 0 && arcane.respawn <= next.time), tower.range)
-    if (target && next.time - tower.lastAttack >= 1.2) {
+      ?? nearestAliveEnemyArcane(tower.pos, next.arcanes, tower.team, next.time, tower.range)
+    if (target) {
       tower.lastAttack = next.time
       next.effects = addAttackEffect(next.effects, {
         kind: 'tower',
@@ -6614,16 +6619,18 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
         damageType: 'physical',
       })
     }
-  })
+  }
 
-  next.structures.filter((structure) => structure.kind === 'tower_tier_4' && structure.hp > 0).forEach((structure) => {
+  for (const structure of next.structures) {
+    if (structure.kind !== 'tower_tier_4' || structure.hp <= 0) continue
+    if (next.time < structure.lastAttack + 1.05) continue
     const aggroTarget = structure.aggroUntil && structure.aggroUntil > next.time
       ? next.arcanes.find((arcane) => arcane.id === structure.aggroTargetId && arcane.stats.hp > 0 && arcane.respawn <= next.time && distance(structure.pos, arcane.pos) <= structure.range)
       : undefined
     const target = aggroTarget
       ?? nearestCreepAtIndices(structure.pos, next.creeps, enemyCreepIndicesByTeam[structure.team], structure.range)
-      ?? nearest(structure.pos, next.arcanes.filter((arcane) => arcane.team !== structure.team && arcane.stats.hp > 0 && arcane.respawn <= next.time), structure.range)
-    if (target && next.time - structure.lastAttack >= 1.05) {
+      ?? nearestAliveEnemyArcane(structure.pos, next.arcanes, structure.team, next.time, structure.range)
+    if (target) {
       structure.lastAttack = next.time
       next.effects = addAttackEffect(next.effects, {
         kind: 'tower',
@@ -6640,11 +6647,13 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
         damageType: 'physical',
       })
     }
-  })
+  }
 
-  next.camps.filter((camp) => camp.hp > 0).forEach((camp) => {
-    const target = nearest(camp.pos, next.arcanes.filter((arcane) => arcane.stats.hp > 0 && arcane.respawn <= next.time), camp.range)
-    if (target && next.time - camp.lastAttack >= 1.35) {
+  for (const camp of next.camps) {
+    if (camp.hp <= 0) continue
+    if (next.time < camp.lastAttack + 1.35) continue
+    const target = nearestAliveArcane(camp.pos, next.arcanes, next.time, camp.range)
+    if (target) {
       camp.lastAttack = next.time
       next.effects = addAttackEffect(next.effects, {
         kind: 'neutral',
@@ -6670,16 +6679,21 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
         duration: camp.strength === 'strong' ? 1.6 : 1.15,
       })
     }
-  })
+  }
 
-  if (next.boss.hp > 0 && next.boss.aggroUntil && next.boss.aggroUntil > next.time) {
+  if (
+    next.boss.hp > 0 &&
+    next.boss.aggroUntil &&
+    next.boss.aggroUntil > next.time &&
+    next.time >= next.boss.lastAttack + 1.05
+  ) {
     const target = next.arcanes.find((arcane) => (
       arcane.id === next.boss.aggroTargetId &&
       arcane.stats.hp > 0 &&
       arcane.respawn <= next.time &&
       distance(next.boss.pos, arcane.pos) <= next.boss.range
     ))
-    if (target && next.time - next.boss.lastAttack >= 1.05) {
+    if (target) {
       next.boss.lastAttack = next.time
       next.effects = addAttackEffect(next.effects, {
         kind: 'neutral',
@@ -6731,7 +6745,8 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     if (arcane.stats.hp <= 0 || arcane.respawn > next.time) return
     if (arcane.channeling) return
     if (isArcaneAttackDisabled(next, arcane)) return
-    const attackReady = next.time - arcane.lastAttack >= getEffectiveArcaneAttackCooldown(next, arcane)
+    const attackCooldown = getEffectiveArcaneAttackCooldown(next, arcane)
+    const attackReady = next.time - arcane.lastAttack >= attackCooldown
     if (!attackReady && !hasAnyCastableSkill(next, arcane)) return
     const canAttackBoss = next.boss.hp > 0 && arcane.microDecision.startsWith('Atacar chefe')
     const bossTarget = canAttackBoss && distance(arcane.pos, next.boss.pos) <= getArcaneAttackCenterRange(arcane, next.boss) ? next.boss : undefined
@@ -6739,24 +6754,23 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     const enemyTeam = arcane.team === 'dawn' ? 'dusk' : 'dawn'
     const lastHitTarget = getLastHitTarget(next, arcane, creepIndicesByTeamLane[enemyTeam][arcane.lane])
     const denyTarget = getDenyTarget(next, arcane, creepIndicesByTeamLane[arcane.team][arcane.lane])
-    const enemyArcaneTarget = nearestReachableByArcane(arcane, next.arcanes.filter((other) => (
-      other.team !== arcane.team &&
-      other.stats.hp > 0 &&
-      other.respawn <= next.time
-    )))
     const laneControl = isLaningControlMicroDecision(arcane.microDecision)
-    const fallbackEnemyCreeps: Creep[] = []
-    for (const index of enemyCreepIndicesByTeam[arcane.team]) {
-      const creep = next.creeps[index]
-      if (!laneControl || creep.lane !== arcane.lane) fallbackEnemyCreeps.push(creep)
+    let target: CombatTarget | undefined = bossTarget ?? objectiveTarget ?? lastHitTarget ?? denyTarget
+    if (!target) {
+      const enemyArcaneTarget = nearestReachableEnemyArcane(arcane, next.arcanes, next.time)
+      const fallbackEnemyCreeps: Creep[] = []
+      for (const index of enemyCreepIndicesByTeam[arcane.team]) {
+        const creep = next.creeps[index]
+        if (!laneControl || creep.lane !== arcane.lane) fallbackEnemyCreeps.push(creep)
+      }
+      target = enemyArcaneTarget ?? nearestReachableByArcane(arcane, [
+        ...fallbackEnemyCreeps,
+        ...next.camps.filter((camp) => camp.hp > 0),
+        ...(canAttackBoss ? [next.boss] : []),
+      ])
     }
-    const target = bossTarget ?? objectiveTarget ?? lastHitTarget ?? denyTarget ?? enemyArcaneTarget ?? nearestReachableByArcane(arcane, [
-      ...fallbackEnemyCreeps,
-      ...next.camps.filter((camp) => camp.hp > 0),
-      ...(canAttackBoss ? [next.boss] : []),
-    ])
     if (tryCastSimpleSkill(next, arcane, target)) return
-    if (!target || next.time - arcane.lastAttack < getEffectiveArcaneAttackCooldown(next, arcane)) return
+    if (!target || next.time - arcane.lastAttack < attackCooldown) return
 
     arcane.lastAttack = next.time
     const itemAttack = resolveArcaneItemAttackEffects(next, arcane, target)
@@ -8025,6 +8039,46 @@ export function nearestCreepAtIndices(point: Point, creeps: Creep[], indices: nu
     if (creepDistanceSquared > closestDistanceSquared) continue
     closest = creep
     closestDistanceSquared = creepDistanceSquared
+  }
+  return closest
+}
+
+export function nearestAliveArcane(point: Point, arcanes: Arcane[], time: number, range: number) {
+  let closest: Arcane | undefined
+  let closestDistanceSquared = range * range
+  for (const arcane of arcanes) {
+    if (arcane.stats.hp <= 0 || arcane.respawn > time) continue
+    const arcaneDistanceSquared = distanceSquared(point, arcane.pos)
+    if (arcaneDistanceSquared > closestDistanceSquared) continue
+    closest = arcane
+    closestDistanceSquared = arcaneDistanceSquared
+  }
+  return closest
+}
+
+export function nearestAliveEnemyArcane(point: Point, arcanes: Arcane[], team: TeamId, time: number, range: number) {
+  let closest: Arcane | undefined
+  let closestDistanceSquared = range * range
+  for (const arcane of arcanes) {
+    if (arcane.team === team || arcane.stats.hp <= 0 || arcane.respawn > time) continue
+    const arcaneDistanceSquared = distanceSquared(point, arcane.pos)
+    if (arcaneDistanceSquared > closestDistanceSquared) continue
+    closest = arcane
+    closestDistanceSquared = arcaneDistanceSquared
+  }
+  return closest
+}
+
+export function nearestReachableEnemyArcane(arcane: Arcane, candidates: Arcane[], time: number) {
+  let closest: Arcane | undefined
+  let closestDistanceSquared = Number.POSITIVE_INFINITY
+  for (const candidate of candidates) {
+    if (candidate.team === arcane.team || candidate.stats.hp <= 0 || candidate.respawn > time) continue
+    const candidateDistanceSquared = distanceSquared(arcane.pos, candidate.pos)
+    const reach = getArcaneAttackCenterRange(arcane, candidate)
+    if (candidateDistanceSquared > closestDistanceSquared || candidateDistanceSquared > reach * reach) continue
+    closest = candidate
+    closestDistanceSquared = candidateDistanceSquared
   }
   return closest
 }

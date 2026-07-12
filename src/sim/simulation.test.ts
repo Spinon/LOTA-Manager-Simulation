@@ -14,6 +14,7 @@ import {
   getGamePhase,
   getArcanePassiveCombatModifiers,
   getHeroDefinition,
+  getDenyTarget,
   getEffectiveArcaneDamage,
   getShopItemsForInventory,
   getSimulationEntityIndexes,
@@ -21,12 +22,14 @@ import {
   getSimpleSkillAffectedTargets,
   getSimpleSkillExecuteMultiplier,
   getSimpleSkillDamage,
+  getLastHitTarget,
   hasTimedEffect,
   healArcaneDirectly,
   isPositiveSimpleSkill,
   loadGameData,
   materializeMatchRenderFrame,
   resolveDeaths,
+  resolveCombat,
   simulationFrameSeconds,
   tryCastSimpleSkill,
   tick,
@@ -34,6 +37,7 @@ import {
   type Camp,
   type Creep,
   type SimulationState,
+  type TickFrameContext,
 } from './simulation.ts'
 import { getSkillEffectProfile } from '../game-systems/skillRuntime.ts'
 import type { HeroSkillDefinition } from '../game-systems/heroAttributes.ts'
@@ -47,6 +51,15 @@ function assertFiniteHealth(entity: { id: string; hp: number; maxHp: number }) {
   assert.ok(Number.isFinite(entity.hp), `${entity.id} has invalid hp`)
   assert.ok(Number.isFinite(entity.maxHp), `${entity.id} has invalid maxHp`)
   assert.ok(entity.maxHp > 0, `${entity.id} must have maxHp`)
+}
+
+function createTickFrameContext(): TickFrameContext {
+  return {
+    routeCreepTargetCache: { attack: new Map(), vision: new Map() },
+    arcaneNearRouteCache: new Map(),
+    attackableTowersCache: {},
+    attackableStructuresCache: {},
+  }
 }
 
 await loadGameData()
@@ -136,6 +149,62 @@ let state: SimulationState = initialState
   assert.strictEqual(targetedDamageState.structures, collectionsBefore.structures, 'unrelated structure collections should retain identity')
   assert.strictEqual(targetedDamageState.bases, collectionsBefore.bases, 'unrelated base collections should retain identity')
   assert.strictEqual(targetedDamageState.camps, collectionsBefore.camps, 'unrelated camp collections should retain identity')
+}
+
+{
+  const scheduledState = tick(createInitialState('fixed-attack-schedule'), simulationFrameSeconds, true)
+  const tower = scheduledState.towers.find((candidate) => candidate.team === 'dawn')!
+  const target = scheduledState.creeps.find((candidate) => candidate.team === 'dusk')!
+  tower.lastAttack = -10
+  target.pos = { ...tower.pos }
+  target.lastAttack = scheduledState.time
+  scheduledState.towers = [tower]
+  scheduledState.creeps = [target]
+  scheduledState.structures = []
+  scheduledState.camps = []
+  scheduledState.boss.hp = 0
+  scheduledState.arcanes = scheduledState.arcanes.map((arcane) => ({ ...arcane, stats: { ...arcane.stats, hp: 0 } }))
+
+  resolveCombat(scheduledState, createTickFrameContext())
+  const hpAfterFirstAttack = scheduledState.creeps[0].hp
+  const nextAttackAt = tower.lastAttack + 1.2
+  assert.equal(nextAttackAt, scheduledState.time + 1.2, 'lastAttack plus cooldown should register the next relevant attack time')
+  scheduledState.time += simulationFrameSeconds
+  resolveCombat(scheduledState, createTickFrameContext())
+  assert.equal(scheduledState.creeps[0].hp, hpAfterFirstAttack, 'fixed attackers must not search or attack before nextAttackAt')
+  scheduledState.time = nextAttackAt
+  resolveCombat(scheduledState, createTickFrameContext())
+  assert.ok(scheduledState.creeps[0].hp < hpAfterFirstAttack, 'fixed attackers should act exactly when their event becomes ready')
+}
+
+{
+  const priorityState = tick(createInitialState('last-hit-before-deny'), simulationFrameSeconds, true)
+  const arcane = priorityState.arcanes.find((candidate) => candidate.team === 'dawn' && candidate.lane === 'top')!
+  const enemyCreep = priorityState.creeps.find((candidate) => candidate.team === 'dusk' && candidate.lane === arcane.lane)!
+  const alliedCreep = priorityState.creeps.find((candidate) => candidate.team === arcane.team && candidate.lane === arcane.lane)!
+  arcane.pos = { x: 50, y: 50 }
+  arcane.lastAttack = -10
+  arcane.skillLevels = {}
+  enemyCreep.pos = { x: 50.2, y: 50 }
+  enemyCreep.hp = 1
+  alliedCreep.pos = { x: 50.3, y: 50 }
+  alliedCreep.hp = 1
+  enemyCreep.lastAttack = priorityState.time
+  alliedCreep.lastAttack = priorityState.time
+  priorityState.arcanes = priorityState.arcanes.map((candidate) => candidate.id === arcane.id
+    ? arcane
+    : { ...candidate, stats: { ...candidate.stats, hp: 0 } })
+  priorityState.creeps = [enemyCreep, alliedCreep]
+  priorityState.towers = []
+  priorityState.structures = []
+  priorityState.camps = []
+  priorityState.boss.hp = 0
+
+  assert.equal(getLastHitTarget(priorityState, arcane)?.id, enemyCreep.id, 'the enemy creep should be a valid last-hit target')
+  assert.equal(getDenyTarget(priorityState, arcane)?.id, alliedCreep.id, 'the allied creep should be a valid deny target')
+  resolveCombat(priorityState, createTickFrameContext())
+  assert.equal(priorityState.creeps[0].hp, 0, 'last hit must execute before deny when both are available')
+  assert.equal(priorityState.creeps[1].hp, 1, 'the deny target must remain untouched while a last hit is available')
 }
 
 {

@@ -57,6 +57,8 @@ Status: concluída em 2026-07-12. Um scheduler global ordena playback, medição
 
 ### P5 / T12: scheduler de combate
 
+Status: concluída em 2026-07-12. Entidades de cooldown fixo usam `lastAttack + cooldown` como próximo evento e retornam antes de buscar alvo; retenção de aggro existente permanece válida. A cadeia de prioridade dos Arcanes agora evita candidatos inferiores após boss/objetivo/last hit/deny, e loops de torres/T4/campos não alocam filtros temporários. Mediana lado a lado: 6,22s wall / 5,16s CPU antes; 4,89s wall / 5,06s CPU depois; digest `2b7432ccfc848dee` preservado.
+
 - Manter alvo enquanto válido e registrar o próximo instante relevante de ataque/skill.
 - Evitar reconstruir todos os candidatos quando nenhuma ação pode ocorrer.
 - Preservar precisão temporal, prioridade de last hit/deny e determinismo.
