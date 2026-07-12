@@ -29,6 +29,8 @@ export type SkillEffectProfile = {
   isSave: boolean
 }
 
+const skillEffectProfileCache = new WeakMap<HeroSkillDefinition, Map<number, SkillEffectProfile>>()
+
 export function getSkillValue(skill: HeroSkillDefinition, key: string, level: number, fallback = 0) {
   const value = skill.values[key]
   if (Array.isArray(value)) {
@@ -51,13 +53,21 @@ export function isConfirmedGlobalSkill(skill: HeroSkillDefinition) {
 }
 
 export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number): SkillEffectProfile {
+  let profilesByLevel = skillEffectProfileCache.get(skill)
+  if (!profilesByLevel) {
+    profilesByLevel = new Map()
+    skillEffectProfileCache.set(skill, profilesByLevel)
+  }
+  const cached = profilesByLevel.get(level)
+  if (cached) return cached
+
   const duration = getSkillValue(skill, 'duration', level, 0)
   const barrierValue = getSkillValue(skill, 'barrierOrArmorValue', level, getSkillValue(skill, 'barrier', level, 0))
   const armorSkill = hasSkillTag(skill, ['armor', 'frost_armor', 'reactive_armor', 'armor_reduction', 'armor_shift'])
   const defensiveBarrier = hasSkillTag(skill, ['shield', 'barrier', 'mana_shield', 'save', 'spell_parry'])
   const manaValue = getSkillValue(skill, 'manaValue', level, 0)
 
-  return {
+  const profile = {
     damage: Math.max(0, getSkillValue(skill, 'damage', level, 0)),
     duration: Math.max(0.25, duration || 3),
     radius: Math.max(0, getSkillValue(skill, 'radius', level, 0) / 140),
@@ -85,6 +95,8 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
     isMobility: hasSkillTag(skill, ['mobility', 'blink', 'dash', 'leap', 'jump', 'roll', 'wave_dash', 'escape']),
     isSave: hasSkillTag(skill, ['save', 'heal', 'shield', 'barrier', 'spell_parry', 'defensive_utility']),
   }
+  profilesByLevel.set(level, profile)
+  return profile
 }
 
 export function getSkillAiUsageScore(skill: HeroSkillDefinition, situation: SkillUsageSituation) {

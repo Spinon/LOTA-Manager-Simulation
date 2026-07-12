@@ -33,6 +33,8 @@ const skill: HeroSkillDefinition = {
 }
 
 const profile = getSkillEffectProfile(skill, 2)
+assert.strictEqual(getSkillEffectProfile(skill, 2), profile, 'effect profiles should be cached by skill definition and level')
+assert.notStrictEqual(getSkillEffectProfile(skill, 1), profile, 'different skill levels should keep separate cached profiles')
 assert.equal(profile.damage, 180)
 assert.equal(profile.radius, 3)
 assert.equal(profile.slowPct, 0.4)

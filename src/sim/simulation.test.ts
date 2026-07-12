@@ -12,6 +12,7 @@ import {
   createMatchStaticData,
   damageEntity,
   getGamePhase,
+  getArcanePassiveCombatModifiers,
   getHeroDefinition,
   getEffectiveArcaneDamage,
   getSimpleSkillAffectedTargets,
@@ -61,6 +62,17 @@ assert.deepEqual(
 
 const initialState = seededA
 let state: SimulationState = initialState
+
+{
+  const cacheState = createInitialState('passive-cache-seed')
+  const arcane = cacheState.arcanes[0]
+  arcane.heroDefinitionId = 'h007_sword_tempest'
+  arcane.skillLevels = { E: 4 }
+  const first = getArcanePassiveCombatModifiers(cacheState, arcane)
+  assert.strictEqual(getArcanePassiveCombatModifiers(cacheState, arcane), first, 'passive modifiers should be cached while skill levels keep their identity')
+  arcane.skillLevels = { E: 3 }
+  assert.notStrictEqual(getArcanePassiveCombatModifiers(cacheState, arcane), first, 'a new skill-level object should invalidate passive modifiers')
+}
 
 {
   const telemetryState = createInitialState('telemetry-seed')

@@ -149,6 +149,60 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
+### [x] T8 - Benchmark determinístico e caches puros da simulação
+
+> Concluída em 2026-07-11 - Adicionei benchmark do caminho real do Worker e caches por definição/nível para perfis de skills e passivas, reduzindo a mediana de CPU em aproximadamente 31% sem alterar o digest.
+
+**Especificação**: P1 em `tasks/PERFORMANCE_TASKS.md`.
+
+**Verificar primeiro**: `getSkillEffectProfile` e `getArcanePassiveCombatModifiers` devem continuar funções puras; nenhum consumidor pode alterar os objetos retornados. O benchmark deve reproduzir o caminho do Worker com a mesma seed, frame a 5Hz, detalhes a cada 2s e clone em lotes de 150 ticks.
+
+**Critérios**: benchmark imprime mediana, taxa de simulação e digest determinístico; três execuções da mesma seed produzem o mesmo digest; caches têm testes de identidade/resultado; nenhum resultado de simulação muda; `npm test`, `npm run lint` e `npm run build` verdes.
+
+**Medição** (`180s`, 3 runs, seed `performance-reference`): commit `dc6d2b6` = 12,78s wall / 8,19s CPU; T8 = 9,03s wall / 5,67s CPU; digest preservado `2b7432ccfc848dee`.
+
+---
+
+### [ ] T9 - Índices do tick e dano direcionado
+
+**Especificação**: P2 em `tasks/PERFORMANCE_TASKS.md`.
+
+**Critérios**: reduzir filtros/maps no perfil de combate sem alterar digest determinístico; testes, lint e build verdes.
+
+---
+
+### [ ] T10 - Desacoplar canvas dos painéis React
+
+**Especificação**: P3 em `tasks/PERFORMANCE_TASKS.md`.
+
+**Critérios**: reduzir tempo inclusivo do React; inspector e mapa idênticos; 1x e 16x sem regressão; testes, lint e build verdes.
+
+---
+
+### [ ] T11 - Scheduler único de render e canvases consolidados
+
+**Especificação**: P4 em `tasks/PERFORMANCE_TASKS.md`.
+
+**Critérios**: um scheduler rAF, no máximo dois canvases animados, DPR 2 e 58+ FPS no cenário de referência.
+
+---
+
+### [ ] T12 - Scheduler de combate orientado a eventos
+
+**Especificação**: P5 em `tasks/PERFORMANCE_TASKS.md`.
+
+**Critérios**: prioridade de last hit/deny e tempos de ataque preservados; digest ou diferenças explicitamente aprovadas; testes, lint e build verdes.
+
+---
+
+### [ ] T13 - Armazenamento binário do replay
+
+**Especificação**: P6 em `tasks/PERFORMANCE_TASKS.md`.
+
+**Critérios**: heap abaixo de 200 MB para 50 minutos; seek e reprodução completos; visual e inspector idênticos.
+
+---
+
 ## Histórico (não retrabalhar)
 
 Concluído em rodadas anteriores — mantido aqui só como registro:

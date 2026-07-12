@@ -4926,12 +4926,39 @@ export function getArcaneStatModifierEffects(state: SimulationState, arcane: Arc
   ))
 }
 
+export type ArcanePassiveCombatModifiers = {
+  flatDamage: number
+  damagePct: number
+  armorFlat: number
+  attackSpeedPct: number
+  lifestealPct: number
+  incomingDamagePct: number
+}
+
+const emptyArcanePassiveCombatModifiers: ArcanePassiveCombatModifiers = {
+  flatDamage: 0,
+  damagePct: 0,
+  armorFlat: 0,
+  attackSpeedPct: 0,
+  lifestealPct: 0,
+  incomingDamagePct: 0,
+}
+const arcanePassiveCombatModifiersCache = new Map<string, WeakMap<SkillLevels, ArcanePassiveCombatModifiers>>()
+
 export function getArcanePassiveCombatModifiers(state: SimulationState, arcane: Arcane) {
   if (hasTimedEffect(state, arcane.id, 'break')) {
-    return { flatDamage: 0, damagePct: 0, armorFlat: 0, attackSpeedPct: 0, lifestealPct: 0, incomingDamagePct: 0 }
+    return emptyArcanePassiveCombatModifiers
   }
 
-  return (getHeroDefinition(arcane.heroDefinitionId).skills ?? [])
+  let bySkillLevels = arcanePassiveCombatModifiersCache.get(arcane.heroDefinitionId)
+  if (!bySkillLevels) {
+    bySkillLevels = new WeakMap()
+    arcanePassiveCombatModifiersCache.set(arcane.heroDefinitionId, bySkillLevels)
+  }
+  const cached = bySkillLevels.get(arcane.skillLevels)
+  if (cached) return cached
+
+  const modifiers = (getHeroDefinition(arcane.heroDefinitionId).skills ?? [])
     .filter((skill) => skill.kind === 'passive')
     .map((skill) => ({ skill, level: getSimpleSkillLevel(arcane, skill) }))
     .filter(({ level }) => level > 0)
@@ -4952,7 +4979,9 @@ export function getArcanePassiveCombatModifiers(state: SimulationState, arcane: 
         lifestealPct: Math.max(modifiers.lifestealPct, profile.lifestealPct),
         incomingDamagePct: Math.max(modifiers.incomingDamagePct, defensiveReduction),
       }
-    }, { flatDamage: 0, damagePct: 0, armorFlat: 0, attackSpeedPct: 0, lifestealPct: 0, incomingDamagePct: 0 })
+    }, { ...emptyArcanePassiveCombatModifiers })
+  bySkillLevels.set(arcane.skillLevels, modifiers)
+  return modifiers
 }
 
 export function getEffectiveArcaneDamage(state: SimulationState, arcane: Arcane) {
