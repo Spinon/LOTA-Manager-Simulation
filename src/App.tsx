@@ -121,6 +121,43 @@ const uiSnapshotIntervalMs = 500
 const teamSnapshotIntervalMs = 1000
 const inspectorSnapshotIntervalMs = 1000
 
+type RenderSubscriber = { priority: number; callback: (now: number) => void }
+const renderSubscribers = new Map<number, RenderSubscriber>()
+let sortedRenderSubscribers: RenderSubscriber[] = []
+let nextRenderSubscriberId = 1
+let scheduledRenderFrame = 0
+let canvasMetricsFrame = 0
+
+function runRenderFrame(now: number) {
+  canvasMetricsFrame += 1
+  for (const subscriber of sortedRenderSubscribers) subscriber.callback(now)
+  scheduledRenderFrame = renderSubscribers.size > 0 ? window.requestAnimationFrame(runRenderFrame) : 0
+}
+
+function subscribeRenderFrame(callback: (now: number) => void, priority: number) {
+  const id = nextRenderSubscriberId
+  nextRenderSubscriberId += 1
+  renderSubscribers.set(id, { priority, callback })
+  sortedRenderSubscribers = Array.from(renderSubscribers.values()).sort((a, b) => a.priority - b.priority)
+  if (scheduledRenderFrame === 0) scheduledRenderFrame = window.requestAnimationFrame(runRenderFrame)
+  return () => {
+    renderSubscribers.delete(id)
+    sortedRenderSubscribers = Array.from(renderSubscribers.values()).sort((a, b) => a.priority - b.priority)
+    if (renderSubscribers.size === 0 && scheduledRenderFrame !== 0) {
+      window.cancelAnimationFrame(scheduledRenderFrame)
+      scheduledRenderFrame = 0
+    }
+  }
+}
+
+if (import.meta.env.DEV) {
+  ;(window as unknown as { __lotaRenderScheduler?: unknown }).__lotaRenderScheduler = {
+    get subscribers() { return renderSubscribers.size },
+    get active() { return scheduledRenderFrame !== 0 },
+    get canvasMetricsFrame() { return canvasMetricsFrame },
+  }
+}
+
 const playbackUiStats = {
   materializations: 0,
   uiPublishes: 0,
@@ -196,6 +233,7 @@ function App() {
   const staticDataRef = useRef<MatchStaticData | undefined>(undefined)
   const activeDetailsRef = useRef<MatchRenderDetails | undefined>(undefined)
   const activeTransportFrameRef = useRef<MatchRenderFrame | undefined>(undefined)
+  const activeFrameRevisionRef = useRef(0)
   const frameIndexRef = useRef(0)
   const playbackCursorRef = useRef(0)
   const lastPlaybackTick = useRef<number | null>(null)
@@ -262,6 +300,7 @@ function App() {
     frameBufferRef.current = adopting?.frames ?? []
     staticDataRef.current = adopting?.staticData
     activeTransportFrameRef.current = undefined
+    activeFrameRevisionRef.current = 0
     activeDetailsRef.current = undefined
     frameIndexRef.current = 0
     playbackCursorRef.current = 0
@@ -291,6 +330,7 @@ function App() {
       activeDetailsRef.current = firstFrame.details
       const firstState = materializeFrame(firstFrame, adopting.staticData, activeDetailsRef.current)
       activeTransportFrameRef.current = firstFrame
+      activeFrameRevisionRef.current = 1
       stateRef.current = firstState
       currentFrameKeyRef.current = getFrameKey(firstFrame)
       setState(firstState)
@@ -393,6 +433,7 @@ function App() {
           activeDetailsRef.current = firstFrame.details
           const firstState = materializeFrame(firstFrame, staticDataRef.current, activeDetailsRef.current)
           activeTransportFrameRef.current = firstFrame
+          activeFrameRevisionRef.current = 1
           stateRef.current = firstState
           currentFrameKeyRef.current = getFrameKey(firstFrame)
           setState(firstState)
@@ -442,6 +483,7 @@ function App() {
         activeDetailsRef.current = firstFrame.details
         const firstState = materializeFrame(firstFrame, staticDataRef.current, activeDetailsRef.current)
         activeTransportFrameRef.current = firstFrame
+        activeFrameRevisionRef.current = 1
         stateRef.current = firstState
         currentFrameKeyRef.current = getFrameKey(firstFrame)
         setState(firstState)
@@ -503,12 +545,9 @@ function App() {
   useEffect(() => {
     if (!hasState || !startupWaitDone || playbackStatus === 'loading' || playbackStatus === 'error') return undefined
 
-    let frame = 0
-    const playbackTick = () => {
-      const now = performance.now()
+    const playbackTick = (now: number) => {
       if (lastPlaybackTick.current === null) {
         lastPlaybackTick.current = now
-        frame = window.requestAnimationFrame(playbackTick)
         return
       }
 
@@ -537,6 +576,7 @@ function App() {
             if (currentFrame) {
               if (activeTransportFrameRef.current !== currentFrame) {
                 activeTransportFrameRef.current = currentFrame
+                activeFrameRevisionRef.current += 1
                 if (currentFrame.details) activeDetailsRef.current = currentFrame.details
               }
               const frameKey = getFrameKey(currentFrame)
@@ -573,11 +613,9 @@ function App() {
         }
       }
 
-      frame = window.requestAnimationFrame(playbackTick)
     }
 
-    frame = window.requestAnimationFrame(playbackTick)
-    return () => window.cancelAnimationFrame(frame)
+    return subscribeRenderFrame(playbackTick, 0)
   }, [running, speed, hasState, startupWaitDone, playbackStatus])
 
   const visibleTeamState = teamState ?? state
@@ -612,6 +650,7 @@ function App() {
     activeDetailsRef.current = findFrameDetails(frames, low)
     const nextState = materializeFrame(frame, staticDataRef.current, activeDetailsRef.current)
     activeTransportFrameRef.current = frame
+    activeFrameRevisionRef.current += 1
     stateRef.current = nextState
     currentFrameKeyRef.current = getFrameKey(frame)
     setState(nextState)
@@ -672,6 +711,7 @@ function App() {
           dayCycle={dayCycle}
           state={state}
           frameRef={activeTransportFrameRef}
+          frameRevisionRef={activeFrameRevisionRef}
           staticDataRef={staticDataRef}
           playbackTimeRef={playbackCursorRef}
           selected={selected}
@@ -1017,6 +1057,7 @@ function MapPanel({
   dayCycle,
   state,
   frameRef,
+  frameRevisionRef,
   staticDataRef,
   playbackTimeRef,
   selected,
@@ -1025,6 +1066,7 @@ function MapPanel({
   dayCycle: DayCycle
   state: SimulationState
   frameRef: React.RefObject<MatchRenderFrame | undefined>
+  frameRevisionRef: React.RefObject<number>
   staticDataRef: React.RefObject<MatchStaticData | undefined>
   playbackTimeRef: React.RefObject<number>
   selected: Selected
@@ -1083,11 +1125,11 @@ function MapPanel({
       <span className="lane-label mid">Meio</span>
       <span className="lane-label bot">Baixo</span>
 
-      <AttackRangeCanvasLayer frameRef={frameRef} staticDataRef={staticDataRef} selected={selected} />
-
-      <FxCanvasLayer
+      <MapBackgroundCanvasLayer
         frameRef={frameRef}
-        playbackTimeRef={playbackTimeRef}
+        frameRevisionRef={frameRevisionRef}
+        staticDataRef={staticDataRef}
+        selected={selected}
       />
 
       {state.bases.map((base) => (
@@ -1171,18 +1213,11 @@ function MapPanel({
           <span>{getRuneGlyph(rune)}</span>
         </button>
       ))}
-      <BossCanvasLayer
+      <MapForegroundCanvasLayer
         frameRef={frameRef}
+        frameRevisionRef={frameRevisionRef}
         staticDataRef={staticDataRef}
-        selected={selected}
-      />
-      <CreepCanvasLayer
-        frameRef={frameRef}
-        selected={selected}
-      />
-      <ArcaneCanvasLayer
-        frameRef={frameRef}
-        staticDataRef={staticDataRef}
+        playbackTimeRef={playbackTimeRef}
         selected={selected}
       />
     </section>
@@ -1193,7 +1228,6 @@ function FrameCounter() {
   const [fps, setFps] = useState(0)
 
   useEffect(() => {
-    let frame = 0
     let frames = 0
     let lastSample = performance.now()
 
@@ -1207,11 +1241,9 @@ function FrameCounter() {
         frames = 0
         lastSample = now
       }
-      frame = window.requestAnimationFrame(tick)
     }
 
-    frame = window.requestAnimationFrame(tick)
-    return () => window.cancelAnimationFrame(frame)
+    return subscribeRenderFrame(tick, 10)
   }, [])
 
   return (
@@ -1243,9 +1275,11 @@ const drawIdleSettleMs = 600
 const lowFpsThreshold = 50
 const lowFpsWindowMs = 3000
 const staleFpsSampleMs = 1500
+const adaptiveDprWarmupMs = 5000
 
 let adaptiveDprCap = maxCanvasDevicePixelRatio
 let lowFpsStreakMs = 0
+let adaptiveDprWarmupUntil = 0
 
 function getCanvasDpr() {
   return Math.min(adaptiveDprCap, window.devicePixelRatio || 1)
@@ -1255,6 +1289,9 @@ function reportRenderFps(fps: number, sampleMs: number) {
   if (adaptiveDprCap <= 1) return
   if ((window.devicePixelRatio || 1) <= 1) return
   if (sampleMs > staleFpsSampleMs) return
+  const now = performance.now()
+  if (adaptiveDprWarmupUntil === 0) adaptiveDprWarmupUntil = now + adaptiveDprWarmupMs
+  if (now < adaptiveDprWarmupUntil) return
   if (fps < lowFpsThreshold) {
     lowFpsStreakMs += sampleMs
     if (lowFpsStreakMs >= lowFpsWindowMs) {
@@ -1268,37 +1305,41 @@ function reportRenderFps(fps: number, sampleMs: number) {
 function resetAdaptiveDpr() {
   adaptiveDprCap = maxCanvasDevicePixelRatio
   lowFpsStreakMs = 0
+  adaptiveDprWarmupUntil = 0
 }
 
 if (import.meta.env.DEV) {
   ;(window as unknown as { __lotaDpr?: unknown }).__lotaDpr = {
     get cap() { return adaptiveDprCap },
     get streakMs() { return lowFpsStreakMs },
+    get warmupUntil() { return adaptiveDprWarmupUntil },
     get effective() { return getCanvasDpr() },
   }
 }
 
-function createDrawGate() {
-  let lastKey = ''
+function createNumericDrawGate() {
+  let lastRevision = Number.NaN
+  let lastWidth = 0
+  let lastHeight = 0
+  let lastDpr = 0
   let lastChangeAt = 0
-  return (key: string) => {
+  return (revision: number, metrics: CanvasMetrics) => {
     const now = performance.now()
-    if (key !== lastKey) {
-      lastKey = key
+    if (
+      revision !== lastRevision ||
+      metrics.width !== lastWidth ||
+      metrics.height !== lastHeight ||
+      metrics.dpr !== lastDpr
+    ) {
+      lastRevision = revision
+      lastWidth = metrics.width
+      lastHeight = metrics.height
+      lastDpr = metrics.dpr
       lastChangeAt = now
       return true
     }
     return now - lastChangeAt <= drawIdleSettleMs
   }
-}
-
-function getCanvasDrawKey(canvas: HTMLCanvasElement, ...parts: Array<string | number | undefined>) {
-  return [
-    canvas.clientWidth,
-    canvas.clientHeight,
-    getCanvasDpr(),
-    ...parts,
-  ].join('|')
 }
 
 function timeDraw(name: string, draw: () => void) {
@@ -1313,57 +1354,109 @@ function timeDraw(name: string, draw: () => void) {
   bucket.calls += 1
 }
 
-function CreepCanvasLayer({
+function useSelectionRevision(selected: Selected) {
+  const revision = useRef(0)
+  const previous = useRef<Selected>(undefined)
+  if (previous.current?.kind !== selected?.kind || previous.current?.id !== selected?.id) {
+    previous.current = selected
+    revision.current += 1
+  }
+  return revision
+}
+
+function MapBackgroundCanvasLayer({
   frameRef,
+  frameRevisionRef,
+  staticDataRef,
   selected,
 }: {
   frameRef: React.RefObject<MatchRenderFrame | undefined>
+  frameRevisionRef: React.RefObject<number>
+  staticDataRef: React.RefObject<MatchStaticData | undefined>
   selected: Selected
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const visualPositions = useRef(new Map<string, VisualPosition>())
+  const creepPositions = useRef(new Map<string, VisualPosition>())
+  const rangePositions = useRef(new Map<string, VisualPosition>())
   const latest = useRef({ selected })
-
+  const selectionRevision = useSelectionRevision(selected)
   latest.current = { selected }
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return undefined
-
-    let frame = 0
-    const shouldDraw = createDrawGate()
-    const draw = () => {
-      const current = latest.current
-      const currentFrame = frameRef.current
-      if (!currentFrame) {
-        frame = window.requestAnimationFrame(draw)
-        return
-      }
-      const selectedId = current.selected?.kind === 'creep' ? current.selected.id : undefined
-      if (!shouldDraw(getCanvasDrawKey(canvas, currentFrame.time, selectedId ?? 'none', currentFrame.creeps.length))) {
-        frame = window.requestAnimationFrame(draw)
-        return
-      }
-      timeDraw('creep', () => drawCreepCanvas(
+    const shouldDraw = createNumericDrawGate()
+    return subscribeRenderFrame((renderNow) => {
+      const frame = frameRef.current
+      const staticData = staticDataRef.current
+      if (!frame || !staticData) return
+      const revision = frameRevisionRef.current * 1000 + selectionRevision.current
+      const metrics = prepareCanvasForDraw(canvas)
+      if (!shouldDraw(revision, metrics)) return
+      timeDraw('background', () => drawMapBackgroundCanvas(
         canvas,
-        currentFrame.creeps,
-        selectedId,
-        visualPositions.current,
+        metrics,
+        frame,
+        staticData,
+        latest.current.selected,
+        renderNow,
+        creepPositions.current,
+        rangePositions.current,
       ))
-      frame = window.requestAnimationFrame(draw)
-    }
+    }, 20)
+  }, [frameRef, frameRevisionRef, staticDataRef, selectionRevision])
 
-    frame = window.requestAnimationFrame(draw)
-    return () => window.cancelAnimationFrame(frame)
-  }, [frameRef])
+  return <canvas ref={canvasRef} className="map-background-canvas" aria-label="Alcance e creeps da rota" />
+}
 
-  return (
-    <canvas
-      ref={canvasRef}
-      className="creep-canvas"
-      aria-label="Creeps da rota"
-    />
-  )
+function MapForegroundCanvasLayer({
+  frameRef,
+  frameRevisionRef,
+  staticDataRef,
+  playbackTimeRef,
+  selected,
+}: {
+  frameRef: React.RefObject<MatchRenderFrame | undefined>
+  frameRevisionRef: React.RefObject<number>
+  staticDataRef: React.RefObject<MatchStaticData | undefined>
+  playbackTimeRef: React.RefObject<number>
+  selected: Selected
+}) {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null)
+  const arcanePositions = useRef(new Map<string, VisualPosition>())
+  const bossPositions = useRef(new Map<string, VisualPosition>())
+  const latest = useRef({ selected })
+  const selectionRevision = useSelectionRevision(selected)
+  latest.current = { selected }
+
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return undefined
+    const shouldDraw = createNumericDrawGate()
+    return subscribeRenderFrame((renderNow) => {
+      const frame = frameRef.current
+      const staticData = staticDataRef.current
+      if (!frame || !staticData) return
+      const renderTime = playbackTimeRef.current
+      const animationRevision = Math.floor(renderTime * 60)
+      const revision = frameRevisionRef.current * 1_000_000 + selectionRevision.current * 10_000 + animationRevision
+      const metrics = prepareCanvasForDraw(canvas)
+      if (!shouldDraw(revision, metrics)) return
+      timeDraw('foreground', () => drawMapForegroundCanvas(
+        canvas,
+        metrics,
+        frame,
+        staticData,
+        latest.current.selected,
+        renderTime,
+        renderNow,
+        arcanePositions.current,
+        bossPositions.current,
+      ))
+    }, 30)
+  }, [frameRef, frameRevisionRef, staticDataRef, playbackTimeRef, selectionRevision])
+
+  return <canvas ref={canvasRef} className="map-foreground-canvas" aria-label="Arcanes e efeitos de combate" />
 }
 
 type VisualPosition = {
@@ -1374,8 +1467,7 @@ const visualInterpolationDelayMs = 250
 const visualExtrapolationLimitMs = 90
 const visualPruneSchedule = new WeakMap<Map<string, VisualPosition>, number>()
 
-function pruneVisualPositionsOccasionally(visualPositions: Map<string, VisualPosition>, liveIds: string[]) {
-  const now = performance.now()
+function pruneVisualPositionsOccasionally(visualPositions: Map<string, VisualPosition>, liveIds: string[], now: number) {
   const nextVisualPruneAt = visualPruneSchedule.get(visualPositions) ?? 0
   if (now < nextVisualPruneAt) return
   visualPruneSchedule.set(visualPositions, now + 1000)
@@ -1390,8 +1482,8 @@ function getBufferedVisualPosition(
   target: Point,
   visualPositions: Map<string, VisualPosition>,
   snapDistance: number,
+  now: number,
 ) {
-  const now = performance.now()
   const track = visualPositions.get(id)
   const lastSample = track?.samples.at(-1)
   if (!track || !lastSample || distance(lastSample.pos, target) > snapDistance) {
@@ -1436,26 +1528,90 @@ function getBufferedVisualPosition(
   return samples[samples.length - 1].pos
 }
 
-function drawCreepCanvas(
+function prepareCanvasContext(canvas: HTMLCanvasElement, metrics: CanvasMetrics) {
+  if (canvas.width !== metrics.width || canvas.height !== metrics.height) {
+    canvas.width = metrics.width
+    canvas.height = metrics.height
+  }
+  const context = canvas.getContext('2d')
+  if (!context) return undefined
+  context.clearRect(0, 0, metrics.width, metrics.height)
+  context.save()
+  context.scale(metrics.dpr, metrics.dpr)
+  return context
+}
+
+function drawMapBackgroundCanvas(
   canvas: HTMLCanvasElement,
+  metrics: CanvasMetrics,
+  frame: MatchRenderFrame,
+  staticData: MatchStaticData,
+  selected: Selected,
+  renderNow: number,
+  creepPositions: Map<string, VisualPosition>,
+  rangePositions: Map<string, VisualPosition>,
+) {
+  const context = prepareCanvasContext(canvas, metrics)
+  if (!context) return
+  drawAttackRangeLayer(context, metrics.viewport, frame, staticData, selected, rangePositions, renderNow)
+  drawCreepLayer(
+    context,
+    metrics.viewport,
+    frame.creeps,
+    selected?.kind === 'creep' ? selected.id : undefined,
+    creepPositions,
+    renderNow,
+  )
+  context.restore()
+}
+
+function drawMapForegroundCanvas(
+  canvas: HTMLCanvasElement,
+  metrics: CanvasMetrics,
+  frame: MatchRenderFrame,
+  staticData: MatchStaticData,
+  selected: Selected,
+  renderTime: number,
+  renderNow: number,
+  arcanePositions: Map<string, VisualPosition>,
+  bossPositions: Map<string, VisualPosition>,
+) {
+  const context = prepareCanvasContext(canvas, metrics)
+  if (!context) return
+  drawBossLayer(
+    context,
+    metrics.viewport,
+    frame.boss,
+    staticData.boss,
+    selected?.kind === 'boss' && selected.id === staticData.boss.id,
+    frame.time,
+    bossPositions,
+    renderNow,
+  )
+  drawFxLayer(context, metrics.viewport, frame, renderTime)
+  drawArcaneLayer(
+    context,
+    metrics.viewport,
+    frame.arcanes,
+    staticData.arcanes,
+    selected?.kind === 'arcane' ? selected.id : undefined,
+    frame.timedEffects,
+    frame.time,
+    arcanePositions,
+    renderNow,
+  )
+  context.restore()
+}
+
+function drawCreepLayer(
+  context: CanvasRenderingContext2D,
+  viewport: CanvasViewport,
   creeps: MatchRenderFrame['creeps'],
   selectedId: string | undefined,
   visualPositions: Map<string, VisualPosition>,
+  renderNow: number,
 ) {
-  const { viewport, dpr, width, height } = prepareCanvasForDraw(canvas)
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width
-    canvas.height = height
-  }
-
-  const context = canvas.getContext('2d')
-  if (!context) return
-
-  context.clearRect(0, 0, width, height)
-  context.save()
-  context.scale(dpr, dpr)
-
-  pruneVisualPositionsOccasionally(visualPositions, creeps.map((creep) => creep[0]))
+  pruneVisualPositionsOccasionally(visualPositions, creeps.map((creep) => creep[0]), renderNow)
 
   for (const creep of creeps) {
     const visual = getBufferedVisualPosition(
@@ -1463,6 +1619,7 @@ function drawCreepCanvas(
       { x: creep[4], y: creep[5] },
       visualPositions,
       9,
+      renderNow,
     )
     const point = clampToMapBounds(visual)
     const x = (point.x / 100) * viewport.width
@@ -1493,115 +1650,43 @@ function drawCreepCanvas(
     context.arc(x, y, radius + (creep[0] === selectedId ? 2 : 0.5), 0, Math.PI * 2)
     context.stroke()
   }
-
-  context.restore()
 }
 
-function ArcaneCanvasLayer({
-  frameRef,
-  staticDataRef,
-  selected,
-}: {
-  frameRef: React.RefObject<MatchRenderFrame | undefined>
-  staticDataRef: React.RefObject<MatchStaticData | undefined>
-  selected: Selected
-}) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const visualPositions = useRef(new Map<string, VisualPosition>())
-  const latest = useRef({ selected })
-
-  latest.current = { selected }
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return undefined
-
-    let frame = 0
-    const shouldDraw = createDrawGate()
-    const draw = () => {
-      const current = latest.current
-      const currentFrame = frameRef.current
-      const staticData = staticDataRef.current
-      if (!currentFrame || !staticData) {
-        frame = window.requestAnimationFrame(draw)
-        return
-      }
-      const selectedId = current.selected?.kind === 'arcane' ? current.selected.id : undefined
-      if (!shouldDraw(getCanvasDrawKey(canvas, currentFrame.time, selectedId ?? 'none', currentFrame.arcanes.length, currentFrame.timedEffects.length))) {
-        frame = window.requestAnimationFrame(draw)
-        return
-      }
-      timeDraw('arcane', () => drawArcaneCanvas(
-        canvas,
-        currentFrame.arcanes,
-        staticData.arcanes,
-        selectedId,
-        currentFrame.timedEffects,
-        currentFrame.time,
-        visualPositions.current,
-      ))
-      frame = window.requestAnimationFrame(draw)
-    }
-
-    frame = window.requestAnimationFrame(draw)
-    return () => window.cancelAnimationFrame(frame)
-  }, [frameRef, staticDataRef])
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="arcane-canvas"
-      aria-label="Arcanes no mapa"
-    />
-  )
-}
-
-function drawArcaneCanvas(
-  canvas: HTMLCanvasElement,
+function drawArcaneLayer(
+  context: CanvasRenderingContext2D,
+  viewport: CanvasViewport,
   arcanes: MatchRenderFrame['arcanes'],
   staticArcanes: MatchStaticData['arcanes'],
   selectedId: string | undefined,
   timedEffects: TimedEffect[],
   now: number,
   visualPositions: Map<string, VisualPosition>,
+  renderNow: number,
 ) {
-  const { viewport, dpr, width, height } = prepareCanvasForDraw(canvas)
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width
-    canvas.height = height
-  }
-
-  const context = canvas.getContext('2d')
-  if (!context) return
-
   const aliveIndices: number[] = []
   for (let index = 0; index < arcanes.length; index += 1) {
     const arcane = arcanes[index]
     if (arcane[2] <= now && arcane[4] > 0) aliveIndices.push(index)
   }
-  pruneVisualPositionsOccasionally(visualPositions, aliveIndices.map((index) => staticArcanes[index].id))
+  pruneVisualPositionsOccasionally(visualPositions, aliveIndices.map((index) => staticArcanes[index].id), renderNow)
 
-  context.clearRect(0, 0, width, height)
-  context.save()
-  context.scale(dpr, dpr)
   const activeEffectsByTarget = groupActiveEffectsByTarget(timedEffects, now)
 
   for (const index of aliveIndices) {
     const arcane = arcanes[index]
     const fixed = staticArcanes[index]
-    const visual = getArcaneVisualPosition(fixed.id, { x: arcane[0], y: arcane[1] }, visualPositions)
+    const visual = getArcaneVisualPosition(fixed.id, { x: arcane[0], y: arcane[1] }, visualPositions, renderNow)
     drawArcaneToken(context, viewport, fixed, arcane, visual, selectedId === fixed.id, activeEffectsByTarget, now)
   }
-
-  context.restore()
 }
 
-function getArcaneVisualPosition(id: string, pos: Point, visualPositions: Map<string, VisualPosition>) {
+function getArcaneVisualPosition(id: string, pos: Point, visualPositions: Map<string, VisualPosition>, renderNow: number) {
   return getBufferedVisualPosition(
     id,
     pos,
     visualPositions,
     18,
+    renderNow,
   )
 }
 
@@ -1766,84 +1851,20 @@ function getEffectCanvasColor(kind: TimedEffect['kind']) {
   return '#9fd0ff'
 }
 
-function BossCanvasLayer({
-  frameRef,
-  staticDataRef,
-  selected,
-}: {
-  frameRef: React.RefObject<MatchRenderFrame | undefined>
-  staticDataRef: React.RefObject<MatchStaticData | undefined>
-  selected: Selected
-}) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const visualPositions = useRef(new Map<string, VisualPosition>())
-  const latest = useRef({ selected })
-
-  latest.current = { selected }
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return undefined
-
-    let frame = 0
-    const shouldDraw = createDrawGate()
-    const draw = () => {
-      const currentFrame = frameRef.current
-      const staticData = staticDataRef.current
-      if (currentFrame && staticData) {
-        const selectedId = latest.current.selected?.kind === 'boss' ? latest.current.selected.id : 'none'
-        if (!shouldDraw(getCanvasDrawKey(canvas, currentFrame.time, selectedId, currentFrame.boss[2], currentFrame.boss[4]))) {
-          frame = window.requestAnimationFrame(draw)
-          return
-        }
-        timeDraw('boss', () => drawBossCanvas(
-          canvas,
-          currentFrame.boss,
-          staticData.boss,
-          latest.current.selected?.kind === 'boss' && latest.current.selected.id === staticData.boss.id,
-          currentFrame.time,
-          visualPositions.current,
-        ))
-      }
-      frame = window.requestAnimationFrame(draw)
-    }
-
-    frame = window.requestAnimationFrame(draw)
-    return () => window.cancelAnimationFrame(frame)
-  }, [frameRef, staticDataRef])
-
-  return (
-    <canvas
-      ref={canvasRef}
-      className="boss-canvas"
-      aria-label="Serpente do Eclipse"
-    />
-  )
-}
-
-function drawBossCanvas(
-  canvas: HTMLCanvasElement,
+function drawBossLayer(
+  context: CanvasRenderingContext2D,
+  viewport: CanvasViewport,
   boss: MatchRenderFrame['boss'],
   staticBoss: MatchStaticData['boss'],
   selected: boolean,
   now: number,
   visualPositions: Map<string, VisualPosition>,
+  renderNow: number,
 ) {
-  const { viewport, dpr, width, height } = prepareCanvasForDraw(canvas)
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width
-    canvas.height = height
-  }
-
-  const context = canvas.getContext('2d')
-  if (!context) return
-
-  context.clearRect(0, 0, width, height)
   if (boss[2] <= 0 || boss[4] > now) return
 
   context.save()
-  context.scale(dpr, dpr)
-  const visual = getBufferedVisualPosition(staticBoss.id, { x: boss[0], y: boss[1] }, visualPositions, 20)
+  const visual = getBufferedVisualPosition(staticBoss.id, { x: boss[0], y: boss[1] }, visualPositions, 20, renderNow)
   const point = toCanvasPoint(visual, viewport)
   const radius = 22
   const hpRatio = Math.max(0, Math.min(1, boss[2] / Math.max(1, boss[3])))
@@ -1887,72 +1908,12 @@ function drawBossCanvas(
   context.restore()
 }
 
-function FxCanvasLayer({
-  frameRef,
-  playbackTimeRef,
-}: {
-  frameRef: React.RefObject<MatchRenderFrame | undefined>
-  playbackTimeRef: React.RefObject<number>
-}) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return undefined
-
-    let frame = 0
-    const shouldDraw = createDrawGate()
-    const draw = () => {
-      const currentFrame = frameRef.current
-      if (currentFrame) {
-        const renderTime = playbackTimeRef.current
-        const fxKey = getCanvasDrawKey(
-          canvas,
-          Math.floor(renderTime * 60),
-          currentFrame.effects.length,
-          currentFrame.deathMarkers.length,
-          currentFrame.denyMarkers.length,
-          currentFrame.goldMarkers.length,
-          currentFrame.skillMarkers.length,
-        )
-        if (!shouldDraw(fxKey)) {
-          frame = window.requestAnimationFrame(draw)
-          return
-        }
-        timeDraw('fx', () => drawFxCanvas(
-          canvas,
-          currentFrame,
-          renderTime,
-        ))
-      }
-      frame = window.requestAnimationFrame(draw)
-    }
-
-    frame = window.requestAnimationFrame(draw)
-    return () => window.cancelAnimationFrame(frame)
-  }, [frameRef, playbackTimeRef])
-
-  return <canvas ref={canvasRef} className="fx-canvas" aria-hidden="true" />
-}
-
-function drawFxCanvas(
-  canvas: HTMLCanvasElement,
+function drawFxLayer(
+  context: CanvasRenderingContext2D,
+  viewport: CanvasViewport,
   frame: MatchRenderFrame,
   now: number,
 ) {
-  const { viewport, dpr, width, height } = prepareCanvasForDraw(canvas)
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width
-    canvas.height = height
-  }
-
-  const context = canvas.getContext('2d')
-  if (!context) return
-
-  context.clearRect(0, 0, width, height)
-  context.save()
-  context.scale(dpr, dpr)
-
   for (const effect of frame.effects) {
     drawAttackFx(context, viewport, effect, now)
   }
@@ -1968,8 +1929,6 @@ function drawFxCanvas(
   for (const marker of frame.skillMarkers) {
     drawFloatingText(context, viewport, { x: marker[1], y: marker[2] }, marker[5], teamInfo[marker[0]].primary, marker[3], marker[4], now, 11, -18)
   }
-
-  context.restore()
 }
 
 function drawAttackFx(context: CanvasRenderingContext2D, viewport: CanvasViewport, effect: MatchRenderFrame['effects'][number], now: number) {
@@ -2045,80 +2004,29 @@ function toCanvasPoint(point: Point, viewport: CanvasViewport) {
   }
 }
 
-function AttackRangeCanvasLayer({
-  frameRef,
-  staticDataRef,
-  selected,
-}: {
-  frameRef: React.RefObject<MatchRenderFrame | undefined>
-  staticDataRef: React.RefObject<MatchStaticData | undefined>
-  selected: Selected
-}) {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const visualPositions = useRef(new Map<string, VisualPosition>())
-  const latest = useRef({ selected })
-
-  latest.current = { selected }
-
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas) return undefined
-
-    let frame = 0
-    const shouldDraw = createDrawGate()
-    const draw = () => {
-      const currentFrame = frameRef.current
-      const staticData = staticDataRef.current
-      if (currentFrame && staticData) {
-        const selectedKey = latest.current.selected ? `${latest.current.selected.kind}:${latest.current.selected.id}` : 'none'
-        if (!shouldDraw(getCanvasDrawKey(canvas, currentFrame.time, selectedKey))) {
-          frame = window.requestAnimationFrame(draw)
-          return
-        }
-        timeDraw('range', () => drawAttackRangeCanvas(canvas, currentFrame, staticData, latest.current.selected, visualPositions.current))
-      }
-      frame = window.requestAnimationFrame(draw)
-    }
-
-    frame = window.requestAnimationFrame(draw)
-    return () => window.cancelAnimationFrame(frame)
-  }, [frameRef, staticDataRef])
-
-  return <canvas ref={canvasRef} className="attack-range-canvas" aria-hidden="true" />
-}
-
-function drawAttackRangeCanvas(
-  canvas: HTMLCanvasElement,
+function drawAttackRangeLayer(
+  context: CanvasRenderingContext2D,
+  viewport: CanvasViewport,
   frame: MatchRenderFrame,
   staticData: MatchStaticData,
   selected: Selected,
   visualPositions: Map<string, VisualPosition>,
+  renderNow: number,
 ) {
-  const { viewport, dpr, width, height } = prepareCanvasForDraw(canvas)
-  if (canvas.width !== width || canvas.height !== height) {
-    canvas.width = width
-    canvas.height = height
-  }
-
-  const context = canvas.getContext('2d')
-  if (!context) return
-  context.clearRect(0, 0, width, height)
-
   const entity = getCompactRangeEntity(frame, staticData, selected)
   if (!entity || entity.range <= 0) {
-    pruneVisualPositionsOccasionally(visualPositions, [])
+    pruneVisualPositionsOccasionally(visualPositions, [], renderNow)
     return
   }
-  pruneVisualPositionsOccasionally(visualPositions, [`range-${entity.id}`])
+  pruneVisualPositionsOccasionally(visualPositions, [`range-${entity.id}`], renderNow)
 
   const visualPos = entity.snapDistance > 0
-    ? getBufferedVisualPosition(`range-${entity.id}`, entity.pos, visualPositions, entity.snapDistance)
+    ? getBufferedVisualPosition(`range-${entity.id}`, entity.pos, visualPositions, entity.snapDistance, renderNow)
     : entity.pos
   const point = toCanvasPoint(visualPos, viewport)
   const radius = (entity.range / 100) * viewport.width
 
   context.save()
-  context.scale(dpr, dpr)
   context.fillStyle = 'rgba(246, 200, 93, 0.08)'
   context.strokeStyle = 'rgba(246, 200, 93, 0.58)'
   context.lineWidth = 1.25
@@ -2166,18 +2074,32 @@ type CanvasViewport = {
   height: number
 }
 
+type CanvasMetrics = {
+  viewport: CanvasViewport
+  dpr: number
+  width: number
+  height: number
+}
+
+const canvasMetricsCache = new WeakMap<HTMLElement, { frame: number; metrics: CanvasMetrics }>()
+
 function prepareCanvasForDraw(canvas: HTMLCanvasElement) {
+  const host = canvas.parentElement ?? canvas
+  const cached = canvasMetricsCache.get(host)
+  if (cached?.frame === canvasMetricsFrame) return cached.metrics
   const dpr = getCanvasDpr()
   const viewport = {
-    width: Math.max(1, canvas.clientWidth),
-    height: Math.max(1, canvas.clientHeight),
+    width: Math.max(1, host.clientWidth),
+    height: Math.max(1, host.clientHeight),
   }
-  return {
+  const metrics = {
     viewport,
     dpr,
     width: Math.max(1, Math.floor(viewport.width * dpr)),
     height: Math.max(1, Math.floor(viewport.height * dpr)),
   }
+  canvasMetricsCache.set(host, { frame: canvasMetricsFrame, metrics })
+  return metrics
 }
 
 function EventFeed({ events }: { events: MatchEvent[] }) {

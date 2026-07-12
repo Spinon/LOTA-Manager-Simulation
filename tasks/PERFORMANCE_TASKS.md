@@ -48,6 +48,8 @@ Status: concluída em 2026-07-12. Os cinco canvases leem `MatchRenderFrame`/`Mat
 
 ### P4 / T11: scheduler único de render
 
+Status: concluída em 2026-07-12. Um scheduler global ordena playback, medição de FPS e duas camadas de canvas; alcance+creeps ficaram no fundo e chefe+FX+Arcanes no primeiro plano. Viewport/DPR são calculados uma vez por host/frame e as antigas chaves string foram trocadas por revisões numéricas. No build acelerado com DPR 2, o replay mediu 96 FPS em 1x e 62 FPS em 16x.
+
 - Substituir os loops rAF independentes por um scheduler compartilhado.
 - Remover chaves de desenho baseadas em arrays/strings por revisão numérica.
 - Compartilhar viewport e DPR por frame.

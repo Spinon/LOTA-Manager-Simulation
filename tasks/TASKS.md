@@ -187,11 +187,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T11 - Scheduler único de render e canvases consolidados
+### [x] T11 - Scheduler único de render e canvases consolidados
+
+> Concluída em 2026-07-12 - Playback, FPS e desenho passaram a compartilhar um único rAF; cinco canvases viraram duas camadas com viewport/DPR compartilhado e revisões numéricas.
 
 **Especificação**: P4 em `tasks/PERFORMANCE_TASKS.md`.
 
 **Critérios**: um scheduler rAF, no máximo dois canvases animados, DPR 2 e 58+ FPS no cenário de referência.
+
+**Medição** (build de produção, Chromium acelerado, 1440x1000, DPR 2): exatamente 2 canvases; média de 96 FPS em 1x e 62 FPS em 16x, mantendo backing ratio 2. Pixels das duas camadas, pausa, inspector, seleção e `Esc` validados sem erros de console.
 
 ---
 
