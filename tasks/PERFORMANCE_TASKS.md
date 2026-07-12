@@ -31,6 +31,8 @@ Status: concluída em 2026-07-11. No cenário de 180s, a mediana caiu de 12,78s 
 
 ### P2 / T9: índices do tick e dano direcionado
 
+Status: concluída em 2026-07-11. Índices por id e time, efeitos agrupados por alvo, catálogos de itens indexados e atualização direcionada de dano reduziram `resolveCombat` de aproximadamente 37,5% para 26,2% do perfil. No benchmark curto, a CPU permaneceu estável (5,25s antes; 5,27s depois) e o digest `2b7432ccfc848dee` foi preservado.
+
 - Indexar entidades por id, time e lane uma vez por tick.
 - Agrupar efeitos temporários por alvo.
 - Remover filtros repetidos nos loops de combate e movimento.

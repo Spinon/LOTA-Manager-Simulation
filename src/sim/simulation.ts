@@ -316,6 +316,24 @@ export const creepSpatialGridCache = new WeakMap<SimulationState, { time: number
 export const aliveTowersByLaneCache = new WeakMap<SimulationState, { time: number; byTeamLane: Map<string, Tower[]> }>()
 export const offensiveThreatCache = new WeakMap<Arcane, { time: number; range: number; readyDamage: number }>()
 
+export type SimulationEntityIndexes = {
+  arcane: Map<string, number>
+  creep: Map<string, number>
+  tower: Map<string, number>
+  structure: Map<string, number>
+  base: Map<string, number>
+  camp: Map<string, number>
+  arcaneIds: string[]
+}
+
+const simulationEntityIndexesCache = new WeakMap<SimulationState, {
+  indexes: SimulationEntityIndexes
+  creepCount: number
+  firstCreepId?: string
+  lastCreepId?: string
+}>()
+const timedEffectsByTargetCache = new WeakMap<SimulationState, { source: TimedEffect[]; byTarget: Map<string, TimedEffect[]> }>()
+
 export type CombatSource = {
   id: string
   label: string
@@ -815,6 +833,9 @@ export const heroDefinitions: Record<string, HeroDefinition> = {
 
 export let shopCatalog: ShopItem[] = []
 export let consumableCatalog: ConsumableItem[] = []
+let shopItemById = new Map<string, ShopItem>()
+let shopItemByName = new Map<string, ShopItem>()
+let shopItemsByInventory = new WeakMap<string[], ShopItem[]>()
 export let getRecommendedBuildItemIdsForHero = (_heroDefinitionId: string): string[] => []
 export let getRecommendedStartingItemNamesForHero = (_heroDefinitionId: string, role: string): string[] => getFallbackStartingItemNames(role)
 export let getRuntimeItemSeedById: (id: string) => ItemSeed | undefined = () => undefined
@@ -830,6 +851,9 @@ export async function loadGameData() {
   ])
   Object.assign(heroDefinitions, heroModule.seedHeroDefinitions)
   shopCatalog = itemModule.itemShopCatalog
+  shopItemById = new Map(shopCatalog.map((item) => [item.id, item]))
+  shopItemByName = new Map(shopCatalog.map((item) => [item.name, item]))
+  shopItemsByInventory = new WeakMap()
   consumableCatalog = itemModule.consumableCatalog
   getRecommendedBuildItemIdsForHero = itemModule.getRecommendedBuildItemIds
   getRecommendedStartingItemNamesForHero = itemModule.getRecommendedStartingItemNames
@@ -3146,7 +3170,7 @@ export function nextShopItem(arcane: Arcane) {
   if (arcane.items.length >= 6) return undefined
   const recommendedIds = getRecommendedBuildItemIdsForHero(arcane.heroDefinitionId)
   const recommendedItem = recommendedIds
-    .map((id) => shopCatalog.find((item) => item.id === id))
+    .map((id) => shopItemById.get(id))
     .find((item) => item && !arcane.items.includes(item.name) && canRoleBuyItem(arcane, item))
   if (recommendedItem) return recommendedItem
 
@@ -3156,7 +3180,7 @@ export function nextShopItem(arcane: Arcane) {
 export function canRoleBuyItem(arcane: Arcane, item: ShopItem) {
   if (arcane.items.includes(item.name)) return false
   if (isBootItem(item) && arcane.items.some((name) => {
-    const owned = shopCatalog.find((candidate) => candidate.name === name)
+    const owned = shopItemByName.get(name)
     return owned ? isBootItem(owned) : name.toLowerCase().includes('boot')
   })) return false
   if (arcane.role.includes('Support') && item.cost > 4000 && getInventoryPowerItemCount(arcane) < 4) return false
@@ -3170,7 +3194,7 @@ export function isBootItem(item: ShopItem) {
 }
 
 export function getInventoryPowerItemCount(arcane: Arcane) {
-  return arcane.items.filter((name) => shopCatalog.some((item) => item.name === name)).length
+  return getShopItemsForInventory(arcane.items).length
 }
 
 export function getGankTarget(state: SimulationState, arcane: Arcane, visibleEnemies: Arcane[], targetThreatLimit: number, currentDanger: number) {
@@ -4472,10 +4496,10 @@ export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Ar
 }
 
 export function getSimpleActiveItemCandidate(state: SimulationState, arcane: Arcane) {
-  return arcane.items
-    .map((name) => ({ name, item: shopCatalog.find((item) => item.name === name) }))
-    .filter((candidate): candidate is { name: string; item: ShopItem } => candidate.item?.active !== undefined)
-    .filter((candidate) => (arcane.itemCooldowns[candidate.item.name] ?? 0) <= state.time)
+  return getShopItemsForInventory(arcane.items)
+    .filter((item) => item.active !== undefined)
+    .filter((item) => (arcane.itemCooldowns[item.name] ?? 0) <= state.time)
+    .map((item) => ({ name: item.name, item }))
     .find((candidate) => shouldUseSimpleActiveItem(state, arcane, candidate.item))
 }
 
@@ -4673,18 +4697,32 @@ export function getActiveItemNumber(values: Record<string, number | number[] | s
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
+export function getTimedEffectsForTarget(state: SimulationState, targetId: string) {
+  let cached = timedEffectsByTargetCache.get(state)
+  if (!cached || cached.source !== state.timedEffects) {
+    const byTarget = new Map<string, TimedEffect[]>()
+    for (const effect of state.timedEffects) {
+      const targetEffects = byTarget.get(effect.targetId)
+      if (targetEffects) targetEffects.push(effect)
+      else byTarget.set(effect.targetId, [effect])
+    }
+    cached = { source: state.timedEffects, byTarget }
+    timedEffectsByTargetCache.set(state, cached)
+  }
+  return cached.byTarget.get(targetId) ?? []
+}
+
 export function getDispelItemCandidate(state: SimulationState, arcane: Arcane) {
-  const activeDebuffs = state.timedEffects.filter((effect) => (
-    effect.targetId === arcane.id &&
+  const activeDebuffs = getTimedEffectsForTarget(state, arcane.id).filter((effect) => (
     effect.polarity === 'negative' &&
     effect.expiresAt > state.time
   ))
   if (activeDebuffs.length === 0) return undefined
 
-  return arcane.items
-    .map((name) => ({ name, item: shopCatalog.find((item) => item.name === name) }))
-    .filter((candidate): candidate is { name: string; item: ShopItem } => candidate.item?.active?.dispelPower !== undefined)
-    .filter((candidate) => (arcane.itemCooldowns[candidate.item.name] ?? 0) <= state.time)
+  return getShopItemsForInventory(arcane.items)
+    .filter((item) => item.active?.dispelPower !== undefined)
+    .filter((item) => (arcane.itemCooldowns[item.name] ?? 0) <= state.time)
+    .map((item) => ({ name: item.name, item }))
     .find((candidate) => shouldUseDispelPower(activeDebuffs, candidate.item.active?.dispelPower ?? 'basic'))
 }
 
@@ -4909,8 +4947,8 @@ export function getAttackApproachPoint(from: Point, target: { pos: Point }, atta
 }
 
 export function getArcaneMovementEffectMultiplier(state: SimulationState, arcane: Arcane) {
-  const slows = state.timedEffects
-    .filter((effect) => effect.targetId === arcane.id && effect.kind === 'slow' && effect.expiresAt > state.time)
+  const slows = getTimedEffectsForTarget(state, arcane.id)
+    .filter((effect) => effect.kind === 'slow' && effect.expiresAt > state.time)
     .map((effect) => finalSlowValue(effect.value, [arcane.stats.slowResistance / 100]))
   if (slows.length === 0) return 1
 
@@ -4919,8 +4957,7 @@ export function getArcaneMovementEffectMultiplier(state: SimulationState, arcane
 }
 
 export function getArcaneStatModifierEffects(state: SimulationState, arcane: Arcane) {
-  return state.timedEffects.filter((effect) => (
-    effect.targetId === arcane.id &&
+  return getTimedEffectsForTarget(state, arcane.id).filter((effect) => (
     effect.expiresAt > state.time &&
     effect.modifiers
   ))
@@ -5039,8 +5076,8 @@ export function getArcaneSlowPercent(state: SimulationState, arcane: Arcane) {
 }
 
 export function getArcaneBarrierAmount(state: SimulationState, arcane: Arcane) {
-  return Math.round(state.timedEffects
-    .filter((effect) => effect.targetId === arcane.id && effect.kind === 'barrier' && effect.expiresAt > state.time)
+  return Math.round(getTimedEffectsForTarget(state, arcane.id)
+    .filter((effect) => effect.kind === 'barrier' && effect.expiresAt > state.time)
     .reduce((sum, effect) => sum + Math.max(0, effect.barrierRemaining ?? effect.value), 0))
 }
 
@@ -5059,7 +5096,7 @@ export function resolveIncomingArcaneDamage(state: SimulationState, target: Arca
 }
 
 export function hasTimedEffect(state: SimulationState, targetId: string, kind: TimedEffect['kind']) {
-  return state.timedEffects.some((effect) => effect.targetId === targetId && effect.kind === kind && effect.expiresAt > state.time)
+  return getTimedEffectsForTarget(state, targetId).some((effect) => effect.kind === kind && effect.expiresAt > state.time)
 }
 
 export function isArcaneStunned(state: SimulationState, arcane: Arcane) {
@@ -6514,6 +6551,16 @@ export function hasAnySimpleSkillTag(skill: HeroSkillDefinition, tags: string[])
 
 export function resolveCombat(state: SimulationState, frameContext: TickFrameContext): SimulationState {
   const next = state
+  const enemyCreepIndicesByTeam: Record<TeamId, number[]> = { dawn: [], dusk: [] }
+  const creepIndicesByTeamLane: Record<TeamId, Record<LaneId, number[]>> = {
+    dawn: { top: [], mid: [], bot: [] },
+    dusk: { top: [], mid: [], bot: [] },
+  }
+  for (let index = 0; index < next.creeps.length; index += 1) {
+    const creep = next.creeps[index]
+    enemyCreepIndicesByTeam[creep.team === 'dawn' ? 'dusk' : 'dawn'].push(index)
+    creepIndicesByTeamLane[creep.team][creep.lane].push(index)
+  }
 
   next.creeps.forEach((creep) => {
     const target = getCachedRouteCreepTarget(creep, next, 'attack', frameContext)
@@ -6542,7 +6589,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
       ? next.arcanes.find((arcane) => arcane.id === tower.aggroTargetId && arcane.stats.hp > 0 && arcane.respawn <= next.time && distance(tower.pos, arcane.pos) <= tower.range)
       : undefined
     const target = aggroTarget
-      ?? nearest(tower.pos, next.creeps.filter((creep) => creep.team !== tower.team), tower.range)
+      ?? nearestCreepAtIndices(tower.pos, next.creeps, enemyCreepIndicesByTeam[tower.team], tower.range)
       ?? nearest(tower.pos, next.arcanes.filter((arcane) => arcane.team !== tower.team && arcane.stats.hp > 0 && arcane.respawn <= next.time), tower.range)
     if (target && next.time - tower.lastAttack >= 1.2) {
       tower.lastAttack = next.time
@@ -6568,7 +6615,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
       ? next.arcanes.find((arcane) => arcane.id === structure.aggroTargetId && arcane.stats.hp > 0 && arcane.respawn <= next.time && distance(structure.pos, arcane.pos) <= structure.range)
       : undefined
     const target = aggroTarget
-      ?? nearest(structure.pos, next.creeps.filter((creep) => creep.team !== structure.team), structure.range)
+      ?? nearestCreepAtIndices(structure.pos, next.creeps, enemyCreepIndicesByTeam[structure.team], structure.range)
       ?? nearest(structure.pos, next.arcanes.filter((arcane) => arcane.team !== structure.team && arcane.stats.hp > 0 && arcane.respawn <= next.time), structure.range)
     if (target && next.time - structure.lastAttack >= 1.05) {
       structure.lastAttack = next.time
@@ -6683,18 +6730,20 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     const canAttackBoss = next.boss.hp > 0 && arcane.microDecision.startsWith('Atacar chefe')
     const bossTarget = canAttackBoss && distance(arcane.pos, next.boss.pos) <= getArcaneAttackCenterRange(arcane, next.boss) ? next.boss : undefined
     const objectiveTarget = getFocusedObjectiveTarget(next, arcane)
-    const lastHitTarget = getLastHitTarget(next, arcane)
-    const denyTarget = getDenyTarget(next, arcane)
+    const enemyTeam = arcane.team === 'dawn' ? 'dusk' : 'dawn'
+    const lastHitTarget = getLastHitTarget(next, arcane, creepIndicesByTeamLane[enemyTeam][arcane.lane])
+    const denyTarget = getDenyTarget(next, arcane, creepIndicesByTeamLane[arcane.team][arcane.lane])
     const enemyArcaneTarget = nearestReachableByArcane(arcane, next.arcanes.filter((other) => (
       other.team !== arcane.team &&
       other.stats.hp > 0 &&
       other.respawn <= next.time
     )))
     const laneControl = isLaningControlMicroDecision(arcane.microDecision)
-    const fallbackEnemyCreeps = next.creeps.filter((creep) => (
-      creep.team !== arcane.team &&
-      (!laneControl || creep.lane !== arcane.lane)
-    ))
+    const fallbackEnemyCreeps: Creep[] = []
+    for (const index of enemyCreepIndicesByTeam[arcane.team]) {
+      const creep = next.creeps[index]
+      if (!laneControl || creep.lane !== arcane.lane) fallbackEnemyCreeps.push(creep)
+    }
     const target = bossTarget ?? objectiveTarget ?? lastHitTarget ?? denyTarget ?? enemyArcaneTarget ?? nearestReachableByArcane(arcane, [
       ...fallbackEnemyCreeps,
       ...next.camps.filter((camp) => camp.hp > 0),
@@ -6916,9 +6965,20 @@ export function getItemSplashTargets(state: SimulationState, arcane: Arcane, pri
 
 export function getArcaneItemEffects(arcane: Arcane, kinds?: string[]) {
   const kindSet = kinds ? new Set(kinds) : undefined
-  return arcane.items
-    .flatMap((name) => shopCatalog.find((item) => item.name === name)?.effects ?? [])
+  return getShopItemsForInventory(arcane.items)
+    .flatMap((item) => item.effects)
     .filter((effect) => !kindSet || kindSet.has(effect.kind))
+}
+
+export function getShopItemsForInventory(items: string[]) {
+  const cached = shopItemsByInventory.get(items)
+  if (cached) return cached
+  const resolved = items.flatMap((name) => {
+    const item = shopItemByName.get(name)
+    return item ? [item] : []
+  })
+  shopItemsByInventory.set(items, resolved)
+  return resolved
 }
 
 export function getItemPassiveNumber(effects: RuntimeItemEffect[], tags: string[], key: string) {
@@ -7052,23 +7112,27 @@ export function getCreepXpRecipients(state: SimulationState, creep: Creep) {
   ))
 }
 
-export function getDenyTarget(state: SimulationState, arcane: Arcane) {
+export function getDenyTarget(state: SimulationState, arcane: Arcane, creepIndices?: number[]) {
+  const laneCreeps = creepIndices
+    ? creepIndices.map((index) => state.creeps[index])
+    : state.creeps.filter((creep) => creep.team === arcane.team && creep.lane === arcane.lane)
   return nearestReachableByArcane(
     arcane,
-    state.creeps.filter((creep) => (
-      creep.team === arcane.team &&
+    laneCreeps.filter((creep) => (
       creep.hp > 0 &&
-      creep.hp <= creep.maxHp * 0.5 &&
-      creep.lane === arcane.lane
+      creep.hp <= creep.maxHp * 0.5
     )),
   )
 }
 
-export function getLastHitTarget(state: SimulationState, arcane: Arcane) {
+export function getLastHitTarget(state: SimulationState, arcane: Arcane, creepIndices?: number[]) {
+  const laneCreeps = creepIndices
+    ? creepIndices.map((index) => state.creeps[index])
+    : state.creeps.filter((creep) => creep.team !== arcane.team && creep.lane === arcane.lane)
   return getLastHitCandidateFromCreeps(
     state,
     arcane,
-    state.creeps.filter((creep) => creep.team !== arcane.team && creep.lane === arcane.lane),
+    laneCreeps,
     1.06,
     true,
   )
@@ -7480,13 +7544,82 @@ export function getPointCentroid(points: Point[]): Point {
   }
 }
 
+export function getSimulationEntityIndexes(state: SimulationState) {
+  const cached = simulationEntityIndexesCache.get(state)
+  const firstCreepId = state.creeps[0]?.id
+  const lastCreepId = state.creeps.at(-1)?.id
+  if (cached) {
+    if (
+      cached.creepCount !== state.creeps.length ||
+      cached.firstCreepId !== firstCreepId ||
+      cached.lastCreepId !== lastCreepId
+    ) {
+      rebuildCreepIndexes(cached.indexes, state.creeps)
+      cached.creepCount = state.creeps.length
+      cached.firstCreepId = firstCreepId
+      cached.lastCreepId = lastCreepId
+    }
+    return cached.indexes
+  }
+
+  const indexes: SimulationEntityIndexes = {
+    arcane: createEntityIndex(state.arcanes),
+    creep: createEntityIndex(state.creeps),
+    tower: createEntityIndex(state.towers),
+    structure: createEntityIndex(state.structures),
+    base: createEntityIndex(state.bases),
+    camp: createEntityIndex(state.camps),
+    arcaneIds: state.arcanes.map((arcane) => arcane.id),
+  }
+  rebuildCreepIndexes(indexes, state.creeps)
+  simulationEntityIndexesCache.set(state, {
+    indexes,
+    creepCount: state.creeps.length,
+    firstCreepId,
+    lastCreepId,
+  })
+  return indexes
+}
+
+function createEntityIndex(entities: Array<{ id: string }>) {
+  const indexById = new Map<string, number>()
+  for (let index = 0; index < entities.length; index += 1) {
+    indexById.set(entities[index].id, index)
+  }
+  return indexById
+}
+
+function rebuildCreepIndexes(indexes: SimulationEntityIndexes, creeps: Creep[]) {
+  indexes.creep = new Map()
+  for (let index = 0; index < creeps.length; index += 1) {
+    const creep = creeps[index]
+    indexes.creep.set(creep.id, index)
+  }
+}
+
+function getSourceArcaneIndex(indexes: SimulationEntityIndexes, sourceId: string) {
+  const exact = indexes.arcane.get(sourceId)
+  if (exact !== undefined) return exact
+  return indexes.arcaneIds.findIndex((arcaneId) => sourceId.startsWith(`${arcaneId}-`))
+}
+
 export function damageEntity(state: SimulationState, id: string, damage: number, source: CombatSource) {
-  const targetArcane = state.arcanes.find((arcane) => arcane.id === id)
-  const targetTower = state.towers.find((tower) => tower.id === id)
-  const targetStructure = state.structures.find((structure) => structure.id === id)
-  const targetBase = state.bases.find((base) => base.id === id)
+  const indexes = getSimulationEntityIndexes(state)
+  const targetArcaneIndex = indexes.arcane.get(id)
+  const targetCreepIndex = indexes.creep.get(id)
+  const targetTowerIndex = indexes.tower.get(id)
+  const targetStructureIndex = indexes.structure.get(id)
+  const targetBaseIndex = indexes.base.get(id)
+  const targetCampIndex = indexes.camp.get(id)
+  const targetArcane = targetArcaneIndex === undefined ? undefined : state.arcanes[targetArcaneIndex]
+  const targetCreep = targetCreepIndex === undefined ? undefined : state.creeps[targetCreepIndex]
+  const targetTower = targetTowerIndex === undefined ? undefined : state.towers[targetTowerIndex]
+  const targetStructure = targetStructureIndex === undefined ? undefined : state.structures[targetStructureIndex]
+  const targetBase = targetBaseIndex === undefined ? undefined : state.bases[targetBaseIndex]
+  const targetCamp = targetCampIndex === undefined ? undefined : state.camps[targetCampIndex]
   const targetBoss = state.boss.id === id ? state.boss : undefined
-  const sourceArcane = state.arcanes.find((arcane) => source.id === arcane.id || source.id.startsWith(`${arcane.id}-`))
+  const sourceArcaneIndex = getSourceArcaneIndex(indexes, source.id)
+  const sourceArcane = sourceArcaneIndex < 0 ? undefined : state.arcanes[sourceArcaneIndex]
   const damageType = source.damageType ?? 'physical'
   let finalDamage = damage
 
@@ -7502,36 +7635,43 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   } else if (targetBase) {
     finalDamage = getStructureIncomingDamage(state, targetBase, damage, source, damageType)
   }
-  let targetCurrentHp = targetArcane?.stats.hp ?? targetTower?.hp ?? targetStructure?.hp ?? targetBase?.hp ?? targetBoss?.hp ?? finalDamage
+  const targetCurrentHp = targetArcane?.stats.hp ?? targetCreep?.hp ?? targetTower?.hp ?? targetStructure?.hp ?? targetBase?.hp ?? targetCamp?.hp ?? targetBoss?.hp ?? finalDamage
 
   const hit = (value: number) => Math.max(0, value - finalDamage)
   recordObjectiveLossIfDestroyed(state, targetTower, finalDamage, source)
   recordObjectiveLossIfDestroyed(state, targetStructure, finalDamage, source)
   recordObjectiveLossIfDestroyed(state, targetBase, finalDamage, source)
-  state.creeps = state.creeps.map((creep) => {
-    if (creep.id !== id) return creep
-    targetCurrentHp = creep.hp
-    return { ...creep, hp: hit(creep.hp), lastHitBy: source }
-  })
-  state.towers = state.towers.map((tower) => tower.id === id ? { ...tower, hp: hit(tower.hp) } : tower)
-  state.structures = state.structures.map((structure) => structure.id === id ? { ...structure, hp: hit(structure.hp) } : structure)
-  state.bases = state.bases.map((base) => base.id === id ? { ...base, hp: hit(base.hp) } : base)
-  state.camps = state.camps.map((camp) => {
-    if (camp.id !== id) return camp
-    targetCurrentHp = camp.hp
-    return { ...camp, hp: hit(camp.hp), lastHitBy: source }
-  })
-  state.boss = state.boss.id === id
-    ? {
+  if (targetCreep && targetCreepIndex !== undefined) {
+    const creeps = [...state.creeps]
+    creeps[targetCreepIndex] = { ...targetCreep, hp: hit(targetCreep.hp), lastHitBy: source }
+    state.creeps = creeps
+  } else if (targetTower && targetTowerIndex !== undefined) {
+    const towers = [...state.towers]
+    towers[targetTowerIndex] = { ...targetTower, hp: hit(targetTower.hp) }
+    state.towers = towers
+  } else if (targetStructure && targetStructureIndex !== undefined) {
+    const structures = [...state.structures]
+    structures[targetStructureIndex] = { ...targetStructure, hp: hit(targetStructure.hp) }
+    state.structures = structures
+  } else if (targetBase && targetBaseIndex !== undefined) {
+    const bases = [...state.bases]
+    bases[targetBaseIndex] = { ...targetBase, hp: hit(targetBase.hp) }
+    state.bases = bases
+  } else if (targetCamp && targetCampIndex !== undefined) {
+    const camps = [...state.camps]
+    camps[targetCampIndex] = { ...targetCamp, hp: hit(targetCamp.hp), lastHitBy: source }
+    state.camps = camps
+  } else if (targetBoss) {
+    state.boss = {
       ...state.boss,
       hp: hit(state.boss.hp),
       lastHitBy: source,
       aggroTargetId: source.id,
       aggroUntil: state.time + 8,
     }
-    : state.boss
+  }
   const appliedDamage = Math.min(Math.max(0, targetCurrentHp), Math.max(0, finalDamage))
-  state.arcanes = state.arcanes.map((arcane) => {
+  const updateArcane = (arcane: Arcane) => {
     const isTarget = arcane.id === id
     const isSource = sourceArcane?.id === arcane.id
     if (!isTarget && !isSource) return arcane
@@ -7544,7 +7684,17 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
       damageTaken: arcane.damageTaken + (isTarget ? appliedDamage : 0),
       stats: isTarget ? { ...arcane.stats, hp: hit(arcane.stats.hp) } : arcane.stats,
     }
-  })
+  }
+  if (targetArcaneIndex !== undefined || sourceArcaneIndex >= 0) {
+    const arcanes = [...state.arcanes]
+    if (targetArcaneIndex !== undefined) {
+      arcanes[targetArcaneIndex] = updateArcane(arcanes[targetArcaneIndex])
+    }
+    if (sourceArcaneIndex >= 0 && sourceArcaneIndex !== targetArcaneIndex) {
+      arcanes[sourceArcaneIndex] = updateArcane(arcanes[sourceArcaneIndex])
+    }
+    state.arcanes = arcanes
+  }
 }
 
 export function recordObjectiveLossIfDestroyed(
@@ -7857,6 +8007,19 @@ export function nearest<T extends { pos: Point }>(point: Point, entities: T[], r
     closestDistanceSquared = entityDistanceSquared
   }
 
+  return closest
+}
+
+export function nearestCreepAtIndices(point: Point, creeps: Creep[], indices: number[], range: number) {
+  let closest: Creep | undefined
+  let closestDistanceSquared = range * range
+  for (const index of indices) {
+    const creep = creeps[index]
+    const creepDistanceSquared = distanceSquared(point, creep.pos)
+    if (creepDistanceSquared > closestDistanceSquared) continue
+    closest = creep
+    closestDistanceSquared = creepDistanceSquared
+  }
   return closest
 }
 

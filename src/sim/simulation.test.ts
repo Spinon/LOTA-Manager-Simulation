@@ -15,6 +15,8 @@ import {
   getArcanePassiveCombatModifiers,
   getHeroDefinition,
   getEffectiveArcaneDamage,
+  getShopItemsForInventory,
+  getSimulationEntityIndexes,
   getSimpleSkillAffectedTargets,
   getSimpleSkillExecuteMultiplier,
   getSimpleSkillDamage,
@@ -64,6 +66,24 @@ const initialState = seededA
 let state: SimulationState = initialState
 
 {
+  const indexedState = tick(createInitialState('entity-index-regression'), simulationFrameSeconds, true)
+  const firstIndexes = getSimulationEntityIndexes(indexedState)
+  assert.equal(firstIndexes.arcane.get(indexedState.arcanes[0].id), 0, 'arcane ids should resolve to their live array index')
+  assert.equal(firstIndexes.creep.get(indexedState.creeps[0].id), 0, 'creep ids should resolve to their live array index')
+  const removedCreepId = indexedState.creeps[0].id
+  indexedState.creeps = indexedState.creeps.slice(1)
+  const rebuiltIndexes = getSimulationEntityIndexes(indexedState)
+  assert.strictEqual(rebuiltIndexes, firstIndexes, 'the reusable index container should survive wave changes')
+  assert.equal(rebuiltIndexes.creep.has(removedCreepId), false, 'removed creeps should leave the id index')
+  assert.equal(rebuiltIndexes.creep.get(indexedState.creeps[0].id), 0, 'remaining creeps should receive their new array index')
+
+  const inventory = [...indexedState.arcanes[0].items]
+  const resolvedItems = getShopItemsForInventory(inventory)
+  assert.strictEqual(getShopItemsForInventory(inventory), resolvedItems, 'unchanged inventory arrays should reuse resolved item definitions')
+  assert.notStrictEqual(getShopItemsForInventory([...inventory]), resolvedItems, 'a replaced inventory array should invalidate resolved item definitions')
+}
+
+{
   const cacheState = createInitialState('passive-cache-seed')
   const arcane = cacheState.arcanes[0]
   arcane.heroDefinitionId = 'h007_sword_tempest'
@@ -89,6 +109,28 @@ let state: SimulationState = initialState
   const healed = healArcaneDirectly(wounded, 120)
   assert.equal(healed.healingDone - wounded.healingDone, 80, 'healing should count only effective recovery')
   assert.equal(healed.healingReceived - wounded.healingReceived, 80, 'self healing should count as received healing')
+}
+
+{
+  const targetedDamageState = tick(createInitialState('targeted-damage-regression'), simulationFrameSeconds, true)
+  const creep = targetedDamageState.creeps[0]
+  const source = { id: 'test-environment', label: 'Test', team: creep.team === 'dawn' ? 'dusk' : 'dawn', damageType: 'pure' } as const
+  const collectionsBefore = {
+    arcanes: targetedDamageState.arcanes,
+    creeps: targetedDamageState.creeps,
+    towers: targetedDamageState.towers,
+    structures: targetedDamageState.structures,
+    bases: targetedDamageState.bases,
+    camps: targetedDamageState.camps,
+  }
+  damageEntity(targetedDamageState, creep.id, 10, source)
+  assert.notStrictEqual(targetedDamageState.creeps, collectionsBefore.creeps, 'damage should replace the targeted entity collection')
+  assert.equal(targetedDamageState.creeps[0].hp, creep.hp - 10, 'targeted creep damage should update the indexed entity')
+  assert.strictEqual(targetedDamageState.arcanes, collectionsBefore.arcanes, 'unrelated arcane collections should retain identity')
+  assert.strictEqual(targetedDamageState.towers, collectionsBefore.towers, 'unrelated tower collections should retain identity')
+  assert.strictEqual(targetedDamageState.structures, collectionsBefore.structures, 'unrelated structure collections should retain identity')
+  assert.strictEqual(targetedDamageState.bases, collectionsBefore.bases, 'unrelated base collections should retain identity')
+  assert.strictEqual(targetedDamageState.camps, collectionsBefore.camps, 'unrelated camp collections should retain identity')
 }
 
 {
