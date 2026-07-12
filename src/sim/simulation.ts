@@ -221,6 +221,9 @@ export type Camp = {
   stackCount: number
   lastStackAttemptAt: number
   lastHitBy?: CombatSource
+  aggroTargetId?: string
+  aggroUntil?: number
+  lastDamagedAt?: number
 }
 export type Boss = {
   id: string
@@ -236,6 +239,7 @@ export type Boss = {
   lastHitBy?: CombatSource
   aggroTargetId?: string
   aggroUntil?: number
+  lastDamagedAt?: number
 }
 export type CombatTarget = Arcane | Creep | Tower | Structure | Base | Camp | Boss
 export type RouteCreepTargetMode = 'attack' | 'vision'
@@ -1189,6 +1193,8 @@ export function createNeutralCamps(): Camp[] {
     ['rune-cliff', 'Guardas do Penhasco Sul', 'Guardas do Penhasco Norte', 'medium', 48, 88],
     ['echo-grove', 'Ecos do Bosque Oeste', 'Ecos do Bosque Leste', 'weak', 38, 78],
     ['scout-edge', 'Vigias da Borda Norte', 'Vigias da Borda Sul', 'weak', 13, 28],
+    ['crossroads', 'Predadores da Encruzilhada Oeste', 'Predadores da Encruzilhada Leste', 'medium', 27, 60],
+    ['outer-grove', 'Espiritos do Bosque Sul', 'Espiritos do Bosque Norte', 'weak', 58, 74],
   ]
   const campData = campPairs.flatMap(([id, dawnName, duskName, strength, x, y]) => [
     [`camp-${id}-dawn`, dawnName, strength, x, y],
@@ -1477,10 +1483,23 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
     return respawnArcaneIfReady(current, next.time, index)
   })
 
-  next.camps = next.camps.map((camp) => {
-    if (camp.hp > 0 || camp.respawn > next.time) return camp
+  next.camps = resetDisengagedNeutralCamps(next.camps, next.time).map((camp) => {
+    if (camp.hp > 0) {
+      return camp
+    }
+    if (camp.respawn > next.time) return camp
     const stats = getCampStats(camp.strength)
-    return { ...camp, hp: stats.hp, maxHp: stats.hp, damage: stats.damage, stackCount: 0, lastHitBy: undefined }
+    return {
+      ...camp,
+      hp: stats.hp,
+      maxHp: stats.hp,
+      damage: stats.damage,
+      stackCount: 0,
+      lastHitBy: undefined,
+      aggroTargetId: undefined,
+      aggroUntil: undefined,
+      lastDamagedAt: undefined,
+    }
   })
   next = processJungleStacks(next, previousTime)
   next.boss = updateBoss(next.boss, next.time, delta)
@@ -1510,6 +1529,21 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   next = resolveDeaths(next)
   next.winner = next.bases.find((base) => base.hp <= 0)?.team === 'dawn' ? 'dusk' : next.bases.find((base) => base.hp <= 0)?.team === 'dusk' ? 'dawn' : undefined
   return next
+}
+
+export function resetDisengagedNeutralCamps(camps: Camp[], time: number) {
+  return camps.map((camp) => {
+    const disengaged = camp.hp > 0 && camp.lastDamagedAt !== undefined && time - camp.lastDamagedAt >= 8
+    if (!disengaged) return camp
+    return {
+      ...camp,
+      hp: camp.maxHp,
+      lastHitBy: undefined,
+      aggroTargetId: undefined,
+      aggroUntil: undefined,
+      lastDamagedAt: undefined,
+    }
+  })
 }
 
 export function cloneSimulationStateForTick(state: SimulationState): SimulationState {
@@ -2058,10 +2092,37 @@ export function getBestJungleCampForArcane(state: SimulationState, arcane: Arcan
     .filter((camp) => camp.hp > 0 && distance(arcane.pos, camp.pos) <= range)
     .map((camp) => ({
       camp,
+      assessment: getCampClearAssessment(state, arcane, camp),
       score: getCampFarmDesireScore(state, arcane, camp, visibleEnemies),
     }))
-    .filter(({ score }) => score > 8)
-    .sort((a, b) => b.score - a.score)[0]?.camp
+    .filter(({ assessment, score }) => assessment.canClear && score > 8)
+    .sort((a, b) => (
+      b.score - a.score ||
+      b.assessment.healthAfterClear - a.assessment.healthAfterClear
+    ))[0]?.camp
+}
+
+export function getCampClearAssessment(state: SimulationState, arcane: Arcane, camp: Camp) {
+  const effectiveDamage = Math.max(1, getEffectiveArcaneDamage(state, arcane))
+  const attackCooldown = Math.max(0.25, getEffectiveArcaneAttackCooldown(state, arcane))
+  const damagePerSecond = effectiveDamage / attackCooldown
+  const clearSeconds = camp.hp / Math.max(20, damagePerSecond)
+  const incomingDamage = Math.max(1, resolveIncomingArcaneDamage(state, arcane, camp.damage, 'physical'))
+  const expectedHits = Math.max(1, Math.ceil(clearSeconds / 1.35))
+  const expectedDamage = incomingDamage * expectedHits
+  const healthAfterClear = arcane.stats.hp - expectedDamage
+  const reserveHp = Math.max(arcane.stats.maxHp * 0.22, incomingDamage * 1.5)
+  const canClear = clearSeconds <= 45 && healthAfterClear >= reserveHp
+
+  return {
+    canClear,
+    clearSeconds,
+    incomingDamage,
+    expectedHits,
+    expectedDamage,
+    healthAfterClear,
+    reserveHp,
+  }
 }
 
 export function getCampFarmDesireScore(state: SimulationState, arcane: Arcane, camp: Camp, visibleEnemies: Arcane[]) {
@@ -2113,9 +2174,9 @@ export function getEstimatedLanePushGpm(arcane: Arcane, creeps: Creep[]) {
 
 export function getEstimatedJungleFarmGpm(state: SimulationState, arcane: Arcane, camp: Camp) {
   const rewards = getCampRewards(camp, state.time)
-  const effectiveDamage = Math.max(1, getEffectiveArcaneDamage(state, arcane))
-  const damagePerSecond = effectiveDamage / Math.max(0.25, getEffectiveArcaneAttackCooldown(state, arcane))
-  const clearSeconds = clampNumber(camp.hp / Math.max(20, damagePerSecond), 5, 38)
+  const assessment = getCampClearAssessment(state, arcane, camp)
+  if (!assessment.canClear) return 0
+  const clearSeconds = clampNumber(assessment.clearSeconds, 5, 45)
   const travelSeconds = distance(arcane.pos, camp.pos) / Math.max(0.8, arcane.stats.moveSpeed)
   const dangerTax = getEnemyActionThreatScore(state, arcane, camp.pos) * 0.08
   const cycleSeconds = clampNumber(clearSeconds + travelSeconds + dangerTax, 8, 58)
@@ -2310,6 +2371,21 @@ export function updateBoss(boss: Boss, time: number, delta: number): Boss {
       lastHitBy: undefined,
       aggroTargetId: undefined,
       aggroUntil: undefined,
+      lastDamagedAt: undefined,
+    }
+  }
+
+  if (boss.lastDamagedAt !== undefined && time - boss.lastDamagedAt >= 12) {
+    return {
+      ...boss,
+      hp: stats.hp,
+      maxHp: stats.hp,
+      damage: stats.damage,
+      range: stats.range,
+      lastHitBy: undefined,
+      aggroTargetId: undefined,
+      aggroUntil: undefined,
+      lastDamagedAt: undefined,
     }
   }
 
@@ -3912,7 +3988,14 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     const lowHp = hpRatio < Math.max(0.22, 0.36 - emergencyRecovery * 0.6)
     const alreadyPressuringTower = arcane.macroDecision.startsWith('Pressionar torre') || arcane.microDecision.startsWith('Batendo torre')
     const towerThreat = nearest(arcane.pos, state.towers.filter((tower) => tower.team !== arcane.team && tower.hp > 0), 10.5)
-    const towerDiveRisk = towerThreat && (!alliedLaneCreepNearTower || hpRatio < (alreadyPressuringTower ? 0.62 : 0.82))
+    const towerTankCandidate = enemyTower ? getTowerTankCandidate(state, arcane.team, enemyTower) : undefined
+    const towerTankCommitted = Boolean(enemyTower && enemyTower.aggroTargetId === towerTankCandidate?.id && (enemyTower.aggroUntil ?? 0) > state.time)
+    const canUseTowerTank = towerTankCandidate !== undefined && (towerTankCandidate.id === arcane.id || towerTankCommitted)
+    const threatTankCandidate = towerThreat ? getTowerTankCandidate(state, arcane.team, towerThreat) : undefined
+    const threatTankCommitted = Boolean(towerThreat && towerThreat.aggroTargetId === threatTankCandidate?.id && (towerThreat.aggroUntil ?? 0) > state.time)
+    const protectedTowerThreat = towerThreat ? isStructureBackdoorProtectedForTeam(state, arcane.team, towerThreat) : false
+    const canUseThreatTank = !protectedTowerThreat && threatTankCandidate !== undefined && (threatTankCandidate.id === arcane.id || threatTankCommitted)
+    const towerDiveRisk = towerThreat && !canUseThreatTank && (!alliedLaneCreepNearTower || hpRatio < (alreadyPressuringTower ? 0.62 : 0.82))
     const towerNumbers = enemyTower ? getLocalNumbers(state, arcane.team, enemyTower.pos, enemyTower.tier === 3 ? 20 : 16, visibleEnemies) : undefined
     const nextAdvancePoint = getLaneAdvancePoint(arcane, path, pathIndex)
     const nextAdvanceBlockedByTower = laneBlocker &&
@@ -3920,7 +4003,12 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       laneProgress(nextAdvancePoint, path) >= laneProgress(laneBlocker.pos, path) - 0.015
     const advanceBlockedByTower = laneBlocker &&
       !alliedLaneCreepNearTower &&
+      !(blockingTower && getTowerTankCandidate(state, arcane.team, blockingTower)) &&
       (distance(arcane.pos, laneBlocker.pos) <= 25 || nextAdvanceBlockedByTower)
+    const laneBlockerProtected = laneBlocker ? isStructureBackdoorProtectedForTeam(state, arcane.team, laneBlocker) : false
+    const cannotAdvanceLane = laneBlocker !== undefined &&
+      !alliedLaneCreepNearTower &&
+      (laneBlockerProtected || !blockingTower || getTowerTankCandidate(state, arcane.team, blockingTower) === undefined)
     const needsBaseRecovery = atBase && (
       arcane.stats.hp < arcane.stats.maxHp * 0.84 ||
       arcane.stats.mana < arcane.stats.maxMana * 0.65
@@ -3990,7 +4078,7 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       !modeWantsObjective
     const wantsWavePush = !isLaningPhase || execution.executedMode === 'push_lane' || teamPlanType === 'defend_tower'
     const canPressureTower = enemyTower &&
-      alliedLaneCreepNearTower &&
+      (alliedLaneCreepNearTower || (!isStructureBackdoorProtectedForTeam(state, arcane.team, enemyTower) && canUseTowerTank)) &&
       hpRatio > (alreadyPressuringTower ? enemyTower.tier === 3 ? 0.74 : 0.68 : modeWantsObjective ? enemyTower.tier === 3 ? 0.82 : 0.76 : enemyTower.tier === 3 ? 0.9 : 0.84) &&
       effectiveDanger < (alreadyPressuringTower ? enemyTower.tier === 3 ? 58 : 64 : modeWantsObjective ? enemyTower.tier === 3 ? 48 : 56 : enemyTower.tier === 3 ? 34 : 42) &&
       (towerNumbers?.advantage ?? -99) >= (alreadyPressuringTower ? enemyTower.tier === 3 ? 0.25 : -0.65 : modeWantsObjective ? enemyTower.tier === 3 ? 0.55 : -0.35 : enemyTower.tier === 3 ? 1.1 : -0.15) &&
@@ -4019,6 +4107,14 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       target = ownBase
       macroDecision = 'Recuar'
       microDecision = effectiveDanger >= 68 || modeWantsRetreat ? 'Recuando por perigo alto' : 'Recuando para curar'
+    } else if (cannotAdvanceLane && !teamCall && !modeWantsFight && !modeWantsObjective && economyCamp && hpRatio > 0.68 && effectiveDanger < 52) {
+      target = mapEdgeApproachPoint(economyCamp.pos)
+      macroDecision = 'Farmar enquanto aguarda wave'
+      microDecision = 'Limpando campo neutro'
+    } else if (cannotAdvanceLane && !teamCall && !modeWantsFight && !modeWantsObjective && laneBlocker) {
+      target = safeLaneObjectiveHoldPoint(arcane, path, laneBlocker)
+      macroDecision = 'Aguardar wave'
+      microDecision = laneBlockerProtected ? 'Mantendo distancia do backdoor' : 'Mantendo distancia da torre'
     } else if (towerDiveRisk) {
       target = safeLaneRetreatPoint(arcane, path, towerThreat)
       macroDecision = alliedLaneCreep ? 'Segurar rota' : 'Recuar'
@@ -4060,9 +4156,15 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       const hasSiegeWave = !requiresSiegeWave || state.creeps.some((creep) => (
         creep.team === arcane.team && creep.hp > 0 && distance(creep.pos, teamCallObjectivePoint) <= 14
       ))
+      const calledTowerTank = calledTower && !isStructureBackdoorProtectedForTeam(state, arcane.team, calledTower)
+        ? getTowerTankCandidate(state, arcane.team, calledTower)
+        : undefined
+      const calledTowerTankCommitted = calledTower?.aggroTargetId === calledTowerTank?.id && (calledTower?.aggroUntil ?? 0) > state.time
+      const canExecuteTankSiege = calledTowerTank !== undefined && (arcane.id === calledTowerTank.id || calledTowerTankCommitted)
+      const hasSiegeAccess = hasSiegeWave || canExecuteTankSiege
       const readyToExecuteCall = teamCall.kind === 'boss'
         ? bossReadyToHit && alliesAtCall >= requiredAllies
-        : !farFromGroup && hasSiegeWave && alliesAtCall >= requiredAllies && (callAge > 2.5 || distance(arcane.pos, teamCallPoint) <= 6)
+        : !farFromGroup && hasSiegeAccess && alliesAtCall >= requiredAllies && (callAge > 2.5 || distance(arcane.pos, teamCallPoint) <= 6)
       target = farFromGroup ? gatherPoint : readyToExecuteCall ? teamCallObjectivePoint : teamCallPoint
       macroDecision = isCaller
         ? readyToExecuteCall
@@ -6692,6 +6794,10 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
       ?? nearestAliveEnemyArcane(tower.pos, next.arcanes, tower.team, next.time, tower.range)
     if (target) {
       tower.lastAttack = next.time
+      if ('player' in target) {
+        tower.aggroTargetId = target.id
+        tower.aggroUntil = next.time + 2.6
+      }
       next.effects = addAttackEffect(next.effects, {
         kind: 'tower',
         targetKind: getCombatTargetKind(target),
@@ -6740,9 +6846,23 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   for (const camp of next.camps) {
     if (camp.hp <= 0) continue
     if (next.time < camp.lastAttack + 1.35) continue
-    const target = nearestAliveArcane(camp.pos, next.arcanes, next.time, camp.range)
+    const leashRange = Math.max(8, camp.range + 2.5)
+    const aggroTarget = camp.aggroUntil && camp.aggroUntil > next.time
+      ? next.arcanes.find((arcane) => (
+          arcane.id === camp.aggroTargetId &&
+          arcane.stats.hp > 0 &&
+          arcane.respawn <= next.time &&
+          distance(camp.pos, arcane.pos) <= leashRange
+        ))
+      : undefined
+    const target = aggroTarget
+      ?? (camp.aggroUntil && camp.aggroUntil > next.time
+        ? nearestAliveArcane(camp.pos, next.arcanes, next.time, leashRange)
+        : nearestAliveArcane(camp.pos, next.arcanes, next.time, camp.range))
     if (target) {
       camp.lastAttack = next.time
+      camp.aggroTargetId = target.id
+      camp.aggroUntil = next.time + 8
       next.effects = addAttackEffect(next.effects, {
         kind: 'neutral',
         targetKind: getCombatTargetKind(target),
@@ -6775,14 +6895,18 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     next.boss.aggroUntil > next.time &&
     next.time >= next.boss.lastAttack + 1.05
   ) {
-    const target = next.arcanes.find((arcane) => (
+    const bossLeashRange = Math.max(10, next.boss.range + 3.5)
+    const aggroTarget = next.arcanes.find((arcane) => (
       arcane.id === next.boss.aggroTargetId &&
       arcane.stats.hp > 0 &&
       arcane.respawn <= next.time &&
-      distance(next.boss.pos, arcane.pos) <= next.boss.range
+      distance(next.boss.pos, arcane.pos) <= bossLeashRange
     ))
+    const target = aggroTarget ?? nearestAliveArcane(next.boss.pos, next.arcanes, next.time, bossLeashRange)
     if (target) {
       next.boss.lastAttack = next.time
+      next.boss.aggroTargetId = target.id
+      next.boss.aggroUntil = next.time + 8
       next.effects = addAttackEffect(next.effects, {
         kind: 'neutral',
         targetKind: getCombatTargetKind(target),
@@ -7820,15 +7944,23 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
     state.bases = bases
   } else if (targetCamp && targetCampIndex !== undefined) {
     const camps = [...state.camps]
-    camps[targetCampIndex] = { ...targetCamp, hp: hit(targetCamp.hp), lastHitBy: source }
+    camps[targetCampIndex] = {
+      ...targetCamp,
+      hp: hit(targetCamp.hp),
+      lastHitBy: source,
+      aggroTargetId: sourceArcane?.id,
+      aggroUntil: state.time + 8,
+      lastDamagedAt: state.time,
+    }
     state.camps = camps
   } else if (targetBoss) {
     state.boss = {
       ...state.boss,
       hp: hit(state.boss.hp),
       lastHitBy: source,
-      aggroTargetId: source.id,
+      aggroTargetId: sourceArcane?.id ?? source.id,
       aggroUntil: state.time + 8,
+      lastDamagedAt: state.time,
     }
   }
   const appliedDamage = Math.min(Math.max(0, targetCurrentHp), Math.max(0, finalDamage))
@@ -8082,6 +8214,49 @@ export function getStructureSiegeEstimate(state: SimulationState, team: TeamId, 
     netSiegeDps,
     timeToKill: expectedTimeToKillStructure(target.hp, netSiegeDps),
   }
+}
+
+export function getTowerTankAssessment(state: SimulationState, arcane: Arcane, tower: Tower) {
+  const protectedByBackdoor = isStructureBackdoorProtectedForTeam(state, arcane.team, tower)
+  const incomingDamage = Math.max(1, resolveIncomingArcaneDamage(state, arcane, tower.damage, 'physical'))
+  const reserveRatio = tower.tier === 3 ? 0.36 : tower.tier === 2 ? 0.3 : 0.24
+  const reserveHp = Math.max(arcane.stats.maxHp * reserveRatio, incomingDamage * 1.25)
+  const tankableHp = Math.max(0, arcane.stats.hp - reserveHp)
+  const survivableHits = Math.floor(tankableHp / incomingDamage)
+  const tankWindow = survivableHits * 1.2
+  const siege = getStructureSiegeEstimate(state, arcane.team, tower)
+  const canTank = !protectedByBackdoor &&
+    arcane.stats.hp / Math.max(1, arcane.stats.maxHp) >= 0.62 &&
+    survivableHits >= 3 &&
+    Number.isFinite(siege.timeToKill) &&
+    siege.timeToKill <= 40 &&
+    tankWindow >= siege.timeToKill + 1.2
+
+  return {
+    canTank,
+    incomingDamage,
+    survivableHits,
+    tankWindow,
+    timeToKill: siege.timeToKill,
+    reserveHp,
+    protectedByBackdoor,
+  }
+}
+
+export function getTowerTankCandidate(state: SimulationState, team: TeamId, tower: Tower) {
+  return state.arcanes
+    .filter((arcane) => (
+      arcane.team === team &&
+      arcane.stats.hp > 0 &&
+      arcane.respawn <= state.time &&
+      distance(arcane.pos, tower.pos) <= 26
+    ))
+    .map((arcane) => ({ arcane, assessment: getTowerTankAssessment(state, arcane, tower) }))
+    .filter(({ assessment }) => assessment.canTank)
+    .sort((a, b) => (
+      b.assessment.tankWindow - a.assessment.tankWindow ||
+      b.arcane.stats.hp - a.arcane.stats.hp
+    ))[0]?.arcane
 }
 
 export function getStructureIncomingDamage(
@@ -8632,6 +8807,13 @@ export function safeLaneRetreatPoint(arcane: Arcane, path: Point[], tower: Tower
   }
 
   return clampToMapBounds(point)
+}
+
+export function safeLaneObjectiveHoldPoint(arcane: Arcane, path: Point[], objective: Tower | Structure) {
+  const objectiveDistance = getLaneDistanceAlongPath(objective.pos, path)
+  const safeDistance = objective.range + getEntityCollisionRadius(arcane) + 3.2
+  const targetDistance = Math.max(0, objectiveDistance - safeDistance)
+  return clampToMapBounds(formationPoint(getLanePointAtDistance(path, targetDistance), arcane.id))
 }
 
 export function projectPointToSegment(point: Point, start: Point, end: Point): Point {

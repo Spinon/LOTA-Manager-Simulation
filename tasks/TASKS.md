@@ -250,6 +250,26 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
+### [x] T14.1 - Siege sem wave e ecossistema de neutros
+
+> Concluída em 2026-07-12 - Implementei tank calculado de torre sem backdoor, espera estável com desvio para farm viável, 16 campos simétricos, retaliação/leash, avaliação de clear e reset de campos/Boss por desengage.
+
+**Objetivo**: eliminar a oscilação diante de torres protegidas, permitir siege sem creeps quando houver tank seguro e tornar campos/Boss ameaças consistentes, avaliáveis e capazes de resetar.
+
+**Escopo**:
+- Permitir ataque a torre sem wave apenas sem backdoor e quando um Arcane aliado conseguir absorver o dano pelo tempo estimado de siege com reserva de vida; o tank entra primeiro e o restante acompanha após o aggro estabilizar.
+- Quando backdoor estiver ativo ou ninguém puder tankar, impedir o ciclo de entrar/sair do range: escolher farm neutro viável, outra fonte segura de recursos ou um ponto estável fora da torre enquanto aguarda a wave.
+- Aumentar moderadamente a quantidade de campos neutros, preservando simetria do mapa e o sistema de stacks.
+- Rebalancear dano/alcance agregado dos campos e garantir retaliação contra quem os agride.
+- Fazer a IA estimar tempo de clear, dano recebido e reserva de HP antes de escolher um campo, respeitando força e stacks.
+- Resetar HP e aggro de campos e Boss após uma janela sem receber dano; Boss deve retargetar agressores próximos durante o combate.
+
+**Critérios**: testes para tank de torre, bloqueio por backdoor, cessação do "samba", clear viável/inviável, retaliação e reset; mapa simétrico com novos campos; partida e inspector funcionais; testes, lint e build verdes.
+
+**Medição**: benchmark determinístico de 300s fechou em mediana de 80,0x tempo real; a amostra de duas partidas teve uma finalização orgânica aos 58,0min e uma chegada ao watchdog com a base inimiga em 205 HP, mantendo a conversão tardia como alvo do rebalance contínuo. Testes cobrem siege permitido/bloqueado, clear seguro/inviável, simetria, retaliação e reset; testes, lint e build verdes.
+
+---
+
 ### [ ] T15 - Auditoria e implementação integral de skills
 
 **Objetivo**: verificar todas as skills importadas e garantir que cada uma possua execução funcional, incluindo dano, targeting, cooldown, mana, scaling, passivas, summons e todos os efeitos favoráveis/adversos e status effects descritos.

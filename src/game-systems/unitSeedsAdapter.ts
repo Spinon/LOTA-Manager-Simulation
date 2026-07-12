@@ -82,10 +82,12 @@ export function getLaneCreepReward(kind: LaneCreepKind, gameTimeSeconds: number,
 export function getNeutralCampStats(tier: CampTier) {
   const seeds = getNeutralSeedsForTier(tier)
   const leader = seeds.reduce((best, seed) => (seed.baseStats.maxHealth > best.baseStats.maxHealth ? seed : best), seeds[0])
+  const aggregateDamage = seeds.reduce((sum, seed) => sum + average(seed.baseStats.damageMin, seed.baseStats.damageMax), 0)
+  const minimumRetaliationRange = tier === 'ancient' || tier === 'large' ? 6 : tier === 'medium' ? 5.6 : 5.2
   return {
     hp: seeds.reduce((sum, seed) => sum + seed.baseStats.maxHealth, 0),
-    damage: Math.round(seeds.reduce((sum, seed) => sum + average(seed.baseStats.damageMin, seed.baseStats.damageMax), 0) / Math.max(1, seeds.length)),
-    range: convertRange(Math.max(...seeds.map((seed) => seed.baseStats.attackRange))),
+    damage: Math.round(aggregateDamage * 0.62),
+    range: Math.max(minimumRetaliationRange, convertRange(Math.max(...seeds.map((seed) => seed.baseStats.attackRange)))),
     level: tier === 'ancient' || tier === 'large' ? 3 : tier === 'medium' ? 2 : 1,
     leaderSeedId: leader.id,
   }

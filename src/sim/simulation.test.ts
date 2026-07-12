@@ -14,6 +14,7 @@ import {
   enrichTeamPlanWithMapTarget,
   getGamePhase,
   getArcanePassiveCombatModifiers,
+  getCampClearAssessment,
   getHeroDefinition,
   getHigherPriorityFarmAlly,
   getCreepXpShare,
@@ -28,16 +29,20 @@ import {
   getLastHitTarget,
   getLastHitCandidateFromCreeps,
   getRoleFarmPriority,
+  getTowerTankAssessment,
+  getTowerTankCandidate,
   hasTimedEffect,
   healArcaneDirectly,
   isPositiveSimpleSkill,
   loadGameData,
   materializeMatchRenderFrame,
+  resetDisengagedNeutralCamps,
   resolveDeaths,
   resolveCombat,
   simulationFrameSeconds,
   tryCastSimpleSkill,
   tick,
+  updateBoss,
   type Arcane,
   type Camp,
   type Creep,
@@ -74,6 +79,85 @@ assert.ok(getRoleFarmPriority('Safe Lane') > getRoleFarmPriority('Mid'))
 assert.ok(getRoleFarmPriority('Mid') > getRoleFarmPriority('Offlane'))
 assert.ok(getRoleFarmPriority('Offlane') > getRoleFarmPriority('Greedy Support'))
 assert.ok(getRoleFarmPriority('Greedy Support') > getRoleFarmPriority('Dedicated Support'))
+
+{
+  const neutralState = createInitialState('neutral-ecosystem-test')
+  neutralState.time = 1200
+  assert.equal(neutralState.camps.length, 16, 'the expanded jungle should contain eight symmetric camp pairs')
+  for (const camp of neutralState.camps) {
+    const mirrored = neutralState.camps.find((candidate) => (
+      candidate.id !== camp.id &&
+      candidate.strength === camp.strength &&
+      candidate.pos.x === 100 - camp.pos.x &&
+      candidate.pos.y === 100 - camp.pos.y
+    ))
+    assert.ok(mirrored, `${camp.id} should have a symmetric counterpart`)
+  }
+
+  const farmer = neutralState.arcanes[0]
+  const camp = neutralState.camps.find((candidate) => candidate.strength === 'weak')!
+  farmer.stats.hp = farmer.stats.maxHp = 5000
+  farmer.stats.damage = farmer.stats.damageMin = farmer.stats.damageMax = 500
+  farmer.stats.attackSpeed = 0.5
+  assert.equal(getCampClearAssessment(neutralState, farmer, camp).canClear, true, 'a strong healthy core should accept a weak camp')
+
+  farmer.stats.hp = farmer.stats.maxHp = 350
+  farmer.stats.damage = farmer.stats.damageMin = farmer.stats.damageMax = 12
+  farmer.stats.attackSpeed = 2.5
+  const stackedCamp = { ...camp, hp: camp.maxHp * 4, maxHp: camp.maxHp * 4, damage: camp.damage * 2 }
+  assert.equal(getCampClearAssessment(neutralState, farmer, stackedCamp).canClear, false, 'a fragile Arcane should reject an unsafe stacked camp')
+
+  const damagedCamp = { ...camp, hp: camp.maxHp / 2, lastDamagedAt: 10, aggroTargetId: farmer.id, aggroUntil: 18 }
+  const resetCamp = resetDisengagedNeutralCamps([damagedCamp], 18)[0]
+  assert.equal(resetCamp.hp, resetCamp.maxHp, 'a disengaged camp should restore its full current-stack health')
+  assert.equal(resetCamp.aggroTargetId, undefined, 'a disengaged camp should clear aggro')
+
+  const resetBoss = updateBoss({ ...neutralState.boss, hp: neutralState.boss.maxHp / 2, lastDamagedAt: 10 }, 22, 0)
+  assert.equal(resetBoss.hp, resetBoss.maxHp, 'the Boss should restore full health after disengaging')
+  assert.equal(resetBoss.aggroTargetId, undefined, 'the Boss should clear aggro after disengaging')
+}
+
+{
+  const siegeState = createInitialState('tower-tank-test')
+  siegeState.time = 600
+  siegeState.creeps = []
+  const tierOne = siegeState.towers.find((tower) => tower.team === 'dusk' && tower.tier === 1)!
+  const tierTwo = siegeState.towers.find((tower) => tower.team === 'dusk' && tower.tier === 2)!
+  tierOne.hp = 600
+  tierTwo.hp = 600
+  const allies = siegeState.arcanes.filter((arcane) => arcane.team === 'dawn')
+  allies.forEach((arcane, index) => {
+    arcane.pos = { x: tierOne.pos.x + index * 0.2, y: tierOne.pos.y }
+    arcane.stats.hp = arcane.stats.maxHp = 10000
+    arcane.stats.damage = arcane.stats.damageMin = arcane.stats.damageMax = 600
+    arcane.stats.attackSpeed = 0.5
+  })
+  const tank = getTowerTankCandidate(siegeState, 'dawn', tierOne)
+  assert.ok(tank, 'a sufficiently durable hero should unlock an unprotected no-wave siege')
+  assert.equal(getTowerTankAssessment(siegeState, tank!, tierOne).canTank, true)
+
+  allies.forEach((arcane) => { arcane.pos = { ...tierTwo.pos } })
+  assert.equal(getTowerTankAssessment(siegeState, allies[0], tierTwo).protectedByBackdoor, true)
+  assert.equal(getTowerTankCandidate(siegeState, 'dawn', tierTwo), undefined, 'backdoor must block a no-wave tank siege')
+}
+
+{
+  const retaliationState = createInitialState('neutral-retaliation-test')
+  retaliationState.arcanes.forEach((arcane) => { arcane.pos = { x: 1, y: 1 } })
+  const attacker = retaliationState.arcanes[0]
+  const camp = retaliationState.camps[0]
+  attacker.pos = { x: camp.pos.x + Math.min(7, camp.range + 1.5), y: camp.pos.y }
+  const hpBefore = attacker.stats.hp
+  damageEntity(retaliationState, camp.id, 1, {
+    id: attacker.id,
+    label: attacker.player,
+    team: attacker.team,
+    damageType: 'physical',
+  })
+  resolveCombat(retaliationState, createTickFrameContext())
+  assert.ok(attacker.stats.hp > 0)
+  assert.ok(retaliationState.arcanes[0].stats.hp < hpBefore, 'a ranged aggressor inside the leash should receive neutral retaliation')
+}
 
 {
   const farmState = createInitialState('farm-priority-test')
