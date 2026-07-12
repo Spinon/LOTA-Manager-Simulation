@@ -211,11 +211,66 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T13 - Armazenamento binário do replay
+### [x] T13 - Armazenamento binário do replay
+
+> Concluída em 2026-07-12 - Frames numéricos agora são armazenados em typed arrays por blocos, IDs de creeps usam dicionário compartilhado e o Worker transfere os buffers sem cópia. Apenas o frame ativo e o snapshot de inspector necessário são materializados.
 
 **Especificação**: P6 em `tasks/PERFORMANCE_TASKS.md`.
 
 **Critérios**: heap abaixo de 200 MB para 50 minutos; seek e reprodução completos; visual e inspector idênticos.
+
+**Medição** (Chromium headless, viewport 1440x1000): replay completo de 50:00 com 15.001 frames ocupou 89,1 MB em buffers e 157,1 MB de heap total. Reprodução contínua, seek para 20:00, inspector e dois canvases foram validados; testes, lint e build verdes.
+
+---
+
+### [ ] T14 - Rebalance de progressão, duração e teamplay
+
+**Objetivo**: remover o encerramento por limite de tempo e fazer as partidas terminarem organicamente pela IA, com ritmo e prioridades próximos de um MOBA competitivo.
+
+**Regras de duração**:
+- Não existe hard cap de tempo que declare empate ou encerre a simulação; a partida termina somente com a destruição da base.
+- 60 minutos é um soft cap de balanceamento: partidas podem passar disso, mas a distribuição deve convergir para encerramento por decisões, scaling e objetivos.
+- No late game, Arcanes devem valorizar mais a própria vida, buybacks/respawns longos, visão e vantagem numérica antes de highground.
+- Finalizações devem privilegiar teamplay: agrupar, controlar visão, converter boss/pickoff e sincronizar waves antes de atacar T3/T4/base.
+
+**Farm e progressão**:
+- Prioridade econômica por role, nesta ordem: Safe Lane (HC) > Mid > Offlane > Greedy Support (pos. 4) > Dedicated Support (pos. 5).
+- Essa ordem afeta escolha de wave/campo, cessão de last hit, stacks, vontade de farmar e participação dos supports no espaço seguro.
+- Cores devem manter aproximadamente 1 nível por minuto até o nível 6 e alcançar em torno do nível 25 aos 40 minutos; calibrar XP de lane, jungle, kills e distribuição por proximidade sem simplesmente conceder níveis artificiais.
+- Supports continuam abaixo dos cores, mas não podem ficar inviáveis para teamfights e utilidade.
+
+**Validação**:
+- Criar relatório em lote com duração p50/p90, % acima de 60min, nível e GPM por role aos 6/10/20/40min, mortes no late game e conversão de vantagem em vitória.
+- Adicionar testes para prioridade de farm por role, proteção da vida no late game, agrupamento de highground e ausência de encerramento artificial.
+- Rodar lote suficiente para detectar partidas travadas e ajustar IA/economia até o soft cap funcionar por balanceamento.
+
+---
+
+### [ ] T15 - Auditoria e implementação integral de skills
+
+**Objetivo**: verificar todas as skills importadas e garantir que cada uma possua execução funcional, incluindo dano, targeting, cooldown, mana, scaling, passivas, summons e todos os efeitos favoráveis/adversos e status effects descritos.
+
+**Escopo**:
+- Gerar matriz automática hero × skill × mecânicas/tags × implementação runtime.
+- Classificar cada skill como completa, parcial, aproximada intencionalmente ou ausente; não considerar uma skill implementada apenas porque produz dano genérico.
+- Cobrir stun, slow, silence, root, leash, fear, taunt, sleep, hex, disarm, break, mute, dispels, imunidades, barriers, DoT/HoT, auras, deslocamentos, channeling, transformações, summons e interações especiais.
+- Implementar o que estiver faltando e adicionar testes por família mecânica, além de auditoria que falha quando uma skill nova não possui suporte declarado.
+
+**Critérios**: 100% das skills catalogadas com status explícito; nenhuma skill ativa sem custo/cooldown/efeito; relatório persistido e testes/lint/build verdes.
+
+---
+
+### [ ] T16 - Auditoria e implementação integral de itens
+
+**Objetivo**: verificar todos os itens importados, incluindo consumíveis, e garantir funcionamento completo de atributos, passivas, procs, auras, toggles, ativos, custos, cooldowns, charges, targeting e decisões de compra/uso da IA.
+
+**Escopo**:
+- Gerar matriz automática item × efeitos/tags × implementação runtime e separar itens completos, parciais, aproximados e ausentes.
+- Validar inventário único de seis slots, consumo/charges, receitas/upgrades, restrições melee/ranged, stacking e interações com dispel, imunidade, barriers e status effects.
+- Verificar se bots compram e usam consumíveis/ativos conforme valor esperado, fase, role, perigo e oportunidade, sem inventário paralelo.
+- Implementar lacunas e adicionar testes por família de item e auditoria que falha para itens novos sem suporte declarado.
+
+**Critérios**: 100% dos itens catalogados com status explícito; nenhum ativo sem efeito/custo/cooldown; consumíveis integrados ao inventário normal; relatório persistido e testes/lint/build verdes.
 
 ---
 

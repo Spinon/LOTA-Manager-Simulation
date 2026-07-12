@@ -65,6 +65,8 @@ Status: concluída em 2026-07-12. Entidades de cooldown fixo usam `lastAttack + 
 
 ### P6 / T13: replay binário e memória
 
+Status: concluída em 2026-07-12. O Worker codifica blocos em typed arrays transferíveis, mantém um dicionário incremental para IDs e envia extras esparsos como UTF-8 indexado. A UI retém os blocos e decodifica somente o frame ativo. Em um replay completo de 50:00 com 15.001 frames, os buffers ocuparam 89,1 MB e o heap total mediu 157,1 MB; seek, inspector e reprodução foram preservados.
+
 - Armazenar canais numéricos em typed arrays por blocos.
 - Dicionarizar strings e transferir blocos com `ArrayBuffer` transferível.
 - Manter seek, inspector e reprodução completa sem depender do Worker após o carregamento.

@@ -90,6 +90,7 @@ import {
   XP_TO_REACH_LEVEL
 } from './sim/simulation'
 import type { MatchWorkerResponse } from './sim/matchWorker'
+import { ReplayFrameStore } from './sim/replayStore'
 import './App.css'
 
 type PlaybackStatus = 'loading' | 'ready' | 'buffering' | 'ended' | 'error'
@@ -102,7 +103,7 @@ type StandbyMatch = {
   seed: string
   worker: Worker
   runId: number
-  frames: MatchRenderFrame[]
+  frames: ReplayFrameStore
   workerDone: boolean
   simTime: number
   staticData?: MatchStaticData
@@ -193,13 +194,6 @@ function materializeFrame(frame: MatchRenderFrame, staticData: MatchStaticData |
   return materializeMatchRenderFrame(frame, staticData, details)
 }
 
-function findFrameDetails(frames: MatchRenderFrame[], index: number) {
-  for (let cursor = index; cursor >= 0; cursor -= 1) {
-    if (frames[cursor].details) return frames[cursor].details
-  }
-  return undefined
-}
-
 function paintBufferInfoThrottled(
   lastPaintRef: React.MutableRefObject<number>,
   setBufferInfo: React.Dispatch<React.SetStateAction<{ simTime: number; frameCount: number; bufferAhead: number }>>,
@@ -230,7 +224,7 @@ function App() {
   const [matchWinner, setMatchWinner] = useState<TeamId | undefined>(undefined)
   const [winnerRevealed, setWinnerRevealed] = useState(false)
   const [precomputeDone, setPrecomputeDone] = useState(false)
-  const frameBufferRef = useRef<MatchRenderFrame[]>([])
+  const frameBufferRef = useRef(new ReplayFrameStore())
   const staticDataRef = useRef<MatchStaticData | undefined>(undefined)
   const activeDetailsRef = useRef<MatchRenderDetails | undefined>(undefined)
   const activeTransportFrameRef = useRef<MatchRenderFrame | undefined>(undefined)
@@ -259,6 +253,7 @@ function App() {
       startupWaitDone,
       startupWaitProgress,
       frameCount: frameBufferRef.current.length,
+      replayBytes: frameBufferRef.current.estimatedByteLength,
       cursor: playbackCursorRef.current,
       workerDone: workerDoneRef.current,
       standby: standbyRef.current
@@ -298,7 +293,7 @@ function App() {
     const runId = adopting ? adopting.runId : (runSeqRef.current += 1)
     runIdRef.current = runId
     workerDoneRef.current = adopting?.workerDone ?? false
-    frameBufferRef.current = adopting?.frames ?? []
+    frameBufferRef.current = adopting?.frames ?? new ReplayFrameStore()
     staticDataRef.current = adopting?.staticData
     activeTransportFrameRef.current = undefined
     activeFrameRevisionRef.current = 0
@@ -327,7 +322,7 @@ function App() {
     const adoptedReady = Boolean(adopting?.staticData && adopting.frames.length > 0 &&
       (adopting.workerDone || adopting.simTime >= startupBufferSeconds))
     if (adopting && adoptedReady) {
-      const firstFrame = adopting.frames[0]
+      const firstFrame = adopting.frames.get(0)
       activeDetailsRef.current = firstFrame.details
       const firstState = materializeFrame(firstFrame, adopting.staticData, activeDetailsRef.current)
       activeTransportFrameRef.current = firstFrame
@@ -368,7 +363,7 @@ function App() {
         seed,
         worker: standbyWorker,
         runId: standbyRunId,
-        frames: [],
+        frames: new ReplayFrameStore(),
         workerDone: false,
         simTime: 0,
         staticData: undefined,
@@ -385,11 +380,10 @@ function App() {
           nextStandby.staticData = message.data
           return
         }
-        if (message.type === 'frame' || message.type === 'frames') {
-          const incomingFrames = message.type === 'frame' ? [message.frame] : message.frames
-          nextStandby.frames.push(...incomingFrames)
-          const latestFrame = incomingFrames[incomingFrames.length - 1]
-          if (latestFrame) nextStandby.simTime = Math.max(nextStandby.simTime, latestFrame.time)
+        if (message.type === 'replayChunk') {
+          nextStandby.frames.appendChunk(message.chunk)
+          const latestTime = nextStandby.frames.getTime(nextStandby.frames.length - 1)
+          nextStandby.simTime = Math.max(nextStandby.simTime, latestTime)
           return
         }
         nextStandby.simTime = Math.max(nextStandby.simTime, message.simTime)
@@ -416,12 +410,9 @@ function App() {
         return
       }
 
-      if (message.type === 'frame' || message.type === 'frames') {
-        const incomingFrames = message.type === 'frame' ? [message.frame] : message.frames
-        frameBufferRef.current.push(...incomingFrames)
-        const latestFrame = incomingFrames[incomingFrames.length - 1]
-        if (!latestFrame) return
-        const latestTime = latestFrame.time
+      if (message.type === 'replayChunk') {
+        frameBufferRef.current.appendChunk(message.chunk)
+        const latestTime = frameBufferRef.current.getTime(frameBufferRef.current.length - 1)
         const bufferAhead = Math.max(0, latestTime - playbackCursorRef.current)
         paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
           simTime: latestTime,
@@ -430,7 +421,7 @@ function App() {
         })
 
         if (!stateRef.current) {
-          const firstFrame = frameBufferRef.current[0]
+          const firstFrame = frameBufferRef.current.get(0)
           activeDetailsRef.current = firstFrame.details
           const firstState = materializeFrame(firstFrame, staticDataRef.current, activeDetailsRef.current)
           activeTransportFrameRef.current = firstFrame
@@ -479,8 +470,8 @@ function App() {
         frameCount: message.frameCount,
         bufferAhead,
       }, true)
-      if (!stateRef.current && frameBufferRef.current[0]) {
-        const firstFrame = frameBufferRef.current[0]
+      if (!stateRef.current && frameBufferRef.current.length > 0) {
+        const firstFrame = frameBufferRef.current.get(0)
         activeDetailsRef.current = firstFrame.details
         const firstState = materializeFrame(firstFrame, staticDataRef.current, activeDetailsRef.current)
         activeTransportFrameRef.current = firstFrame
@@ -557,23 +548,23 @@ function App() {
 
       if (running && playbackStatusRef.current !== 'buffering' && playbackStatusRef.current !== 'ended') {
         const frames = frameBufferRef.current
-        const latestFrame = frames[frames.length - 1]
-        if (latestFrame) {
+        if (frames.length > 0) {
+          const latestTime = frames.getTime(frames.length - 1)
           const targetCursor = playbackCursorRef.current + elapsed * speed
-          const hasBufferedTarget = targetCursor <= latestFrame.time || workerDoneRef.current
+          const hasBufferedTarget = targetCursor <= latestTime || workerDoneRef.current
 
           if (!hasBufferedTarget) {
             setPlaybackStatus('buffering')
           } else {
-            playbackCursorRef.current = Math.min(targetCursor, latestFrame.time)
+            playbackCursorRef.current = Math.min(targetCursor, latestTime)
             while (
               frameIndexRef.current < frames.length - 1 &&
-              frames[frameIndexRef.current + 1].time <= playbackCursorRef.current
+              frames.getTime(frameIndexRef.current + 1) <= playbackCursorRef.current
             ) {
               frameIndexRef.current += 1
             }
 
-            const currentFrame = frames[frameIndexRef.current]
+            const currentFrame = frames.get(frameIndexRef.current)
             if (currentFrame) {
               if (activeTransportFrameRef.current !== currentFrame) {
                 activeTransportFrameRef.current = currentFrame
@@ -636,19 +627,14 @@ function App() {
   const seekPlayback = (requestedTime: number) => {
     const frames = frameBufferRef.current
     if (frames.length === 0) return
-    const targetTime = Math.max(0, Math.min(requestedTime, frames[frames.length - 1].time))
-    let low = 0
-    let high = frames.length - 1
-    while (low < high) {
-      const middle = Math.ceil((low + high) / 2)
-      if (frames[middle].time <= targetTime) low = middle
-      else high = middle - 1
-    }
-    frameIndexRef.current = low
+    const latestTime = frames.getTime(frames.length - 1)
+    const targetTime = Math.max(0, Math.min(requestedTime, latestTime))
+    const frameIndex = frames.findIndexAtOrBefore(targetTime)
+    frameIndexRef.current = frameIndex
     playbackCursorRef.current = targetTime
-    setWinnerRevealed(targetTime >= frames[frames.length - 1].time)
-    const frame = frames[low]
-    activeDetailsRef.current = findFrameDetails(frames, low)
+    setWinnerRevealed(targetTime >= latestTime)
+    const frame = frames.get(frameIndex)
+    activeDetailsRef.current = frames.findDetailsAtOrBefore(frameIndex)
     const nextState = materializeFrame(frame, staticDataRef.current, activeDetailsRef.current)
     activeTransportFrameRef.current = frame
     activeFrameRevisionRef.current += 1

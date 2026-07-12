@@ -10,6 +10,7 @@ import {
   type MatchStaticData,
   type TeamId,
 } from './simulation.ts'
+import { getReplayChunkTransferables, ReplayChunkEncoder, type EncodedReplayChunk } from './replayStore.ts'
 
 export type MatchWorkerRequest =
   | { type: 'start'; seed: string; runId: number }
@@ -18,8 +19,7 @@ export type MatchWorkerRequest =
 
 export type MatchWorkerResponse =
   | { type: 'static'; runId: number; data: MatchStaticData }
-  | { type: 'frame'; runId: number; frame: MatchRenderFrame }
-  | { type: 'frames'; runId: number; frames: MatchRenderFrame[] }
+  | { type: 'replayChunk'; runId: number; chunk: EncodedReplayChunk }
   | { type: 'progress'; runId: number; simTime: number; frameCount: number; done: boolean }
   | { type: 'done'; runId: number; winner?: TeamId; simTime: number; frameCount: number }
   | { type: 'error'; runId: number; message: string }
@@ -61,6 +61,7 @@ async function runMatch(seed: string, runId: number) {
     let lastFrameTime = -1
     let nextDetailsAt = 0
     let pendingFrames: MatchRenderFrame[] = []
+    const replayEncoder = new ReplayChunkEncoder()
 
     const postFrame = () => {
       const includeDetails = state.time + 0.0001 >= nextDetailsAt
@@ -72,12 +73,13 @@ async function runMatch(seed: string, runId: number) {
 
     const flushFrames = () => {
       if (pendingFrames.length === 0) return
+      const chunk = replayEncoder.encode(pendingFrames)
       const response: MatchWorkerResponse = {
-        type: 'frames',
+        type: 'replayChunk',
         runId,
-        frames: pendingFrames,
+        chunk,
       }
-      self.postMessage(response)
+      self.postMessage(response, { transfer: getReplayChunkTransferables(chunk) })
       pendingFrames = []
     }
 

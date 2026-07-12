@@ -41,6 +41,7 @@ import {
 } from './simulation.ts'
 import { getSkillEffectProfile } from '../game-systems/skillRuntime.ts'
 import type { HeroSkillDefinition } from '../game-systems/heroAttributes.ts'
+import { ReplayChunkEncoder, ReplayFrameStore } from './replayStore.ts'
 
 function assertFinitePoint(entity: { id: string; pos: { x: number; y: number } }) {
   assert.ok(Number.isFinite(entity.pos.x), `${entity.id} has invalid x`)
@@ -363,6 +364,25 @@ assert.equal(motionFrame.details, undefined, 'motion frames should omit repeated
 assert.equal(hydratedFrame.arcanes[0].id, state.arcanes[0].id, 'hydration should restore static arcane identity')
 assert.ok(Math.abs(hydratedFrame.arcanes[0].stats.hp - state.arcanes[0].stats.hp) <= 0.001, 'hydration should preserve dynamic arcane health')
 assert.ok(JSON.stringify(motionFrame).length < JSON.stringify(state).length * 0.35, 'motion frame should be substantially smaller than simulation state')
+
+const replayEncoder = new ReplayChunkEncoder()
+const replayStore = new ReplayFrameStore()
+const detailChunk = replayEncoder.encode([renderFrame])
+const nextMotionFrame = { ...motionFrame, time: motionFrame.time + 0.2 }
+const motionChunk = replayEncoder.encode([nextMotionFrame])
+replayStore.appendChunk(detailChunk)
+replayStore.appendChunk(motionChunk)
+const normalizeFrame = <T>(frame: T) => JSON.parse(JSON.stringify(frame)) as T
+assert.equal(motionChunk.dictionaryAdditions.length, 0, 'creep id dictionary should be shared across replay chunks')
+assert.deepEqual(normalizeFrame(replayStore.get(0)), normalizeFrame(renderFrame), 'binary replay should preserve complete render frames')
+assert.deepEqual(normalizeFrame(replayStore.get(1)), normalizeFrame(nextMotionFrame), 'binary replay should preserve compact motion frames')
+assert.equal(replayStore.findIndexAtOrBefore(nextMotionFrame.time - 0.01), 0, 'replay seek should select the preceding frame')
+assert.deepEqual(
+  normalizeFrame({ ...renderFrame, details: replayStore.findDetailsAtOrBefore(1) }).details,
+  normalizeFrame(renderFrame).details,
+  'motion frames should reuse the latest inspector details',
+)
+assert.ok(replayStore.estimatedByteLength > 0, 'binary replay should report its retained byte size')
 
 for (const arcane of state.arcanes as Arcane[]) {
   assertFinitePoint(arcane)
