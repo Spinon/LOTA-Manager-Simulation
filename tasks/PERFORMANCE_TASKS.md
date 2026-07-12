@@ -40,6 +40,8 @@ Status: concluída em 2026-07-11. Índices por id e time, efeitos agrupados por 
 
 ### P3 / T10: desacoplar canvas e painéis React
 
+Status: concluída em 2026-07-12. Os cinco canvases leem `MatchRenderFrame`/`MatchStaticData` diretamente, sem materializar `SimulationState`; snapshots ricos agora são publicados a 2Hz para mapa/placar, 1Hz para equipes e 1Hz para o inspector somente quando aberto. Em validação headless, materializações caíram 60%, o inspector oculto deixou de acompanhar renders do mapa e 1x/16x passaram sem erros de console.
+
 - Canvas consome movimento compacto sem hidratar `SimulationState` completo.
 - Relógio, placar, equipes e inspector recebem cadências independentes.
 - Memoizar componentes densos e evitar render da árvore inteira a cada atualização visual.

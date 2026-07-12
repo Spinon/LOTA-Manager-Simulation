@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { memo, startTransition, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react'
 import { Brain, Coins, Eye, Gauge, HeartPulse, Package, Pause, Play, RotateCcw, Swords, Target, TowerControl, Zap } from 'lucide-react'
 import {
   campStrengthLabel,
@@ -45,10 +45,7 @@ import {
   isStructureFortified,
   laneNames,
   lanePaths,
-  nearest,
   getTeamMemoryDanger,
-  getEntityPosition,
-  getEntityAttackRange,
   getDangerScore,
   distance,
   clampToMapBounds,
@@ -61,7 +58,6 @@ import {
   teleportManaCost,
   teleportScrollCost,
   type Arcane,
-  type AttackEffect,
   type Base,
   type Boss,
   type Camp,
@@ -69,11 +65,8 @@ import {
   type ConsumableItem,
   type Creep,
   type DayCycle,
-  type DeathMarker,
   type DecisionStatus,
-  type DenyMarker,
   type ExecutionFailureType,
-  type GoldMarker,
   type HeroSkillDefinition,
   type LaneId,
   type MapRune,
@@ -87,7 +80,6 @@ import {
   type Selected,
   type ShopItem,
   type SimulationState,
-  type SkillMarker,
   type Structure,
   type StructureKind,
   type TeamId,
@@ -125,6 +117,22 @@ const prefetchBufferAheadSeconds = 150
 // Desativado por ora a pedido (2026-07-07): manter o mecanismo inerte até
 // ganhar confiança; reativar trocando esta flag.
 const standbyPrefetchEnabled = false
+const uiSnapshotIntervalMs = 500
+const teamSnapshotIntervalMs = 1000
+const inspectorSnapshotIntervalMs = 1000
+
+const playbackUiStats = {
+  materializations: 0,
+  uiPublishes: 0,
+  teamPublishes: 0,
+  inspectorPublishes: 0,
+  teamRenders: 0,
+  mapRenders: 0,
+  inspectorRenders: 0,
+}
+if (import.meta.env.DEV) {
+  ;(window as unknown as { __lotaUiStats?: typeof playbackUiStats }).__lotaUiStats = playbackUiStats
+}
 
 function createBrowserMatchSeed() {
   const values = new Uint32Array(2)
@@ -143,6 +151,7 @@ function getFrameKey(frame: MatchRenderFrame) {
 
 function materializeFrame(frame: MatchRenderFrame, staticData: MatchStaticData | undefined, details = frame.details) {
   if (!staticData) throw new Error('Catálogo estático da partida não foi recebido')
+  playbackUiStats.materializations += 1
   return materializeMatchRenderFrame(frame, staticData, details)
 }
 
@@ -167,6 +176,8 @@ function paintBufferInfoThrottled(
 
 function App() {
   const [state, setState] = useState<SimulationState | undefined>(undefined)
+  const [teamState, setTeamState] = useState<SimulationState | undefined>(undefined)
+  const [inspectorState, setInspectorState] = useState<SimulationState | undefined>(undefined)
   const [loadingError, setLoadingError] = useState<string | undefined>(undefined)
   const [running, setRunning] = useState(true)
   const [speed, setSpeed] = useState(1)
@@ -189,6 +200,8 @@ function App() {
   const playbackCursorRef = useRef(0)
   const lastPlaybackTick = useRef<number | null>(null)
   const lastStatePaintRef = useRef(0)
+  const lastTeamPaintRef = useRef(0)
+  const lastInspectorPaintRef = useRef(0)
   const lastBufferInfoPaintRef = useRef(0)
   const runIdRef = useRef(0)
   const runSeqRef = useRef(0)
@@ -197,6 +210,8 @@ function App() {
   const standbyRef = useRef<StandbyMatch | undefined>(undefined)
   const currentFrameKeyRef = useRef('')
   const stateRef = useRef<SimulationState | undefined>(undefined)
+  const dataPanelOpenRef = useRef(dataPanelOpen)
+  dataPanelOpenRef.current = dataPanelOpen
   if (import.meta.env.DEV) {
     ;(window as unknown as { __lotaStateRef?: typeof stateRef }).__lotaStateRef = stateRef
     ;(window as unknown as { __lotaPlayback?: unknown }).__lotaPlayback = {
@@ -253,11 +268,15 @@ function App() {
     lastPlaybackTick.current = null
     currentFrameKeyRef.current = ''
     lastStatePaintRef.current = 0
+    lastTeamPaintRef.current = 0
+    lastInspectorPaintRef.current = 0
     lastBufferInfoPaintRef.current = 0
     workerRef.current = worker
     stateRef.current = undefined
     resetAdaptiveDpr()
     setState(undefined)
+    setTeamState(undefined)
+    setInspectorState(undefined)
     setMatchWinner(undefined)
     setWinnerRevealed(false)
     setPrecomputeDone(adopting?.workerDone ?? false)
@@ -275,6 +294,8 @@ function App() {
       stateRef.current = firstState
       currentFrameKeyRef.current = getFrameKey(firstFrame)
       setState(firstState)
+      setTeamState(firstState)
+      setInspectorState(firstState)
       setPlaybackStatus('ready')
       setStartupWaitDone(true)
       setStartupWaitProgress(1)
@@ -375,6 +396,8 @@ function App() {
           stateRef.current = firstState
           currentFrameKeyRef.current = getFrameKey(firstFrame)
           setState(firstState)
+          setTeamState(firstState)
+          setInspectorState(firstState)
           paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
             simTime: latestTime,
             frameCount: frameBufferRef.current.length,
@@ -422,6 +445,8 @@ function App() {
         stateRef.current = firstState
         currentFrameKeyRef.current = getFrameKey(firstFrame)
         setState(firstState)
+        setTeamState(firstState)
+        setInspectorState(firstState)
       }
       completionTimer = window.setTimeout(() => {
         setPlaybackStatus((status) => status === 'loading' || status === 'buffering' ? 'ready' : status)
@@ -513,21 +538,30 @@ function App() {
               if (activeTransportFrameRef.current !== currentFrame) {
                 activeTransportFrameRef.current = currentFrame
                 if (currentFrame.details) activeDetailsRef.current = currentFrame.details
-                stateRef.current = materializeFrame(currentFrame, staticDataRef.current, activeDetailsRef.current)
               }
-              const currentState = stateRef.current
               const frameKey = getFrameKey(currentFrame)
               const reachedEnd = workerDoneRef.current && frameIndexRef.current >= frames.length - 1 && Boolean(currentFrame.winner)
-              // Os canvases leem stateRef a cada rAF; o setState só alimenta os
-              // painéis React, que não mostram nada com granularidade menor que
-              // ~1s (relógio mm:ss, ouro, kills, barras). Re-renderizar a árvore
-              // inteira a cada frame de 0.2s custa dezenas de ms por passada e
-              // rouba frames do canvas — 3 updates/s bastam, e startTransition
-              // deixa o React fatiar o render sem congelar a animação.
-              if (frameKey !== currentFrameKeyRef.current && (reachedEnd || now - lastStatePaintRef.current >= 300)) {
+              // Canvas lê o frame compacto em refs. React recebe snapshots ricos
+              // em cadências próprias, fora do caminho visual de 60 FPS.
+              if (frameKey !== currentFrameKeyRef.current && (reachedEnd || now - lastStatePaintRef.current >= uiSnapshotIntervalMs)) {
                 currentFrameKeyRef.current = frameKey
                 lastStatePaintRef.current = now
-                startTransition(() => setState(currentState))
+                const nextState = materializeFrame(currentFrame, staticDataRef.current, activeDetailsRef.current)
+                stateRef.current = nextState
+                startTransition(() => {
+                  playbackUiStats.uiPublishes += 1
+                  setState(nextState)
+                  if (reachedEnd || now - lastTeamPaintRef.current >= teamSnapshotIntervalMs) {
+                    lastTeamPaintRef.current = now
+                    playbackUiStats.teamPublishes += 1
+                    setTeamState(nextState)
+                  }
+                  if (dataPanelOpenRef.current && (reachedEnd || now - lastInspectorPaintRef.current >= inspectorSnapshotIntervalMs)) {
+                    lastInspectorPaintRef.current = now
+                    playbackUiStats.inspectorPublishes += 1
+                    setInspectorState(nextState)
+                  }
+                })
               }
               if (reachedEnd) {
                 setWinnerRevealed(true)
@@ -546,7 +580,11 @@ function App() {
     return () => window.cancelAnimationFrame(frame)
   }, [running, speed, hasState, startupWaitDone, playbackStatus])
 
-  const selectedEntity = useMemo(() => state ? findSelected(state, selected) : undefined, [selected, state])
+  const visibleTeamState = teamState ?? state
+  const visibleInspectorState = inspectorState ?? state
+  const dawnArcanes = useMemo(() => visibleTeamState?.arcanes.filter((arcane) => arcane.team === 'dawn') ?? [], [visibleTeamState])
+  const duskArcanes = useMemo(() => visibleTeamState?.arcanes.filter((arcane) => arcane.team === 'dusk') ?? [], [visibleTeamState])
+  const selectedEntity = useMemo(() => visibleInspectorState ? findSelected(visibleInspectorState, selected) : undefined, [selected, visibleInspectorState])
   const teamNetWorth = useMemo(() => ({
     dawn: state ? getTeamNetWorth(state, 'dawn') : 0,
     dusk: state ? getTeamNetWorth(state, 'dusk') : 0,
@@ -577,7 +615,15 @@ function App() {
     stateRef.current = nextState
     currentFrameKeyRef.current = getFrameKey(frame)
     setState(nextState)
+    setTeamState(nextState)
+    setInspectorState(nextState)
   }
+
+  useEffect(() => {
+    if (!dataPanelOpen || !stateRef.current) return
+    lastInspectorPaintRef.current = performance.now()
+    setInspectorState(stateRef.current)
+  }, [dataPanelOpen, selected])
 
   if (!state || !uiDataReady || !startupWaitDone || playbackStatus === 'loading' || isInitialBuffering) {
     return (
@@ -590,6 +636,9 @@ function App() {
       </main>
     )
   }
+
+  const currentTeamState = visibleTeamState ?? state
+  const currentInspectorState = visibleInspectorState ?? state
 
   return (
     <main className="sim-shell">
@@ -611,28 +660,29 @@ function App() {
       </header>
 
       <section className="sim-layout">
-        <TeamPanel
-          arcanes={state.arcanes.filter((arcane) => arcane.team === 'dawn')}
+        <MemoTeamPanel
+          arcanes={dawnArcanes}
           selected={selected}
           team="dawn"
-          teamPlan={state.teamPlans.dawn}
-          time={state.time}
+          teamPlan={currentTeamState.teamPlans.dawn}
+          time={currentTeamState.time}
           onSelect={setSelected}
         />
         <MapPanel
           dayCycle={dayCycle}
           state={state}
-          stateRef={stateRef}
+          frameRef={activeTransportFrameRef}
+          staticDataRef={staticDataRef}
           playbackTimeRef={playbackCursorRef}
           selected={selected}
           onSelect={setSelected}
         />
-        <TeamPanel
-          arcanes={state.arcanes.filter((arcane) => arcane.team === 'dusk')}
+        <MemoTeamPanel
+          arcanes={duskArcanes}
           selected={selected}
           team="dusk"
-          teamPlan={state.teamPlans.dusk}
-          time={state.time}
+          teamPlan={currentTeamState.teamPlans.dusk}
+          time={currentTeamState.time}
           onSelect={setSelected}
         />
       </section>
@@ -704,8 +754,8 @@ function App() {
 
       <footer className={dataPanelOpen ? 'inspector open' : 'inspector'} aria-hidden={!dataPanelOpen}>
         <div className="inspector-layout">
-          <Inspector entity={selectedEntity} state={state} />
-          <EventFeed events={state.events} />
+          <MemoInspector entity={selectedEntity} state={currentInspectorState} />
+          <MemoEventFeed events={currentInspectorState.events} />
         </div>
       </footer>
     </main>
@@ -858,6 +908,7 @@ function TeamPanel({
   selected: Selected
   onSelect: (selected: Selected) => void
 }) {
+  if (import.meta.env.DEV) playbackUiStats.teamRenders += 1
   return (
     <aside className={`team-panel ${team}`}>
       <div className="panel-heading">
@@ -933,21 +984,53 @@ function TeamPanel({
   )
 }
 
+const MemoTeamPanel = memo(TeamPanel)
+
+function findNearestCompactArcaneId(point: Point, frame: MatchRenderFrame, staticData: MatchStaticData, range: number) {
+  let closestId: string | undefined
+  let closestDistance = range
+  for (let index = 0; index < frame.arcanes.length; index += 1) {
+    const motion = frame.arcanes[index]
+    if (motion[2] > frame.time || motion[4] <= 0) continue
+    const candidateDistance = distance(point, { x: motion[0], y: motion[1] })
+    if (candidateDistance > closestDistance) continue
+    closestId = staticData.arcanes[index]?.id
+    closestDistance = candidateDistance
+  }
+  return closestId
+}
+
+function findNearestCompactCreepId(point: Point, frame: MatchRenderFrame, range: number) {
+  let closestId: string | undefined
+  let closestDistance = range
+  for (const creep of frame.creeps) {
+    if (creep[6] <= 0) continue
+    const candidateDistance = distance(point, { x: creep[4], y: creep[5] })
+    if (candidateDistance > closestDistance) continue
+    closestId = creep[0]
+    closestDistance = candidateDistance
+  }
+  return closestId
+}
+
 function MapPanel({
   dayCycle,
   state,
-  stateRef,
+  frameRef,
+  staticDataRef,
   playbackTimeRef,
   selected,
   onSelect,
 }: {
   dayCycle: DayCycle
   state: SimulationState
-  stateRef: React.RefObject<SimulationState | undefined>
+  frameRef: React.RefObject<MatchRenderFrame | undefined>
+  staticDataRef: React.RefObject<MatchStaticData | undefined>
   playbackTimeRef: React.RefObject<number>
   selected: Selected
   onSelect: (selected: Selected) => void
 }) {
+  if (import.meta.env.DEV) playbackUiStats.mapRenders += 1
   function handleMapPanelClick(event: MouseEvent<HTMLElement>) {
     const target = event.target as HTMLElement | null
     if (target?.closest('button')) return
@@ -957,23 +1040,23 @@ function MapPanel({
       x: ((event.clientX - rect.left) / Math.max(1, rect.width)) * 100,
       y: ((event.clientY - rect.top) / Math.max(1, rect.height)) * 100,
     }
-    const currentState = stateRef.current
-    if (!currentState) return
+    const frame = frameRef.current
+    const staticData = staticDataRef.current
+    if (!frame || !staticData) return
 
-    const aliveArcanes = currentState.arcanes.filter((arcane) => arcane.respawn <= currentState.time && arcane.stats.hp > 0)
-    const arcane = nearest(point, aliveArcanes, 3.2)
-    if (arcane) {
-      onSelect({ kind: 'arcane', id: arcane.id })
+    const arcaneId = findNearestCompactArcaneId(point, frame, staticData, 3.2)
+    if (arcaneId) {
+      onSelect({ kind: 'arcane', id: arcaneId })
       return
     }
 
-    if (currentState.boss.hp > 0 && currentState.boss.respawn <= currentState.time && distance(point, currentState.boss.pos) <= 4.2) {
-      onSelect({ kind: 'boss', id: currentState.boss.id })
+    if (frame.boss[2] > 0 && frame.boss[4] <= frame.time && distance(point, { x: frame.boss[0], y: frame.boss[1] }) <= 4.2) {
+      onSelect({ kind: 'boss', id: staticData.boss.id })
       return
     }
 
-    const creep = nearest(point, currentState.creeps, 2.4)
-    if (creep) onSelect({ kind: 'creep', id: creep.id })
+    const creepId = findNearestCompactCreepId(point, frame, 2.4)
+    if (creepId) onSelect({ kind: 'creep', id: creepId })
   }
 
   return (
@@ -1000,10 +1083,10 @@ function MapPanel({
       <span className="lane-label mid">Meio</span>
       <span className="lane-label bot">Baixo</span>
 
-      <AttackRangeCanvasLayer stateRef={stateRef} selected={selected} />
+      <AttackRangeCanvasLayer frameRef={frameRef} staticDataRef={staticDataRef} selected={selected} />
 
       <FxCanvasLayer
-        stateRef={stateRef}
+        frameRef={frameRef}
         playbackTimeRef={playbackTimeRef}
       />
 
@@ -1088,18 +1171,18 @@ function MapPanel({
           <span>{getRuneGlyph(rune)}</span>
         </button>
       ))}
-      {state.boss.hp > 0 && (
-        <BossCanvasLayer
-          stateRef={stateRef}
-          selected={selected}
-        />
-      )}
+      <BossCanvasLayer
+        frameRef={frameRef}
+        staticDataRef={staticDataRef}
+        selected={selected}
+      />
       <CreepCanvasLayer
-        stateRef={stateRef}
+        frameRef={frameRef}
         selected={selected}
       />
       <ArcaneCanvasLayer
-        stateRef={stateRef}
+        frameRef={frameRef}
+        staticDataRef={staticDataRef}
         selected={selected}
       />
     </section>
@@ -1231,10 +1314,10 @@ function timeDraw(name: string, draw: () => void) {
 }
 
 function CreepCanvasLayer({
-  stateRef,
+  frameRef,
   selected,
 }: {
-  stateRef: React.RefObject<SimulationState | undefined>
+  frameRef: React.RefObject<MatchRenderFrame | undefined>
   selected: Selected
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -1251,19 +1334,19 @@ function CreepCanvasLayer({
     const shouldDraw = createDrawGate()
     const draw = () => {
       const current = latest.current
-      const currentState = stateRef.current
-      if (!currentState) {
+      const currentFrame = frameRef.current
+      if (!currentFrame) {
         frame = window.requestAnimationFrame(draw)
         return
       }
       const selectedId = current.selected?.kind === 'creep' ? current.selected.id : undefined
-      if (!shouldDraw(getCanvasDrawKey(canvas, currentState.time, selectedId ?? 'none', currentState.creeps.length))) {
+      if (!shouldDraw(getCanvasDrawKey(canvas, currentFrame.time, selectedId ?? 'none', currentFrame.creeps.length))) {
         frame = window.requestAnimationFrame(draw)
         return
       }
       timeDraw('creep', () => drawCreepCanvas(
         canvas,
-        currentState.creeps,
+        currentFrame.creeps,
         selectedId,
         visualPositions.current,
       ))
@@ -1272,7 +1355,7 @@ function CreepCanvasLayer({
 
     frame = window.requestAnimationFrame(draw)
     return () => window.cancelAnimationFrame(frame)
-  }, [stateRef])
+  }, [frameRef])
 
   return (
     <canvas
@@ -1355,7 +1438,7 @@ function getBufferedVisualPosition(
 
 function drawCreepCanvas(
   canvas: HTMLCanvasElement,
-  creeps: Creep[],
+  creeps: MatchRenderFrame['creeps'],
   selectedId: string | undefined,
   visualPositions: Map<string, VisualPosition>,
 ) {
@@ -1372,21 +1455,21 @@ function drawCreepCanvas(
   context.save()
   context.scale(dpr, dpr)
 
-  pruneVisualPositionsOccasionally(visualPositions, creeps.map((creep) => creep.id))
+  pruneVisualPositionsOccasionally(visualPositions, creeps.map((creep) => creep[0]))
 
   for (const creep of creeps) {
     const visual = getBufferedVisualPosition(
-      creep.id,
-      creep.pos,
+      creep[0],
+      { x: creep[4], y: creep[5] },
       visualPositions,
       9,
     )
     const point = clampToMapBounds(visual)
     const x = (point.x / 100) * viewport.width
     const y = (point.y / 100) * viewport.height
-    const radius = creep.type === 'siege' ? 5.6 : creep.type === 'mage' || creep.type === 'flagbearer' ? 4.8 : 4.2
-    const teamColor = teamInfo[creep.team].primary
-    const hpRatio = Math.max(0, Math.min(1, creep.hp / Math.max(1, creep.maxHp)))
+    const radius = creep[3] === 'siege' ? 5.6 : creep[3] === 'mage' || creep[3] === 'flagbearer' ? 4.8 : 4.2
+    const teamColor = teamInfo[creep[1]].primary
+    const hpRatio = Math.max(0, Math.min(1, creep[6] / Math.max(1, creep[7])))
     const fillHeight = radius * 2 * hpRatio
 
     context.beginPath()
@@ -1404,10 +1487,10 @@ function drawCreepCanvas(
     context.fillRect(x - radius, y + radius - fillHeight, radius * 2, fillHeight)
     context.restore()
 
-    context.lineWidth = creep.id === selectedId ? 2.2 : 1
-    context.strokeStyle = creep.id === selectedId ? '#f6c85d' : 'rgba(0, 0, 0, 0.74)'
+    context.lineWidth = creep[0] === selectedId ? 2.2 : 1
+    context.strokeStyle = creep[0] === selectedId ? '#f6c85d' : 'rgba(0, 0, 0, 0.74)'
     context.beginPath()
-    context.arc(x, y, radius + (creep.id === selectedId ? 2 : 0.5), 0, Math.PI * 2)
+    context.arc(x, y, radius + (creep[0] === selectedId ? 2 : 0.5), 0, Math.PI * 2)
     context.stroke()
   }
 
@@ -1415,10 +1498,12 @@ function drawCreepCanvas(
 }
 
 function ArcaneCanvasLayer({
-  stateRef,
+  frameRef,
+  staticDataRef,
   selected,
 }: {
-  stateRef: React.RefObject<SimulationState | undefined>
+  frameRef: React.RefObject<MatchRenderFrame | undefined>
+  staticDataRef: React.RefObject<MatchStaticData | undefined>
   selected: Selected
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -1435,22 +1520,24 @@ function ArcaneCanvasLayer({
     const shouldDraw = createDrawGate()
     const draw = () => {
       const current = latest.current
-      const currentState = stateRef.current
-      if (!currentState) {
+      const currentFrame = frameRef.current
+      const staticData = staticDataRef.current
+      if (!currentFrame || !staticData) {
         frame = window.requestAnimationFrame(draw)
         return
       }
       const selectedId = current.selected?.kind === 'arcane' ? current.selected.id : undefined
-      if (!shouldDraw(getCanvasDrawKey(canvas, currentState.time, selectedId ?? 'none', currentState.arcanes.length, currentState.timedEffects.length))) {
+      if (!shouldDraw(getCanvasDrawKey(canvas, currentFrame.time, selectedId ?? 'none', currentFrame.arcanes.length, currentFrame.timedEffects.length))) {
         frame = window.requestAnimationFrame(draw)
         return
       }
       timeDraw('arcane', () => drawArcaneCanvas(
         canvas,
-        currentState.arcanes,
+        currentFrame.arcanes,
+        staticData.arcanes,
         selectedId,
-        currentState.timedEffects,
-        currentState.time,
+        currentFrame.timedEffects,
+        currentFrame.time,
         visualPositions.current,
       ))
       frame = window.requestAnimationFrame(draw)
@@ -1458,7 +1545,7 @@ function ArcaneCanvasLayer({
 
     frame = window.requestAnimationFrame(draw)
     return () => window.cancelAnimationFrame(frame)
-  }, [stateRef])
+  }, [frameRef, staticDataRef])
 
   return (
     <canvas
@@ -1471,7 +1558,8 @@ function ArcaneCanvasLayer({
 
 function drawArcaneCanvas(
   canvas: HTMLCanvasElement,
-  arcanes: Arcane[],
+  arcanes: MatchRenderFrame['arcanes'],
+  staticArcanes: MatchStaticData['arcanes'],
   selectedId: string | undefined,
   timedEffects: TimedEffect[],
   now: number,
@@ -1486,26 +1574,32 @@ function drawArcaneCanvas(
   const context = canvas.getContext('2d')
   if (!context) return
 
-  const aliveArcanes = arcanes.filter((arcane) => arcane.respawn <= now && arcane.stats.hp > 0)
-  pruneVisualPositionsOccasionally(visualPositions, aliveArcanes.map((arcane) => arcane.id))
+  const aliveIndices: number[] = []
+  for (let index = 0; index < arcanes.length; index += 1) {
+    const arcane = arcanes[index]
+    if (arcane[2] <= now && arcane[4] > 0) aliveIndices.push(index)
+  }
+  pruneVisualPositionsOccasionally(visualPositions, aliveIndices.map((index) => staticArcanes[index].id))
 
   context.clearRect(0, 0, width, height)
   context.save()
   context.scale(dpr, dpr)
   const activeEffectsByTarget = groupActiveEffectsByTarget(timedEffects, now)
 
-  for (const arcane of aliveArcanes) {
-    const visual = getArcaneVisualPosition(arcane, visualPositions)
-    drawArcaneToken(context, viewport, arcane, visual, selectedId === arcane.id, activeEffectsByTarget, now)
+  for (const index of aliveIndices) {
+    const arcane = arcanes[index]
+    const fixed = staticArcanes[index]
+    const visual = getArcaneVisualPosition(fixed.id, { x: arcane[0], y: arcane[1] }, visualPositions)
+    drawArcaneToken(context, viewport, fixed, arcane, visual, selectedId === fixed.id, activeEffectsByTarget, now)
   }
 
   context.restore()
 }
 
-function getArcaneVisualPosition(arcane: Arcane, visualPositions: Map<string, VisualPosition>) {
+function getArcaneVisualPosition(id: string, pos: Point, visualPositions: Map<string, VisualPosition>) {
   return getBufferedVisualPosition(
-    arcane.id,
-    arcane.pos,
+    id,
+    pos,
     visualPositions,
     18,
   )
@@ -1514,16 +1608,17 @@ function getArcaneVisualPosition(arcane: Arcane, visualPositions: Map<string, Vi
 function drawArcaneToken(
   context: CanvasRenderingContext2D,
   viewport: CanvasViewport,
-  arcane: Arcane,
+  fixed: MatchStaticData['arcanes'][number],
+  arcane: MatchRenderFrame['arcanes'][number],
   visualPos: Point,
   selected: boolean,
   activeEffectsByTarget: Map<string, TimedEffect['kind'][]>,
   now: number,
 ) {
   const point = toCanvasPoint(visualPos, viewport)
-  const teamColor = teamInfo[arcane.team].primary
+  const teamColor = teamInfo[fixed.team].primary
   const radius = 14
-  const hpRatio = Math.max(0, Math.min(1, arcane.stats.hp / Math.max(1, arcane.stats.maxHp)))
+  const hpRatio = Math.max(0, Math.min(1, arcane[4] / Math.max(1, arcane[3])))
   const emptyAngle = (1 - hpRatio) * Math.PI * 2
 
   context.save()
@@ -1555,7 +1650,7 @@ function drawArcaneToken(
   context.font = '900 9px Inter, system-ui, sans-serif'
   context.textAlign = 'center'
   context.textBaseline = 'middle'
-  context.fillText(arcane.portrait, 0, 0)
+  context.fillText(fixed.portrait, 0, 0)
 
   if (selected) {
     context.strokeStyle = 'rgba(246, 200, 93, 0.78)'
@@ -1565,13 +1660,12 @@ function drawArcaneToken(
     context.stroke()
   }
 
-  drawChannelingBar(context, arcane, radius, now)
-  drawArcaneEffectBadges(context, activeEffectsByTarget.get(arcane.id) ?? [])
+  drawChannelingBar(context, arcane[8], radius, now)
+  drawArcaneEffectBadges(context, activeEffectsByTarget.get(fixed.id) ?? [])
   context.restore()
 }
 
-function drawChannelingBar(context: CanvasRenderingContext2D, arcane: Arcane, radius: number, now: number) {
-  const channel = arcane.channeling
+function drawChannelingBar(context: CanvasRenderingContext2D, channel: ChannelingAction | undefined, radius: number, now: number) {
   if (!channel) return
 
   const barWidth = 34
@@ -1673,10 +1767,12 @@ function getEffectCanvasColor(kind: TimedEffect['kind']) {
 }
 
 function BossCanvasLayer({
-  stateRef,
+  frameRef,
+  staticDataRef,
   selected,
 }: {
-  stateRef: React.RefObject<SimulationState | undefined>
+  frameRef: React.RefObject<MatchRenderFrame | undefined>
+  staticDataRef: React.RefObject<MatchStaticData | undefined>
   selected: Selected
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -1692,18 +1788,20 @@ function BossCanvasLayer({
     let frame = 0
     const shouldDraw = createDrawGate()
     const draw = () => {
-      const currentState = stateRef.current
-      if (currentState) {
+      const currentFrame = frameRef.current
+      const staticData = staticDataRef.current
+      if (currentFrame && staticData) {
         const selectedId = latest.current.selected?.kind === 'boss' ? latest.current.selected.id : 'none'
-        if (!shouldDraw(getCanvasDrawKey(canvas, currentState.time, selectedId, currentState.boss.hp, currentState.boss.respawn))) {
+        if (!shouldDraw(getCanvasDrawKey(canvas, currentFrame.time, selectedId, currentFrame.boss[2], currentFrame.boss[4]))) {
           frame = window.requestAnimationFrame(draw)
           return
         }
         timeDraw('boss', () => drawBossCanvas(
           canvas,
-          currentState.boss,
-          latest.current.selected?.kind === 'boss' && latest.current.selected.id === currentState.boss.id,
-          currentState.time,
+          currentFrame.boss,
+          staticData.boss,
+          latest.current.selected?.kind === 'boss' && latest.current.selected.id === staticData.boss.id,
+          currentFrame.time,
           visualPositions.current,
         ))
       }
@@ -1712,7 +1810,7 @@ function BossCanvasLayer({
 
     frame = window.requestAnimationFrame(draw)
     return () => window.cancelAnimationFrame(frame)
-  }, [stateRef])
+  }, [frameRef, staticDataRef])
 
   return (
     <canvas
@@ -1725,7 +1823,8 @@ function BossCanvasLayer({
 
 function drawBossCanvas(
   canvas: HTMLCanvasElement,
-  boss: Boss,
+  boss: MatchRenderFrame['boss'],
+  staticBoss: MatchStaticData['boss'],
   selected: boolean,
   now: number,
   visualPositions: Map<string, VisualPosition>,
@@ -1740,14 +1839,14 @@ function drawBossCanvas(
   if (!context) return
 
   context.clearRect(0, 0, width, height)
-  if (boss.hp <= 0 || boss.respawn > now) return
+  if (boss[2] <= 0 || boss[4] > now) return
 
   context.save()
   context.scale(dpr, dpr)
-  const visual = getBufferedVisualPosition(boss.id, boss.pos, visualPositions, 20)
+  const visual = getBufferedVisualPosition(staticBoss.id, { x: boss[0], y: boss[1] }, visualPositions, 20)
   const point = toCanvasPoint(visual, viewport)
   const radius = 22
-  const hpRatio = Math.max(0, Math.min(1, boss.hp / Math.max(1, boss.maxHp)))
+  const hpRatio = Math.max(0, Math.min(1, boss[2] / Math.max(1, boss[3])))
   const emptyAngle = (1 - hpRatio) * Math.PI * 2
 
   context.translate(point.x, point.y)
@@ -1789,10 +1888,10 @@ function drawBossCanvas(
 }
 
 function FxCanvasLayer({
-  stateRef,
+  frameRef,
   playbackTimeRef,
 }: {
-  stateRef: React.RefObject<SimulationState | undefined>
+  frameRef: React.RefObject<MatchRenderFrame | undefined>
   playbackTimeRef: React.RefObject<number>
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -1804,17 +1903,17 @@ function FxCanvasLayer({
     let frame = 0
     const shouldDraw = createDrawGate()
     const draw = () => {
-      const currentState = stateRef.current
-      if (currentState) {
+      const currentFrame = frameRef.current
+      if (currentFrame) {
         const renderTime = playbackTimeRef.current
         const fxKey = getCanvasDrawKey(
           canvas,
           Math.floor(renderTime * 60),
-          currentState.effects.length,
-          currentState.deathMarkers.length,
-          currentState.denyMarkers.length,
-          currentState.goldMarkers.length,
-          currentState.skillMarkers.length,
+          currentFrame.effects.length,
+          currentFrame.deathMarkers.length,
+          currentFrame.denyMarkers.length,
+          currentFrame.goldMarkers.length,
+          currentFrame.skillMarkers.length,
         )
         if (!shouldDraw(fxKey)) {
           frame = window.requestAnimationFrame(draw)
@@ -1822,11 +1921,7 @@ function FxCanvasLayer({
         }
         timeDraw('fx', () => drawFxCanvas(
           canvas,
-          currentState.effects,
-          currentState.deathMarkers,
-          currentState.denyMarkers,
-          currentState.goldMarkers,
-          currentState.skillMarkers ?? [],
+          currentFrame,
           renderTime,
         ))
       }
@@ -1835,18 +1930,14 @@ function FxCanvasLayer({
 
     frame = window.requestAnimationFrame(draw)
     return () => window.cancelAnimationFrame(frame)
-  }, [stateRef, playbackTimeRef])
+  }, [frameRef, playbackTimeRef])
 
   return <canvas ref={canvasRef} className="fx-canvas" aria-hidden="true" />
 }
 
 function drawFxCanvas(
   canvas: HTMLCanvasElement,
-  effects: AttackEffect[],
-  deathMarkers: DeathMarker[],
-  denyMarkers: DenyMarker[],
-  goldMarkers: GoldMarker[],
-  skillMarkers: SkillMarker[],
+  frame: MatchRenderFrame,
   now: number,
 ) {
   const { viewport, dpr, width, height } = prepareCanvasForDraw(canvas)
@@ -1862,43 +1953,43 @@ function drawFxCanvas(
   context.save()
   context.scale(dpr, dpr)
 
-  for (const effect of effects) {
+  for (const effect of frame.effects) {
     drawAttackFx(context, viewport, effect, now)
   }
-  for (const marker of deathMarkers) {
-    drawFloatingText(context, viewport, marker.pos, 'X', teamInfo[marker.team].primary, marker.createdAt, marker.expiresAt, now, 18, 0)
+  for (const marker of frame.deathMarkers) {
+    drawFloatingText(context, viewport, { x: marker[2], y: marker[3] }, 'X', teamInfo[marker[1]].primary, marker[4], marker[5], now, 18, 0)
   }
-  for (const marker of denyMarkers) {
-    drawFloatingText(context, viewport, marker.pos, '!', teamInfo[marker.team].primary, marker.createdAt, marker.expiresAt, now, 19, -4)
+  for (const marker of frame.denyMarkers) {
+    drawFloatingText(context, viewport, { x: marker[1], y: marker[2] }, '!', teamInfo[marker[0]].primary, marker[3], marker[4], now, 19, -4)
   }
-  for (const marker of goldMarkers) {
-    drawFloatingText(context, viewport, marker.pos, `+${marker.amount}g`, teamInfo[marker.team].primary, marker.createdAt, marker.expiresAt, now, 12, -8)
+  for (const marker of frame.goldMarkers) {
+    drawFloatingText(context, viewport, { x: marker[1], y: marker[2] }, `+${marker[5]}g`, teamInfo[marker[0]].primary, marker[3], marker[4], now, 12, -8)
   }
-  for (const marker of skillMarkers) {
-    drawFloatingText(context, viewport, marker.pos, marker.label, teamInfo[marker.team].primary, marker.createdAt, marker.expiresAt, now, 11, -18)
+  for (const marker of frame.skillMarkers) {
+    drawFloatingText(context, viewport, { x: marker[1], y: marker[2] }, marker[5], teamInfo[marker[0]].primary, marker[3], marker[4], now, 11, -18)
   }
 
   context.restore()
 }
 
-function drawAttackFx(context: CanvasRenderingContext2D, viewport: CanvasViewport, effect: AttackEffect, now: number) {
-  const progress = Math.min(1, Math.max(0, (now - effect.createdAt) / effect.duration))
+function drawAttackFx(context: CanvasRenderingContext2D, viewport: CanvasViewport, effect: MatchRenderFrame['effects'][number], now: number) {
+  const progress = Math.min(1, Math.max(0, (now - effect[7]) / effect[8]))
   const alpha = Math.max(0, 1 - progress)
   if (alpha <= 0) return
 
-  const from = toCanvasPoint(effect.from, viewport)
-  const to = toCanvasPoint(effect.to, viewport)
-  const teamColor = teamInfo[effect.team].primary
-  const targetRadius = effect.targetKind === 'tower' || effect.targetKind === 'structure' || effect.targetKind === 'base'
+  const from = toCanvasPoint({ x: effect[3], y: effect[4] }, viewport)
+  const to = toCanvasPoint({ x: effect[5], y: effect[6] }, viewport)
+  const teamColor = teamInfo[effect[2]].primary
+  const targetRadius = effect[1] === 'tower' || effect[1] === 'structure' || effect[1] === 'base'
     ? 5.8
-    : effect.targetKind === 'boss'
+    : effect[1] === 'boss'
       ? 7.5
       : 4.8
 
   context.save()
   context.globalAlpha = alpha
   context.strokeStyle = teamColor
-  context.lineWidth = effect.kind === 'tower' ? 2.4 : effect.kind === 'arcane' ? 1.8 : 1.2
+  context.lineWidth = effect[0] === 'tower' ? 2.4 : effect[0] === 'arcane' ? 1.8 : 1.2
   context.beginPath()
   context.moveTo(from.x, from.y)
   const beamX = from.x + (to.x - from.x) * Math.min(1, progress + 0.35)
@@ -1955,10 +2046,12 @@ function toCanvasPoint(point: Point, viewport: CanvasViewport) {
 }
 
 function AttackRangeCanvasLayer({
-  stateRef,
+  frameRef,
+  staticDataRef,
   selected,
 }: {
-  stateRef: React.RefObject<SimulationState | undefined>
+  frameRef: React.RefObject<MatchRenderFrame | undefined>
+  staticDataRef: React.RefObject<MatchStaticData | undefined>
   selected: Selected
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
@@ -1974,28 +2067,30 @@ function AttackRangeCanvasLayer({
     let frame = 0
     const shouldDraw = createDrawGate()
     const draw = () => {
-      const currentState = stateRef.current
-      if (currentState) {
+      const currentFrame = frameRef.current
+      const staticData = staticDataRef.current
+      if (currentFrame && staticData) {
         const selectedKey = latest.current.selected ? `${latest.current.selected.kind}:${latest.current.selected.id}` : 'none'
-        if (!shouldDraw(getCanvasDrawKey(canvas, currentState.time, selectedKey))) {
+        if (!shouldDraw(getCanvasDrawKey(canvas, currentFrame.time, selectedKey))) {
           frame = window.requestAnimationFrame(draw)
           return
         }
-        timeDraw('range', () => drawAttackRangeCanvas(canvas, currentState, latest.current.selected, visualPositions.current))
+        timeDraw('range', () => drawAttackRangeCanvas(canvas, currentFrame, staticData, latest.current.selected, visualPositions.current))
       }
       frame = window.requestAnimationFrame(draw)
     }
 
     frame = window.requestAnimationFrame(draw)
     return () => window.cancelAnimationFrame(frame)
-  }, [stateRef])
+  }, [frameRef, staticDataRef])
 
   return <canvas ref={canvasRef} className="attack-range-canvas" aria-hidden="true" />
 }
 
 function drawAttackRangeCanvas(
   canvas: HTMLCanvasElement,
-  state: SimulationState,
+  frame: MatchRenderFrame,
+  staticData: MatchStaticData,
   selected: Selected,
   visualPositions: Map<string, VisualPosition>,
 ) {
@@ -2009,20 +2104,18 @@ function drawAttackRangeCanvas(
   if (!context) return
   context.clearRect(0, 0, width, height)
 
-  const entity = findSelected(state, selected)
-  const range = getEntityAttackRange(entity)
-  const pos = getEntityPosition(entity)
-  if (!entity || !pos || range === undefined || range <= 0) {
+  const entity = getCompactRangeEntity(frame, staticData, selected)
+  if (!entity || entity.range <= 0) {
     pruneVisualPositionsOccasionally(visualPositions, [])
     return
   }
   pruneVisualPositionsOccasionally(visualPositions, [`range-${entity.id}`])
 
-  const visualPos = shouldBufferRangeEntity(entity)
-    ? getBufferedVisualPosition(`range-${entity.id}`, pos, visualPositions, getRangeSnapDistance(entity))
-    : pos
+  const visualPos = entity.snapDistance > 0
+    ? getBufferedVisualPosition(`range-${entity.id}`, entity.pos, visualPositions, entity.snapDistance)
+    : entity.pos
   const point = toCanvasPoint(visualPos, viewport)
-  const radius = (range / 100) * viewport.width
+  const radius = (entity.range / 100) * viewport.width
 
   context.save()
   context.scale(dpr, dpr)
@@ -2035,6 +2128,37 @@ function drawAttackRangeCanvas(
   context.fill()
   context.stroke()
   context.restore()
+}
+
+type CompactRangeEntity = { id: string; pos: Point; range: number; snapDistance: number }
+
+function getCompactRangeEntity(frame: MatchRenderFrame, staticData: MatchStaticData, selected: Selected): CompactRangeEntity | undefined {
+  if (!selected) return undefined
+  if (selected.kind === 'arcane') {
+    const index = staticData.arcanes.findIndex((arcane) => arcane.id === selected.id)
+    const motion = frame.arcanes[index]
+    return motion ? { id: selected.id, pos: { x: motion[0], y: motion[1] }, range: motion[7], snapDistance: 18 } : undefined
+  }
+  if (selected.kind === 'creep') {
+    const creep = frame.creeps.find((candidate) => candidate[0] === selected.id)
+    return creep ? { id: selected.id, pos: { x: creep[4], y: creep[5] }, range: creep[8], snapDistance: 9 } : undefined
+  }
+  if (selected.kind === 'boss' && selected.id === staticData.boss.id) {
+    return { id: selected.id, pos: { x: frame.boss[0], y: frame.boss[1] }, range: staticData.boss.range, snapDistance: 20 }
+  }
+  if (selected.kind === 'tower') {
+    const tower = staticData.towers.find((candidate) => candidate.id === selected.id)
+    return tower ? { id: tower.id, pos: tower.pos, range: tower.range, snapDistance: 0 } : undefined
+  }
+  if (selected.kind === 'structure') {
+    const structure = staticData.structures.find((candidate) => candidate.id === selected.id)
+    return structure ? { id: structure.id, pos: structure.pos, range: structure.range, snapDistance: 0 } : undefined
+  }
+  if (selected.kind === 'camp') {
+    const camp = staticData.camps.find((candidate) => candidate.id === selected.id)
+    return camp ? { id: camp.id, pos: camp.pos, range: camp.range, snapDistance: 0 } : undefined
+  }
+  return undefined
 }
 
 type CanvasViewport = {
@@ -2054,18 +2178,6 @@ function prepareCanvasForDraw(canvas: HTMLCanvasElement) {
     width: Math.max(1, Math.floor(viewport.width * dpr)),
     height: Math.max(1, Math.floor(viewport.height * dpr)),
   }
-}
-
-function shouldBufferRangeEntity(entity: Arcane | Creep | Tower | Structure | Base | Camp | Boss | MapRune) {
-  if (isMapRune(entity)) return false
-  return 'player' in entity || 'type' in entity || isBoss(entity)
-}
-
-function getRangeSnapDistance(entity: Arcane | Creep | Tower | Structure | Base | Camp | Boss | MapRune) {
-  if (isBoss(entity)) return 20
-  if ('player' in entity) return 18
-  if ('type' in entity) return 9
-  return 1
 }
 
 function EventFeed({ events }: { events: MatchEvent[] }) {
@@ -2097,6 +2209,8 @@ function EventFeed({ events }: { events: MatchEvent[] }) {
     </aside>
   )
 }
+
+const MemoEventFeed = memo(EventFeed)
 
 function MapNode({
   hp,
@@ -2155,6 +2269,7 @@ function MapNode({
 }
 
 function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structure | Base | Camp | Boss | MapRune | undefined; state: SimulationState }) {
+  if (import.meta.env.DEV) playbackUiStats.inspectorRenders += 1
   if (!entity) return <div className="detail-empty">Selecione um Arcane, torre, base, creep ou campo neutro.</div>
 
   if ('player' in entity) {
@@ -2443,6 +2558,8 @@ function AttributeSummary({ stats }: { stats: ReturnType<typeof calculateHeroSta
     />
   )
 }
+
+const MemoInspector = memo(Inspector)
 
 function DataCardTitle({ icon, title }: { icon: ReactNode; title: string }) {
   return (
