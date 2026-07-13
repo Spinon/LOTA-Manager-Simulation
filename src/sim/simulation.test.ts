@@ -57,6 +57,7 @@ import {
   getActivePullCampForCreep,
   getBestTeleportTarget,
   getRangedCreepSkillSecureTarget,
+  getRetainedArcaneCombatTarget,
   getRouteCreepTarget,
   getSimpleSkillRange,
   getRoleFarmPriority,
@@ -1303,6 +1304,28 @@ let state: SimulationState = initialState
   resolveCombat(priorityState, createTickFrameContext())
   assert.equal(priorityState.creeps[0].hp, 0, 'last hit must execute before deny when both are available')
   assert.equal(priorityState.creeps[1].hp, 1, 'the deny target must remain untouched while a last hit is available')
+}
+
+{
+  const retainedState = createStateAtGameStart('retained-combat-target')
+  const arcane = retainedState.arcanes.find((candidate) => candidate.team === 'dawn' && candidate.lane === 'top')!
+  const enemyCreep = retainedState.creeps.find((candidate) => candidate.team !== arcane.team && candidate.lane === arcane.lane)!
+  arcane.pos = { x: 50, y: 50 }
+  enemyCreep.pos = { x: 50.2, y: 50 }
+  enemyCreep.hp = 1
+  arcane.combatTargetId = enemyCreep.id
+  arcane.combatTargetIntent = 'last_hit'
+  assert.equal(getRetainedArcaneCombatTarget(retainedState, arcane)?.target.id, enemyCreep.id, 'a reachable last hit should retain its target')
+
+  enemyCreep.hp = enemyCreep.maxHp
+  assert.equal(getRetainedArcaneCombatTarget(retainedState, arcane), undefined, 'a last hit outside its damage window must be invalidated')
+
+  enemyCreep.hp = 1
+  arcane.combatTargetId = enemyCreep.id
+  arcane.combatTargetIntent = 'last_hit'
+  damageEntity(retainedState, enemyCreep.id, 0, { id: 'lane-pressure', label: 'Lane pressure', team: arcane.team })
+  assert.equal(arcane.combatTargetId, undefined, 'lane creep damage should wake nearby Arcanes and clear retained targets')
+  assert.equal(arcane.nextCombatEvaluationAt, retainedState.time, 'lane creep damage should schedule an immediate economic reevaluation')
 }
 
 {

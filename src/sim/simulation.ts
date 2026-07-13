@@ -82,6 +82,7 @@ export type EntityKind = 'arcane' | 'creep' | 'tower' | 'structure' | 'base' | '
 export type GamePhase = 'early' | 'mid' | 'late'
 export type DayCycle = 'day' | 'night'
 export type CampStrength = 'weak' | 'medium' | 'strong'
+export type ArcaneCombatTargetIntent = 'last_hit' | 'deny' | 'focus' | 'objective' | 'camp' | 'boss' | 'fallback'
 export type RuneKind = 'bounty' | 'power' | 'wisdom' | 'lotus'
 export type PowerRuneKind = 'haste' | 'arcane' | 'shield' | 'damage'
 export type StructureKind = 'barracks_melee' | 'barracks_ranged' | 'tower_tier_4'
@@ -141,6 +142,8 @@ export type Arcane = {
   respawn: number
   lastAttack: number
   nextCombatEvaluationAt: number
+  combatTargetId?: string
+  combatTargetIntent?: ArcaneCombatTargetIntent
   lastHitBy?: CombatSource
   aggression: number
   visionRange: number
@@ -1023,6 +1026,8 @@ export function createInitialState(seed = 'lota-default-seed'): SimulationState 
       respawn: aliveRespawnTimestamp,
       lastAttack: matchPreparationStartSeconds - 10,
       nextCombatEvaluationAt: matchPreparationStartSeconds,
+      combatTargetId: undefined,
+      combatTargetIntent: undefined,
       aggression: getRoleAggression(arcane.role),
       visionRange: getArcaneDefinitionVisionRange(arcane.heroDefinitionId, getDayCycle(matchPreparationStartSeconds)),
       shotcalling: getRoleShotcalling(arcane.role),
@@ -2024,6 +2029,8 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       respawn: motion[2],
       lastAttack: 0,
       nextCombatEvaluationAt: frame.time,
+      combatTargetId: undefined,
+      combatTargetIntent: undefined,
       aggression: arcane[3],
       visionRange: arcane[4],
       shotcalling: arcane[5],
@@ -2648,6 +2655,8 @@ export function respawnArcaneIfReady(arcane: Arcane, time: number, index: number
     pathIndex: 1,
     respawn: aliveRespawnTimestamp,
     nextCombatEvaluationAt: time,
+    combatTargetId: undefined,
+    combatTargetIntent: undefined,
     lastHitBy: undefined,
     skillStates: getPersistentSkillStatesAfterDeath(arcane),
     macroDecision: 'Avancar rota',
@@ -8774,6 +8783,77 @@ export function isSimpleHealingSkill(skill: HeroSkillDefinition) {
   ])
 }
 
+export function getCombatTargetById(state: SimulationState, id: string): CombatTarget | undefined {
+  const indexes = getSimulationEntityIndexes(state)
+  const arcaneIndex = indexes.arcane.get(id)
+  if (arcaneIndex !== undefined) return state.arcanes[arcaneIndex]
+  const creepIndex = indexes.creep.get(id)
+  if (creepIndex !== undefined) return state.creeps[creepIndex]
+  const towerIndex = indexes.tower.get(id)
+  if (towerIndex !== undefined) return state.towers[towerIndex]
+  const structureIndex = indexes.structure.get(id)
+  if (structureIndex !== undefined) return state.structures[structureIndex]
+  const baseIndex = indexes.base.get(id)
+  if (baseIndex !== undefined) return state.bases[baseIndex]
+  const campIndex = indexes.camp.get(id)
+  if (campIndex !== undefined) return state.camps[campIndex]
+  return state.boss.id === id ? state.boss : undefined
+}
+
+export function getRetainedArcaneCombatTarget(state: SimulationState, arcane: Arcane) {
+  if (!arcane.combatTargetId || !arcane.combatTargetIntent) return undefined
+  const target = getCombatTargetById(state, arcane.combatTargetId)
+  if (!target || ('player' in target ? target.stats.hp <= 0 : target.hp <= 0)) return undefined
+  if (distanceSquared(arcane.pos, target.pos) > getArcaneAttackCenterRange(arcane, target) ** 2) return undefined
+
+  const intent = arcane.combatTargetIntent
+  if ('player' in target) {
+    if (target.team === arcane.team || target.respawn > state.time || !isPointVisibleToTeam(state, arcane.team, target.pos)) return undefined
+  }
+
+  if (intent === 'last_hit') {
+    if (!('type' in target) || target.team === arcane.team) return undefined
+    return getLastHitCandidateFromCreeps(state, arcane, [target], 1.06, true) ? { target, intent } : undefined
+  }
+  if (intent === 'deny') {
+    if (!('type' in target) || target.team !== arcane.team) return undefined
+    return getDenyCandidateFromCreeps(arcane, [target], true) ? { target, intent } : undefined
+  }
+  if (intent === 'focus') {
+    const board = getArcaneCombatBlackboard(state, arcane)
+    return 'player' in target && board?.primaryTargetId === target.id ? { target, intent } : undefined
+  }
+  if (intent === 'objective') {
+    if (!isObjectiveMicroDecision(arcane.microDecision) || !('team' in target) || target.team === arcane.team) return undefined
+    const unlocked = 'tier' in target
+      ? isTowerUnlocked(state, arcane.team, target)
+      : 'kind' in target
+        ? isStructureUnlocked(state, arcane.team, target)
+        : isEnemyBaseUnlocked(state, arcane.team)
+    return unlocked ? { target, intent } : undefined
+  }
+  if (intent === 'camp') {
+    return 'strength' in target && (isJungleFarmMicroDecision(arcane.microDecision) || isLanePullMicroDecision(arcane.microDecision))
+      ? { target, intent }
+      : undefined
+  }
+  if (intent === 'boss') {
+    return isBoss(target) && arcane.microDecision.startsWith('Atacar chefe') ? { target, intent } : undefined
+  }
+
+  if (arcane.aiMode === 'retreat' || arcane.macroDecision.startsWith('Recuar') || isObjectiveMicroDecision(arcane.microDecision)) return undefined
+  if ('player' in target) {
+    const board = getArcaneCombatBlackboard(state, arcane)
+    if (board?.primaryTargetId && board.primaryTargetId !== target.id) return undefined
+    return { target, intent }
+  }
+  if ('type' in target && target.team !== arcane.team) {
+    if (isLaningControlMicroDecision(arcane.microDecision) && target.lane === arcane.lane) return undefined
+    return { target, intent }
+  }
+  return undefined
+}
+
 export function hasSimpleStatusTag(skill: HeroSkillDefinition) {
   return hasAnySimpleSkillTag(skill, ['stun', 'disable', 'taunt', 'slow', 'silence', 'anti_magic', 'root', 'net', 'leash', 'hex', 'sleep', 'fear', 'disarm', 'break', 'mute'])
 }
@@ -9030,28 +9110,29 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     const attackCooldown = getEffectiveArcaneAttackCooldown(next, arcane)
     const attackReady = next.time - arcane.lastAttack >= attackCooldown
     if (!attackReady && !hasAnyCastableSkill(next, arcane)) return
+    const retainedTarget = getRetainedArcaneCombatTarget(next, arcane)
     const canAttackBoss = !pregame && next.boss.hp > 0 && arcane.microDecision.startsWith('Atacar chefe')
-    const bossTarget = canAttackBoss && distance(arcane.pos, next.boss.pos) <= getArcaneAttackCenterRange(arcane, next.boss) ? next.boss : undefined
-    const objectiveTarget = pregame ? undefined : getFocusedObjectiveTarget(next, arcane)
+    const bossTarget = retainedTarget ? undefined : canAttackBoss && distance(arcane.pos, next.boss.pos) <= getArcaneAttackCenterRange(arcane, next.boss) ? next.boss : undefined
+    const objectiveTarget = retainedTarget || pregame ? undefined : getFocusedObjectiveTarget(next, arcane)
     const enemyTeam = arcane.team === 'dawn' ? 'dusk' : 'dawn'
     const pullingLane = isLanePullMicroDecision(arcane.microDecision)
     const farmingJungle = isJungleFarmMicroDecision(arcane.microDecision) || pullingLane
-    const lastHitTarget = pregame || farmingJungle ? undefined : getLastHitTarget(next, arcane, creepIndicesByTeamLane[enemyTeam][arcane.lane])
-    const denyTarget = pregame || farmingJungle ? undefined : getDenyTarget(next, arcane, creepIndicesByTeamLane[arcane.team][arcane.lane])
+    const lastHitTarget = retainedTarget || pregame || farmingJungle ? undefined : getLastHitTarget(next, arcane, creepIndicesByTeamLane[enemyTeam][arcane.lane])
+    const denyTarget = retainedTarget || pregame || farmingJungle ? undefined : getDenyTarget(next, arcane, creepIndicesByTeamLane[arcane.team][arcane.lane])
     const laneControl = isLaningControlMicroDecision(arcane.microDecision)
-    const rangedCreepSkillTarget = !pregame && laneControl && !lastHitTarget
+    const rangedCreepSkillTarget = !retainedTarget && !pregame && laneControl && !lastHitTarget
       ? getRangedCreepSkillSecureTarget(
           next,
           arcane,
           creepIndicesByTeamLane[enemyTeam][arcane.lane].map((index) => next.creeps[index]),
         )
       : undefined
-    const focusTarget = getCombatFocusTarget(next, arcane)
+    const focusTarget = retainedTarget ? undefined : getCombatFocusTarget(next, arcane)
     const reachableFocusTarget = focusTarget && distance(arcane.pos, focusTarget.pos) <= getArcaneAttackCenterRange(arcane, focusTarget)
       ? focusTarget
       : undefined
-    const protectsLastHitWindow = (laneControl || arcane.aiMode === 'farm_lane') && lastHitTarget !== undefined
-    let target: CombatTarget | undefined = bossTarget ?? objectiveTarget ?? (
+    const protectsLastHitWindow = retainedTarget?.intent === 'last_hit' || (laneControl || arcane.aiMode === 'farm_lane') && lastHitTarget !== undefined
+    let target: CombatTarget | undefined = retainedTarget?.target ?? bossTarget ?? objectiveTarget ?? (
       protectsLastHitWindow
         ? lastHitTarget
         : reachableFocusTarget ?? lastHitTarget ?? denyTarget
@@ -9076,6 +9157,17 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
         ...(canAttackBoss ? [next.boss] : []),
       ])
     }
+    const targetIntent: ArcaneCombatTargetIntent | undefined = retainedTarget?.intent ?? (
+      !target ? undefined
+        : target.id === bossTarget?.id ? 'boss'
+          : target.id === objectiveTarget?.id ? 'objective'
+            : target.id === lastHitTarget?.id ? 'last_hit'
+              : target.id === denyTarget?.id ? 'deny'
+                : target.id === reachableFocusTarget?.id ? 'focus'
+                  : 'strength' in target ? 'camp' : 'fallback'
+    )
+    arcane.combatTargetId = target?.id
+    arcane.combatTargetIntent = targetIntent
     if (rangedCreepSkillTarget && tryCastRangedCreepSecureSkill(next, arcane, rangedCreepSkillTarget)) return
     if (!protectsLastHitWindow && tryCastSimpleSkill(next, arcane, target)) return
     if (!target || next.time - arcane.lastAttack < attackCooldown) return
@@ -10180,6 +10272,8 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
     return {
       ...arcane,
       nextCombatEvaluationAt: isTarget ? Math.min(arcane.nextCombatEvaluationAt, state.time) : arcane.nextCombatEvaluationAt,
+      combatTargetId: isTarget ? undefined : arcane.combatTargetId,
+      combatTargetIntent: isTarget ? undefined : arcane.combatTargetIntent,
       lastHitBy: isTarget ? source : arcane.lastHitBy,
       damageDealt: arcane.damageDealt + (isSource ? appliedDamage : 0),
       heroDamageDealt: arcane.heroDamageDealt + (isSource && targetArcane ? appliedDamage : 0),
@@ -10203,6 +10297,8 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
       if (arcane.lane !== targetCreep.lane || arcane.stats.hp <= 0 || arcane.respawn > state.time) return
       if (distanceSquared(arcane.pos, targetCreep.pos) > 14 * 14) return
       arcane.nextCombatEvaluationAt = Math.min(arcane.nextCombatEvaluationAt, state.time)
+      arcane.combatTargetId = undefined
+      arcane.combatTargetIntent = undefined
     })
   }
 }

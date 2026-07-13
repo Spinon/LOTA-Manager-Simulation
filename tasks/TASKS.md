@@ -579,7 +579,9 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T21 - Scheduler de combate dos Arcanes
+### [x] T21 - Scheduler de combate dos Arcanes
+
+> Concluída em 2026-07-13 - Avaliações rodam por evento/10Hz e alvos válidos persistem por intenção, com invalidação econômica, tática, de visão, alcance e vida.
 
 **Objetivo**: parar de reconstruir alvos e ordenar skills a 30Hz quando ataque, cooldown ou contexto ainda não permitem uma nova ação.
 
@@ -594,7 +596,12 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Cada Arcane ganhou um instante determinístico para a próxima avaliação de combate; movimento continua em 30Hz, enquanto a árvore completa de alvo/skill roda no máximo a 10Hz sem evento relevante.
 - Dano recebido desperta imediatamente o Arcane; dano em creep desperta Arcanes próximos da lane para preservar janelas e prioridade `last hit > deny`.
 - A/B no mesmo runtime e seed: mediana de 7,46s sem gate para 6,11s com gate, ganho de 21,9% (`56,3x -> 68,8x`) no cenário até 06:00. Testes, lint e build verdes.
-- Pendente para concluir: persistir e validar o alvo entre avaliações, invalidando por morte, alcance, visão, perigo e eventos críticos.
+
+**Conclusão da retenção (2026-07-13)**:
+- O estado interno preserva ID e intenção (`last_hit`, `deny`, foco, objetivo, campo, chefe ou fallback) sem aumentar o frame do replay.
+- Reuso exige alvo vivo, alcançável, visível e compatível com a decisão atual. Last hit/deny revalidam seus limiares, foco acompanha o blackboard e objetivos continuam sujeitos a tier/desbloqueio.
+- Dano em Arcane ou creep próximo limpa a retenção e antecipa a avaliação; retreat, troca de objetivo e troca de foco também invalidam o alvo antigo.
+- A retenção adicionou 1,9% de ganho mediano sobre o gate já otimizado. O ganho combinado da T21 permanece dominado pelos 21,9% do scheduler, com testes específicos de validade, janela de last hit e despertar por dano.
 
 ---
 
