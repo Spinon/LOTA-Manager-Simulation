@@ -140,6 +140,7 @@ export type Arcane = {
   pathIndex: number
   respawn: number
   lastAttack: number
+  nextCombatEvaluationAt: number
   lastHitBy?: CombatSource
   aggression: number
   visionRange: number
@@ -562,6 +563,7 @@ export const itemResaleRate = 0.5
 // Dobrar o passo corta ~metade do custo de CPU da partida no worker.
 export const simulationFrameSeconds = 1 / 30
 export const decisionGateSeconds = 0.1
+export const arcaneCombatEvaluationIntervalSeconds = 0.1
 export const maxDecisionHoldSeconds = 6
 export const teamDecisionIntervalSeconds = 1.2
 export const fortificationDurationSeconds = 7
@@ -993,7 +995,7 @@ export async function loadGameData() {
   toRuntimeItemModifier = itemModule.toItemModifier
 }
 
-export const rosterSeed: Omit<Arcane, 'pos' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCooldowns' | 'skillStates' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'kills' | 'deaths' | 'assists' | 'damageDealt' | 'heroDamageDealt' | 'structureDamageDealt' | 'damageTaken' | 'healingDone' | 'healingReceived' | 'laneCreepKills' | 'denies' | 'neutralKills' | 'objectiveKills' | 'stats'>[] = [
+export const rosterSeed: Omit<Arcane, 'pos' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'nextCombatEvaluationAt' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCooldowns' | 'skillStates' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'kills' | 'deaths' | 'assists' | 'damageDealt' | 'heroDamageDealt' | 'structureDamageDealt' | 'damageTaken' | 'healingDone' | 'healingReceived' | 'laneCreepKills' | 'denies' | 'neutralKills' | 'objectiveKills' | 'stats'>[] = [
   { id: 'd-quasar', team: 'dawn', player: 'Quasar', name: 'Sword Tempest', heroDefinitionId: 'h007_sword_tempest', role: 'Safe Lane', lane: 'bot', portrait: 'ST', items: ['Blade', 'Boots'] },
   { id: 'd-aster', team: 'dawn', player: 'Aster', name: 'Storm Channeler', heroDefinitionId: 'h014_storm_channeler', role: 'Mid', lane: 'mid', portrait: 'SC', items: ['Wand'] },
   { id: 'd-bulwark', team: 'dawn', player: 'Bulwark', name: 'Tide Colossus', heroDefinitionId: 'h022_tide_colossus', role: 'Offlane', lane: 'top', portrait: 'TC', items: ['Shield'] },
@@ -1020,6 +1022,7 @@ export function createInitialState(seed = 'lota-default-seed'): SimulationState 
       pathIndex: 1,
       respawn: aliveRespawnTimestamp,
       lastAttack: matchPreparationStartSeconds - 10,
+      nextCombatEvaluationAt: matchPreparationStartSeconds,
       aggression: getRoleAggression(arcane.role),
       visionRange: getArcaneDefinitionVisionRange(arcane.heroDefinitionId, getDayCycle(matchPreparationStartSeconds)),
       shotcalling: getRoleShotcalling(arcane.role),
@@ -2020,6 +2023,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       pathIndex: 0,
       respawn: motion[2],
       lastAttack: 0,
+      nextCombatEvaluationAt: frame.time,
       aggression: arcane[3],
       visionRange: arcane[4],
       shotcalling: arcane[5],
@@ -2643,6 +2647,7 @@ export function respawnArcaneIfReady(arcane: Arcane, time: number, index: number
     target: lanePaths[arcane.team][arcane.lane][1],
     pathIndex: 1,
     respawn: aliveRespawnTimestamp,
+    nextCombatEvaluationAt: time,
     lastHitBy: undefined,
     skillStates: getPersistentSkillStatesAfterDeath(arcane),
     macroDecision: 'Avancar rota',
@@ -9020,6 +9025,8 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     if (arcane.channeling) return
     if (isArcaneAttackDisabled(next, arcane)) return
     if (pregame && (arcane.microDecision.startsWith('Cedendo runa') || arcane.microDecision.startsWith('Aguardando janela segura'))) return
+    if (next.time + 0.0001 < arcane.nextCombatEvaluationAt) return
+    arcane.nextCombatEvaluationAt = next.time + arcaneCombatEvaluationIntervalSeconds
     const attackCooldown = getEffectiveArcaneAttackCooldown(next, arcane)
     const attackReady = next.time - arcane.lastAttack >= attackCooldown
     if (!attackReady && !hasAnyCastableSkill(next, arcane)) return
@@ -10172,6 +10179,7 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
     if (!isTarget && !isSource) return arcane
     return {
       ...arcane,
+      nextCombatEvaluationAt: isTarget ? Math.min(arcane.nextCombatEvaluationAt, state.time) : arcane.nextCombatEvaluationAt,
       lastHitBy: isTarget ? source : arcane.lastHitBy,
       damageDealt: arcane.damageDealt + (isSource ? appliedDamage : 0),
       heroDamageDealt: arcane.heroDamageDealt + (isSource && targetArcane ? appliedDamage : 0),
@@ -10189,6 +10197,13 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
       arcanes[sourceArcaneIndex] = updateArcane(arcanes[sourceArcaneIndex])
     }
     state.arcanes = arcanes
+  }
+  if (targetCreep) {
+    state.arcanes.forEach((arcane) => {
+      if (arcane.lane !== targetCreep.lane || arcane.stats.hp <= 0 || arcane.respawn > state.time) return
+      if (distanceSquared(arcane.pos, targetCreep.pos) > 14 * 14) return
+      arcane.nextCombatEvaluationAt = Math.min(arcane.nextCombatEvaluationAt, state.time)
+    })
   }
 }
 

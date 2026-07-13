@@ -1281,6 +1281,7 @@ let state: SimulationState = initialState
   const alliedCreep = priorityState.creeps.find((candidate) => candidate.team === arcane.team && candidate.lane === arcane.lane)!
   arcane.pos = { x: 50, y: 50 }
   arcane.lastAttack = -10
+  arcane.nextCombatEvaluationAt = priorityState.time
   arcane.skillLevels = {}
   enemyCreep.pos = { x: 50.2, y: 50 }
   enemyCreep.hp = 1
@@ -1311,6 +1312,7 @@ let state: SimulationState = initialState
   const [closerEnemy, focusedEnemy] = focusState.arcanes.filter((arcane) => arcane.team === 'dusk').slice(0, 2)
   attacker.pos = { x: 50, y: 50 }
   attacker.lastAttack = 190
+  attacker.nextCombatEvaluationAt = focusState.time
   attacker.items = []
   attacker.skillLevels = {}
   closerEnemy.pos = { x: 50.15, y: 50 }

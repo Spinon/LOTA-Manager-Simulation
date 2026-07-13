@@ -562,6 +562,82 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
+### [x] T20 - Benchmark fiel do pré-cálculo
+
+> Concluída em 2026-07-13 - O benchmark usa o encoder binário e transferência reais, mede componentes e replay, segmenta a partida e possui modo completo sem aquecimento artificial.
+
+**Objetivo**: medir o caminho real do Worker e impedir que regressões tardias sejam escondidas por amostras curtas.
+
+**Escopo**:
+- Usar `ReplayChunkEncoder`, buffers transferíveis, frames a 5Hz e detalhes a 0,5Hz, como o Worker.
+- Suportar partida completa e segmentos de cinco minutos, reportando taxa, população de creeps, bytes do replay e custo de tick/frame/encode/transfer.
+- Registrar baseline de uma partida completa e preservar digest determinístico entre execuções equivalentes.
+
+**Critérios**: benchmark reproduz o transporte atual; modo curto continua adequado a regressão; modo completo expõe degradação por fase; testes, lint e build verdes.
+
+**Medição**: a seed `performance-reference` terminou organicamente em `47:47`; foram 2.927,4s simulados em 55,05s (`53,2x`) e replay de 88,6 MB. O `tick` respondeu por 97,8% do caminho medido; frame 0,9%, encode 1,2% e transferência 0,1%. O trecho final caiu para `41,5x` com 124 creeps, confirmando T22 como próximo gargalo estrutural.
+
+---
+
+### [ ] T21 - Scheduler de combate dos Arcanes
+
+**Objetivo**: parar de reconstruir alvos e ordenar skills a 30Hz quando ataque, cooldown ou contexto ainda não permitem uma nova ação.
+
+**Escopo**:
+- Registrar o próximo instante relevante de avaliação por Arcane.
+- Conservar alvo válido e invalidar por morte, alcance, visão, perigo ou evento crítico.
+- Avaliar skills em cadência tática, preservando mana, cooldown, prioridade e resposta imediata a emergências.
+
+**Critérios**: reduzir materialmente `resolveCombat` e `tryCastSimpleSkill`; nenhuma skill dispara fora do cooldown; determinismo e testes de last hit/deny/combat ficam verdes.
+
+**Progresso (2026-07-13)**:
+- Cada Arcane ganhou um instante determinístico para a próxima avaliação de combate; movimento continua em 30Hz, enquanto a árvore completa de alvo/skill roda no máximo a 10Hz sem evento relevante.
+- Dano recebido desperta imediatamente o Arcane; dano em creep desperta Arcanes próximos da lane para preservar janelas e prioridade `last hit > deny`.
+- A/B no mesmo runtime e seed: mediana de 7,46s sem gate para 6,11s com gate, ganho de 21,9% (`56,3x -> 68,8x`) no cenário até 06:00. Testes, lint e build verdes.
+- Pendente para concluir: persistir e validar o alvo entre avaliações, invalidando por morte, alcance, visão, perigo e eventos críticos.
+
+---
+
+### [ ] T22 - Percepção persistente das creeps
+
+**Objetivo**: manter movimento em 30Hz sem refazer aquisição de alvo e consultas espaciais completas em todo tick.
+
+**Escopo**:
+- Persistir alvo de rota por creep e reavaliar em 10Hz ou por invalidação.
+- Reutilizar grade espacial por janela curta com margem de movimento.
+- Invalidar imediatamente em morte, saída de alcance, pull, troca de aggro ou desbloqueio de objetivo.
+
+**Critérios**: movimento e ataques visualmente idênticos; pulls e aggro preservados; redução mensurável de `updateCreepMovement/getRouteCreepTarget`.
+
+---
+
+### [ ] T23 - Cadências internas e estado sujo do tick
+
+**Objetivo**: reservar 30Hz para integração sensível ao tempo e executar manutenção de estado apenas quando necessário.
+
+**Escopo**:
+- Agendar expiração de efeitos, auras, memória e limpeza de marcadores.
+- Evitar `filter/map/Object.entries` quando a coleção estiver vazia ou nenhuma expiração puder ocorrer.
+- Preservar durações e dano por segundo sem reduzir a precisão observável.
+
+**Critérios**: reduzir custo residual do `tick`, manter fórmulas temporais e digest aprovado, testes/lint/build verdes.
+
+---
+
+### [ ] T24 - Carregamento adaptativo sem buffering
+
+**Objetivo**: reduzir a espera percebida em máquinas fracas sem permitir que o playback alcance o Worker.
+
+**Escopo**:
+- Medir taxa de produção do Worker e calcular buffer seguro para 1x-16x.
+- Liberar a partida após espera curta e margem suficiente; continuar o pré-cálculo em segundo plano.
+- Ajustar temporariamente velocidades indisponíveis quando a máquina não sustentar a taxa escolhida.
+- Aumentar lotes durante loading e reduzir mensagens sem bloquear cancelamento ou progresso.
+
+**Critérios**: primeira imagem em até 10-12s na máquina de referência; nenhuma parada por buffer em 16x quando a velocidade estiver liberada; loading e restart confiáveis.
+
+---
+
 ## Histórico (não retrabalhar)
 
 Concluído em rodadas anteriores — mantido aqui só como registro:

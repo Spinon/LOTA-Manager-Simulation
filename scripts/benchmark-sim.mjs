@@ -10,8 +10,13 @@ import {
   simulationFrameSeconds,
   tick,
 } from '../src/sim/simulation.ts'
+import { getReplayChunkTransferables, ReplayChunkEncoder } from '../src/sim/replayStore.ts'
 
 const args = process.argv.slice(2)
+
+function hasArg(name) {
+  return args.includes(`--${name}`)
+}
 
 function getArg(name, fallback) {
   const index = args.indexOf(`--${name}`)
@@ -19,8 +24,10 @@ function getArg(name, fallback) {
 }
 
 const simulatedSeconds = Math.max(30, Number(getArg('seconds', 300)) || 300)
-const runCount = Math.max(1, Number(getArg('runs', 3)) || 3)
+const fullMatch = hasArg('full')
+const runCount = Math.max(1, Number(getArg('runs', fullMatch ? 1 : 3)) || 1)
 const seed = getArg('seed', 'performance-reference')
+const segmentSeconds = Math.max(60, Number(getArg('segment-seconds', 300)) || 300)
 const renderFrameIntervalSeconds = 0.2
 const renderDetailsIntervalSeconds = 2
 const simulationChunkSteps = 150
@@ -63,34 +70,87 @@ function runBenchmark() {
   let pendingFrames = []
   let frameCount = 0
   let stepCount = 0
+  let replayBytes = 0
+  let tickMilliseconds = 0
+  let frameMilliseconds = 0
+  let encodeMilliseconds = 0
+  let transferMilliseconds = 0
+  let segmentStartedAt = performance.now()
+  let segmentStartTime = state.time
+  let nextSegmentAt = state.time + segmentSeconds
+  const segments = []
+  const replayEncoder = new ReplayChunkEncoder()
 
   structuredClone(createMatchStaticData(state))
   const cpuStartedAt = process.cpuUsage()
   const startedAt = performance.now()
+  segmentStartedAt = startedAt
 
-  while (!state.winner && state.time < simulatedSeconds) {
+  const flushFrames = () => {
+    if (pendingFrames.length === 0) return
+    let measuredAt = performance.now()
+    const chunk = replayEncoder.encode(pendingFrames)
+    encodeMilliseconds += performance.now() - measuredAt
+    const transferables = getReplayChunkTransferables(chunk)
+    replayBytes += transferables.reduce((sum, buffer) => sum + buffer.byteLength, 0)
+    measuredAt = performance.now()
+    structuredClone(chunk, { transfer: transferables })
+    transferMilliseconds += performance.now() - measuredAt
+    pendingFrames = []
+  }
+
+  while (!state.winner && (fullMatch || state.time < simulatedSeconds)) {
     decisionAccumulator += simulationFrameSeconds
     const shouldDecide = decisionAccumulator >= decisionGateSeconds
     if (shouldDecide) decisionAccumulator %= decisionGateSeconds
 
+    let measuredAt = performance.now()
     state = tick(state, simulationFrameSeconds, shouldDecide)
+    tickMilliseconds += performance.now() - measuredAt
     stepCount += 1
 
     if (state.time + 0.0001 >= nextFrameAt) {
       const includeDetails = state.time + 0.0001 >= nextDetailsAt
+      measuredAt = performance.now()
       pendingFrames.push(createMatchRenderFrame(state, includeDetails))
+      frameMilliseconds += performance.now() - measuredAt
       if (includeDetails) nextDetailsAt = state.time + renderDetailsIntervalSeconds
       nextFrameAt += renderFrameIntervalSeconds
       frameCount += 1
     }
 
-    if (stepCount % simulationChunkSteps === 0 && pendingFrames.length > 0) {
-      structuredClone(pendingFrames)
-      pendingFrames = []
+    if (stepCount % simulationChunkSteps === 0) flushFrames()
+
+    if (state.time + 0.0001 >= nextSegmentAt || state.winner) {
+      const now = performance.now()
+      const elapsedSimulation = state.time - segmentStartTime
+      const elapsedWall = (now - segmentStartedAt) / 1000
+      segments.push({
+        from: segmentStartTime,
+        to: state.time,
+        wallSeconds: elapsedWall,
+        simulationRate: elapsedSimulation / elapsedWall,
+        creeps: state.creeps.length,
+      })
+      segmentStartedAt = now
+      segmentStartTime = state.time
+      nextSegmentAt += segmentSeconds
     }
   }
 
-  if (pendingFrames.length > 0) structuredClone(pendingFrames)
+  if (state.time > segmentStartTime + 0.0001) {
+    const now = performance.now()
+    const elapsedSimulation = state.time - segmentStartTime
+    const elapsedWall = (now - segmentStartedAt) / 1000
+    segments.push({
+      from: segmentStartTime,
+      to: state.time,
+      wallSeconds: elapsedWall,
+      simulationRate: elapsedSimulation / elapsedWall,
+      creeps: state.creeps.length,
+    })
+  }
+  flushFrames()
 
   const wallSeconds = (performance.now() - startedAt) / 1000
   const cpuUsage = process.cpuUsage(cpuStartedAt)
@@ -103,11 +163,21 @@ function runBenchmark() {
     cpuSimulationRate: (state.time - matchPreparationStartSeconds) / cpuSeconds,
     steps: stepCount,
     frames: frameCount,
+    replayBytes,
+    componentMilliseconds: {
+      tick: tickMilliseconds,
+      frame: frameMilliseconds,
+      encode: encodeMilliseconds,
+      transfer: transferMilliseconds,
+    },
+    segments,
     digest: createStateDigest(state),
   }
 }
 
-runBenchmark() // warm-up do JIT e dos caches de dados
+// O modo completo mede a experiência real do primeiro Worker. Aquecer outra
+// partida inteira dobraria o tempo do comando e esconderia o custo de partida fria.
+if (!fullMatch) runBenchmark()
 const results = Array.from({ length: runCount }, (_, index) => {
   const result = runBenchmark()
   console.log(
@@ -115,6 +185,20 @@ const results = Array.from({ length: runCount }, (_, index) => {
     `${result.wallSeconds.toFixed(2)}s wall / ${result.cpuSeconds.toFixed(2)}s CPU ` +
     `(${result.simulationRate.toFixed(1)}x wall; ${result.cpuSimulationRate.toFixed(1)}x CPU) | digest ${result.digest}`,
   )
+  const measuredTotal = Object.values(result.componentMilliseconds).reduce((sum, value) => sum + value, 0)
+  console.log(
+    `    tick ${formatShare(result.componentMilliseconds.tick, measuredTotal)} | ` +
+    `frame ${formatShare(result.componentMilliseconds.frame, measuredTotal)} | ` +
+    `encode ${formatShare(result.componentMilliseconds.encode, measuredTotal)} | ` +
+    `transfer ${formatShare(result.componentMilliseconds.transfer, measuredTotal)} | ` +
+    `replay ${(result.replayBytes / 1024 / 1024).toFixed(1)} MB`,
+  )
+  for (const segment of result.segments) {
+    console.log(
+      `    ${formatClock(segment.from)} -> ${formatClock(segment.to)}: ` +
+      `${segment.wallSeconds.toFixed(2)}s (${segment.simulationRate.toFixed(1)}x), ${segment.creeps} creeps`,
+    )
+  }
   return result
 })
 
@@ -137,7 +221,18 @@ const medianCpuRate = results[0].simulatedSeconds / medianCpuSeconds
 console.log('')
 console.log('=== Benchmark da simulação ===')
 console.log(`Seed: ${seed}`)
+console.log(`Modo: ${fullMatch ? 'partida completa' : `até ${formatClock(simulatedSeconds)}`}`)
 console.log(`Mediana: ${medianWallSeconds.toFixed(2)}s`)
 console.log(`Taxa mediana: ${medianRate.toFixed(1)} segundos simulados/segundo real`)
 console.log(`CPU mediana: ${medianCpuSeconds.toFixed(2)}s (${medianCpuRate.toFixed(1)} segundos simulados/segundo de CPU)`)
 console.log(`Digest: ${results[0].digest}`)
+
+function formatShare(value, total) {
+  return `${(value / 1000).toFixed(2)}s (${(value / Math.max(1, total) * 100).toFixed(1)}%)`
+}
+
+function formatClock(time) {
+  const sign = time < 0 ? '-' : ''
+  const absolute = Math.abs(Math.round(time))
+  return `${sign}${String(Math.floor(absolute / 60)).padStart(2, '0')}:${String(absolute % 60).padStart(2, '0')}`
+}
