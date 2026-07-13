@@ -11,6 +11,9 @@ import {
   canTargetWithSimpleDamageSkill,
   castSimpleSkill,
   collectTacticalCreepActivations,
+  collectTacticalArcaneTravelActivations,
+  canUseArcaneKinematicFastPath,
+  createArcaneTravelPlanIfUseful,
   createInitialState,
   creepTacticalActivationMargin,
   createMatchRenderFrame,
@@ -85,6 +88,7 @@ import {
   respawnArcaneIfReady,
   runeSpawnPoints,
   processJungleStacks,
+  processTimedEffects,
   queryCreepSpatialGrid,
   resolveDeaths,
   resolveCombat,
@@ -98,6 +102,7 @@ import {
   updateCreepMovement,
   updateCreepsForTick,
   updateArcaneMovement,
+  updateArcaneKinematics,
   updateCombatAiFoundation,
   updateBoss,
   type Arcane,
@@ -107,6 +112,7 @@ import {
   type TickFrameContext,
 } from './simulation.ts'
 import { createCreepMotionPlan, sampleCreepMotionPlan } from './creepMotionPlans.ts'
+import { sampleArcaneTravelPlan, scheduleArcaneTravelPlan } from './arcaneTravelPlans.ts'
 import { getSkillEffectProfile } from '../game-systems/skillRuntime.ts'
 import { parentSkillStateKey, ringmasterSouvenirAbilityIds, ringmasterSouvenirStateKey } from '../game-systems/skillUnlocks.ts'
 import type { HeroSkillDefinition } from '../game-systems/heroAttributes.ts'
@@ -1050,6 +1056,144 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   duskCreep.hp = 0
   const nearbyAfterDeath = queryCreepSpatialGrid(activationState, duskCreep.pos, 2)
   assert.equal(nearbyAfterDeath.some((creep) => creep.id === duskCreep.id), false, 'dead creeps should invalidate queries before the next bucket sync')
+}
+
+{
+  const travelState = createInitialState('arcane-travel-plan-runtime-test', { arcaneTravelMode: 'planned' })
+  travelState.time = 120
+  travelState.creeps = []
+  travelState.arcanes.forEach((candidate) => {
+    if (candidate.team === 'dusk') candidate.stats.hp = 0
+  })
+  const arcane = travelState.arcanes.find((candidate) => candidate.team === 'dawn')!
+  arcane.pos = { x: 30, y: 50 }
+  arcane.target = { x: 42, y: 50 }
+  arcane.macroDecision = 'Avancar rota'
+  arcane.microDecision = 'Avancando rota'
+  arcane.aiMode = 'push_lane'
+  arcane.forceDecision = false
+  arcane.nextDecisionAt = travelState.time + 1
+  const plan = createArcaneTravelPlanIfUseful(
+    travelState,
+    arcane,
+    arcane.pos,
+    arcane.target,
+    arcane.target,
+    arcane.macroDecision,
+    arcane.microDecision,
+    arcane.aiMode,
+    4,
+    arcane.nextDecisionAt,
+    false,
+    createTickFrameContext(),
+  )
+  assert.equal(plan?.kind, 'lane', 'safe long lane movement should create an analytical travel plan')
+  arcane.travelPlan = plan
+  const storedPosition = { ...arcane.pos }
+  const manaBefore = arcane.stats.mana
+  travelState.time += simulationFrameSeconds
+  const sleeping = updateArcaneMovement(arcane, travelState, simulationFrameSeconds, false, createTickFrameContext())
+  assert.deepEqual(sleeping.pos, storedPosition, 'a sleeping Arcane should keep its stored runtime position')
+  assert.ok(sleeping.stats.mana >= manaBefore, 'out-of-combat mana regeneration should continue while travelling analytically')
+  const sampled = sampleArcaneTravelPlan(plan!, travelState.time)
+  const renderPosition = createMatchRenderFrame({ ...travelState, arcanes: [sleeping, ...travelState.arcanes.filter((candidate) => candidate.id !== sleeping.id)] }).arcanes[0]
+  assert.equal(renderPosition[0], Number(sampled.x.toFixed(3)), 'replay should sample an Arcane travel plan without waking it')
+  assert.equal(renderPosition[1], Number(sampled.y.toFixed(3)), 'replay should preserve smooth analytical Arcane travel')
+
+  travelState.arcanes = travelState.arcanes.map((candidate) => candidate.id === sleeping.id ? sleeping : candidate)
+  damageEntity(travelState, sleeping.id, 1, { id: 'travel-test-hit', label: 'Test hit', team: 'dusk', damageType: 'pure' })
+  const damagedTraveller = travelState.arcanes.find((candidate) => candidate.id === sleeping.id)!
+  assert.equal(damagedTraveller.travelPlan, undefined, 'damage should immediately materialize and cancel Arcane travel')
+
+  damagedTraveller.travelPlan = scheduleArcaneTravelPlan(
+    undefined,
+    'lane',
+    damagedTraveller.pos,
+    { x: damagedTraveller.pos.x + 10, y: damagedTraveller.pos.y },
+    4,
+    travelState.time,
+    travelState.time + 1,
+    `${(damagedTraveller.pos.x + 10).toFixed(3)}:${damagedTraveller.pos.y.toFixed(3)}`,
+    `${damagedTraveller.macroDecision}|${damagedTraveller.microDecision}|${damagedTraveller.aiMode}`,
+    '-',
+    damagedTraveller.damageTaken,
+  )
+  addTimedEffect(travelState, damagedTraveller, {
+    sourceId: 'travel-test-dot',
+    sourceName: 'Test DoT',
+    sourceTeam: 'dusk',
+    kind: 'dot',
+    polarity: 'negative',
+    value: 1,
+    damageType: 'pure',
+    tickInterval: 0.01,
+    duration: 1,
+  })
+  travelState.time += 0.02
+  const expectedDotPosition = sampleArcaneTravelPlan(damagedTraveller.travelPlan, travelState.time)
+  processTimedEffects(travelState)
+  assert.equal(damagedTraveller.travelPlan, undefined, 'periodic damage should cancel Arcane travel')
+  assert.ok(distance(damagedTraveller.pos, expectedDotPosition) < 0.0001, 'periodic damage should materialize the current analytical position before cancelling')
+}
+
+{
+  const activationState = createInitialState('arcane-travel-danger-test', { arcaneTravelMode: 'planned' })
+  activationState.time = 120
+  activationState.creeps = []
+  const traveller = activationState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const enemy = activationState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  activationState.arcanes.forEach((arcane) => {
+    if (arcane.id !== traveller.id && arcane.id !== enemy.id) arcane.stats.hp = 0
+  })
+  traveller.pos = { x: 45, y: 50 }
+  traveller.target = { x: 60, y: 50 }
+  traveller.macroDecision = 'Avancar rota'
+  traveller.microDecision = 'Avancando rota'
+  traveller.aiMode = 'push_lane'
+  traveller.travelPlan = scheduleArcaneTravelPlan(
+    undefined,
+    'lane',
+    traveller.pos,
+    traveller.target,
+    4,
+    activationState.time,
+    activationState.time + 1,
+    '60.000:50.000',
+    'Avancar rota|Avancando rota|push_lane',
+    '-',
+    traveller.damageTaken,
+  )
+  enemy.pos = { x: 45 + traveller.visionRange - 0.5, y: 50 }
+  const context = createTickFrameContext()
+  collectTacticalArcaneTravelActivations(activationState, context)
+  assert.equal(context.tacticalActivationArcaneIds?.has(traveller.id), true, 'visible danger should wake Arcane travel before contact')
+
+  addTimedEffect(activationState, traveller, {
+    sourceId: enemy.id,
+    sourceName: enemy.player,
+    sourceTeam: enemy.team,
+    kind: 'root',
+    polarity: 'negative',
+    value: 1,
+    duration: 1,
+  })
+  assert.equal(traveller.travelPlan, undefined, 'movement control should immediately cancel Arcane travel')
+}
+
+{
+  const kinematicState = createInitialState('arcane-kinematic-fast-path-test', { arcaneTravelMode: 'planned' })
+  kinematicState.time = 120
+  const arcane = kinematicState.arcanes[0]
+  arcane.pos = { x: 30, y: 50 }
+  arcane.target = { x: 40, y: 50 }
+  arcane.movementDestination = { x: 40, y: 50 }
+  arcane.forceDecision = false
+  arcane.nextDecisionAt = kinematicState.time + 1
+  assert.equal(canUseArcaneKinematicFastPath(arcane, kinematicState, false), true, 'frames between AI decisions should use the kinematic fast path')
+  const before = { ...arcane.pos }
+  const moved = updateArcaneKinematics(arcane, kinematicState, simulationFrameSeconds)
+  assert.ok(distance(moved.pos, before) > 0, 'kinematic frames should keep tactical movement at 30Hz')
+  assert.equal(moved.movementDestination, arcane.movementDestination, 'kinematic frames should reuse the resolved destination')
 }
 
 {

@@ -1,0 +1,31 @@
+{
+  "generatedAt": "2026-07-13T20:44:38.593Z",
+  "seed": "performance-reference",
+  "baseline": {
+    "mode": "fixed",
+    "matchClock": "42:13",
+    "simulatedSeconds": 2592.7,
+    "wallSeconds": 22.47,
+    "cpuSeconds": 31.33,
+    "simulationRate": 115.4,
+    "cpuSimulationRate": 82.8,
+    "fullMovementTraversals": 646018,
+    "digest": "c268c3096799ac89"
+  },
+  "candidate": {
+    "mode": "planned",
+    "matchClock": "42:15",
+    "simulatedSeconds": 2595.3,
+    "wallSeconds": 21.75,
+    "cpuSeconds": 29.08,
+    "simulationRate": 119.3,
+    "cpuSimulationRate": 89.3,
+    "fullMovementTraversals": 232293,
+    "digest": "60302b8bf99a21cc"
+  },
+  "normalizedWallGainPct": 3.4,
+  "normalizedCpuGainPct": 7.9,
+  "fullTraversalReductionPct": 64.0,
+  "movementTraversalSpeedup": 2.78,
+  "matchClockDeltaSeconds": 2.6
+}

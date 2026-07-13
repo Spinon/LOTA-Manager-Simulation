@@ -1,0 +1,362 @@
+{
+  "generatedAt": "2026-07-13T20:42:30.774Z",
+  "matches": 2,
+  "minutes": 10,
+  "baselineRate": 111.61430654931867,
+  "candidateRate": 126.18038524190773,
+  "normalizedGainPct": 13.050368848685888,
+  "fullTraversalReductionPct": 59.38787820553883,
+  "movementTraversalSpeedup": 2.4623190215498263,
+  "dangerViolations": 0,
+  "baselineRapidDirectionReversals": 11,
+  "candidateRapidDirectionReversals": 11,
+  "baselineOscillationClusters": 0,
+  "candidateOscillationClusters": 0,
+  "deterministic": true,
+  "results": [
+    {
+      "seed": "arcane-travel-audit-1",
+      "baseline": {
+        "wallSeconds": 6.2814878,
+        "simulationRate": 105.07064902681176,
+        "digest": "53e916ee550cd2ec",
+        "dangerViolations": 0,
+        "rapidDirectionReversals": 5,
+        "reversalEvents": [
+          {
+            "arcaneId": "r-noct",
+            "time": 62.166,
+            "elapsed": 1.8810000000000002,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar"
+          },
+          {
+            "arcaneId": "d-aster",
+            "time": 63.354,
+            "elapsed": 0.5940000000000012,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar da luta"
+          },
+          {
+            "arcaneId": "d-bloom",
+            "time": 87.411,
+            "elapsed": 1.1880000000000024,
+            "from": "retreat",
+            "to": "advance",
+            "macroDecision": "Avancar rota"
+          },
+          {
+            "arcaneId": "r-cinder",
+            "time": 401.736,
+            "elapsed": 0.6929999999999836,
+            "from": "retreat",
+            "to": "advance",
+            "macroDecision": "Push wave"
+          },
+          {
+            "arcaneId": "r-cinder",
+            "time": 402.132,
+            "elapsed": 0.396000000000015,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar"
+          }
+        ],
+        "oscillationClusters": 0,
+        "oscillationEvents": [],
+        "diagnostics": {
+          "candidates": 167843,
+          "plansStarted": 0,
+          "sleepingSkips": 0,
+          "materializations": 0,
+          "tacticalActivations": 0,
+          "cancelledByDamage": 0,
+          "cancelledByControl": 0,
+          "cancelledByDecision": 0,
+          "cancelledByCall": 0,
+          "rejectedAtBase": 0,
+          "rejectedKind": 0,
+          "rejectedDeadline": 0,
+          "rejectedDistance": 0,
+          "rejectedThreat": 0,
+          "kinematicUpdates": 0,
+          "fullUpdates": 186973
+        },
+        "summary": {
+          "time": 600,
+          "kills": {
+            "dawn": 4,
+            "dusk": 2
+          },
+          "teamGold": {
+            "dawn": 4167.177909510957,
+            "dusk": 4401.606752127253
+          }
+        }
+      },
+      "candidate": {
+        "wallSeconds": 5.466586300000001,
+        "simulationRate": 120.73348224649813,
+        "digest": "d253afb7a8302363",
+        "dangerViolations": 0,
+        "rapidDirectionReversals": 4,
+        "reversalEvents": [
+          {
+            "arcaneId": "d-quasar",
+            "time": 27.516,
+            "elapsed": 1.8809999999999967,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar"
+          },
+          {
+            "arcaneId": "r-ignis",
+            "time": 125.823,
+            "elapsed": 0.8909999999999911,
+            "from": "retreat",
+            "to": "advance",
+            "macroDecision": "Avancar rota"
+          },
+          {
+            "arcaneId": "r-cinder",
+            "time": 398.073,
+            "elapsed": 0.9899999999999523,
+            "from": "retreat",
+            "to": "advance",
+            "macroDecision": "Avancar rota"
+          },
+          {
+            "arcaneId": "d-aster",
+            "time": 425.991,
+            "elapsed": 1.2869999999999777,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar da luta"
+          }
+        ],
+        "oscillationClusters": 0,
+        "oscillationEvents": [],
+        "diagnostics": {
+          "candidates": 57490,
+          "plansStarted": 520,
+          "sleepingSkips": 5235,
+          "materializations": 2305,
+          "tacticalActivations": 98,
+          "cancelledByDamage": 0,
+          "cancelledByControl": 0,
+          "cancelledByDecision": 0,
+          "cancelledByCall": 0,
+          "rejectedAtBase": 3251,
+          "rejectedKind": 8414,
+          "rejectedDeadline": 6598,
+          "rejectedDistance": 16211,
+          "rejectedThreat": 22496,
+          "kinematicUpdates": 106030,
+          "fullUpdates": 76678
+        },
+        "summary": {
+          "time": 600,
+          "kills": {
+            "dawn": 2,
+            "dusk": 4
+          },
+          "teamGold": {
+            "dawn": 4788.372034274608,
+            "dusk": 4174.166047263832
+          }
+        }
+      },
+      "candidateRepeatDigest": "d253afb7a8302363"
+    },
+    {
+      "seed": "arcane-travel-audit-2",
+      "baseline": {
+        "wallSeconds": 5.544953099999999,
+        "simulationRate": 119.02715642446104,
+        "digest": "8e6e7988ace7d1b4",
+        "dangerViolations": 0,
+        "rapidDirectionReversals": 6,
+        "reversalEvents": [
+          {
+            "arcaneId": "r-ignis",
+            "time": 125.229,
+            "elapsed": 1.8810000000000002,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar"
+          },
+          {
+            "arcaneId": "r-mara",
+            "time": 265.116,
+            "elapsed": 1.1879999999999882,
+            "from": "retreat",
+            "to": "advance",
+            "macroDecision": "Avancar rota"
+          },
+          {
+            "arcaneId": "d-bloom",
+            "time": 464.304,
+            "elapsed": 1.1879999999999882,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar"
+          },
+          {
+            "arcaneId": "r-mara",
+            "time": 506.181,
+            "elapsed": 1.7819999999999823,
+            "from": "retreat",
+            "to": "advance",
+            "macroDecision": "Avancar rota"
+          },
+          {
+            "arcaneId": "r-cinder",
+            "time": 526.476,
+            "elapsed": 1.5839999999999463,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar"
+          },
+          {
+            "arcaneId": "r-vega",
+            "time": 569.937,
+            "elapsed": 0.8909999999999627,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar da luta"
+          }
+        ],
+        "oscillationClusters": 0,
+        "oscillationEvents": [],
+        "diagnostics": {
+          "candidates": 168087,
+          "plansStarted": 0,
+          "sleepingSkips": 0,
+          "materializations": 0,
+          "tacticalActivations": 0,
+          "cancelledByDamage": 0,
+          "cancelledByControl": 0,
+          "cancelledByDecision": 0,
+          "cancelledByCall": 0,
+          "rejectedAtBase": 0,
+          "rejectedKind": 0,
+          "rejectedDeadline": 0,
+          "rejectedDistance": 0,
+          "rejectedThreat": 0,
+          "kinematicUpdates": 0,
+          "fullUpdates": 187691
+        },
+        "summary": {
+          "time": 600,
+          "kills": {
+            "dawn": 4,
+            "dusk": 1
+          },
+          "teamGold": {
+            "dawn": 3771.8763665360084,
+            "dusk": 4114.387617835787
+          }
+        }
+      },
+      "candidate": {
+        "wallSeconds": 4.994627599999999,
+        "simulationRate": 132.14198391888118,
+        "digest": "93163f6fd7a64809",
+        "dangerViolations": 0,
+        "rapidDirectionReversals": 7,
+        "reversalEvents": [
+          {
+            "arcaneId": "d-bulwark",
+            "time": 11.973,
+            "elapsed": 1.782,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar"
+          },
+          {
+            "arcaneId": "r-vega",
+            "time": 243.831,
+            "elapsed": 1.8810000000000002,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar da luta"
+          },
+          {
+            "arcaneId": "r-vega",
+            "time": 278.778,
+            "elapsed": 1.8810000000000286,
+            "from": "retreat",
+            "to": "advance",
+            "macroDecision": "Avancar rota"
+          },
+          {
+            "arcaneId": "r-ignis",
+            "time": 347.187,
+            "elapsed": 1.6829999999999927,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar"
+          },
+          {
+            "arcaneId": "d-orbit",
+            "time": 373.62,
+            "elapsed": 1.4850000000000136,
+            "from": "retreat",
+            "to": "advance",
+            "macroDecision": "Avancar rota"
+          },
+          {
+            "arcaneId": "d-orbit",
+            "time": 458.067,
+            "elapsed": 1.0889999999999986,
+            "from": "retreat",
+            "to": "advance",
+            "macroDecision": "Avancar rota"
+          },
+          {
+            "arcaneId": "d-quasar",
+            "time": 465.987,
+            "elapsed": 1.6830000000000496,
+            "from": "advance",
+            "to": "retreat",
+            "macroDecision": "Recuar"
+          }
+        ],
+        "oscillationClusters": 0,
+        "oscillationEvents": [],
+        "diagnostics": {
+          "candidates": 56248,
+          "plansStarted": 450,
+          "sleepingSkips": 5030,
+          "materializations": 2171,
+          "tacticalActivations": 100,
+          "cancelledByDamage": 0,
+          "cancelledByControl": 0,
+          "cancelledByDecision": 0,
+          "cancelledByCall": 0,
+          "rejectedAtBase": 3452,
+          "rejectedKind": 5648,
+          "rejectedDeadline": 7114,
+          "rejectedDistance": 16924,
+          "rejectedThreat": 22660,
+          "kinematicUpdates": 105481,
+          "fullUpdates": 75481
+        },
+        "summary": {
+          "time": 600,
+          "kills": {
+            "dawn": 3,
+            "dusk": 0
+          },
+          "teamGold": {
+            "dawn": 4702.844507226624,
+            "dusk": 4957.809999999933
+          }
+        }
+      },
+      "candidateRepeatDigest": "93163f6fd7a64809"
+    }
+  ]
+}

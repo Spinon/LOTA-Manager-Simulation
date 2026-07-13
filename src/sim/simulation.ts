@@ -87,6 +87,13 @@ import {
   syncPersistentSpatialGrid,
   type PersistentSpatialGrid,
 } from './persistentSpatialGrid.ts'
+import {
+  rebaseArcaneTravelPlan,
+  sampleArcaneTravelPlan,
+  scheduleArcaneTravelPlan,
+  type ArcaneTravelKind,
+  type ArcaneTravelPlan,
+} from './arcaneTravelPlans.ts'
 
 export type TeamId = 'dawn' | 'dusk'
 export type TeamMatchOutcome = 'winner' | 'loser' | 'draw'
@@ -103,9 +110,29 @@ export type TeamObjectiveKind = 'tower' | 'structure' | 'base' | 'boss' | 'picko
 export type DecisionStatus = 'sharp' | 'steady' | 'hesitant' | 'tilted'
 export type CreepMotionMode = 'fixed' | 'planned'
 export type CreepSpatialMode = 'rebuild' | 'persistent'
+export type ArcaneTravelMode = 'fixed' | 'planned'
 export type SimulationOptions = {
   creepMotionMode?: CreepMotionMode
   creepSpatialMode?: CreepSpatialMode
+  arcaneTravelMode?: ArcaneTravelMode
+}
+export type ArcaneTravelDiagnostics = {
+  candidates: number
+  plansStarted: number
+  sleepingSkips: number
+  materializations: number
+  tacticalActivations: number
+  cancelledByDamage: number
+  cancelledByControl: number
+  cancelledByDecision: number
+  cancelledByCall: number
+  rejectedAtBase: number
+  rejectedKind: number
+  rejectedDeadline: number
+  rejectedDistance: number
+  rejectedThreat: number
+  kinematicUpdates: number
+  fullUpdates: number
 }
 export type CreepMotionDiagnostics = {
   candidates: number
@@ -118,6 +145,7 @@ export type CreepMotionDiagnostics = {
 export type Selected = { kind: EntityKind; id: string } | undefined
 
 let activeCreepMotionDiagnostics: CreepMotionDiagnostics | undefined
+let activeArcaneTravelDiagnostics: ArcaneTravelDiagnostics | undefined
 
 export function beginCreepMotionDiagnostics() {
   activeCreepMotionDiagnostics = {
@@ -137,6 +165,33 @@ export function readCreepMotionDiagnostics(): CreepMotionDiagnostics | undefined
 export function endCreepMotionDiagnostics() {
   const diagnostics = readCreepMotionDiagnostics()
   activeCreepMotionDiagnostics = undefined
+  return diagnostics
+}
+
+export function beginArcaneTravelDiagnostics() {
+  activeArcaneTravelDiagnostics = {
+    candidates: 0,
+    plansStarted: 0,
+    sleepingSkips: 0,
+    materializations: 0,
+    tacticalActivations: 0,
+    cancelledByDamage: 0,
+    cancelledByControl: 0,
+    cancelledByDecision: 0,
+    cancelledByCall: 0,
+    rejectedAtBase: 0,
+    rejectedKind: 0,
+    rejectedDeadline: 0,
+    rejectedDistance: 0,
+    rejectedThreat: 0,
+    kinematicUpdates: 0,
+    fullUpdates: 0,
+  }
+}
+
+export function endArcaneTravelDiagnostics() {
+  const diagnostics = activeArcaneTravelDiagnostics ? { ...activeArcaneTravelDiagnostics } : undefined
+  activeArcaneTravelDiagnostics = undefined
   return diagnostics
 }
 
@@ -188,6 +243,7 @@ export type Arcane = {
   portrait: string
   pos: Point
   target: Point
+  movementDestination?: Point
   pathIndex: number
   respawn: number
   lastAttack: number
@@ -220,6 +276,7 @@ export type Arcane = {
   tpScrolls: number
   tpCooldownUntil: number
   channeling?: ChannelingAction
+  travelPlan?: ArcaneTravelPlan
   skillLevels: SkillLevels
   unspentSkillPoints: number
   statBonusLevels: number
@@ -342,6 +399,7 @@ export type TickFrameContext = {
   creepSpatialQueryBuffer: Creep[]
   creepSpatialIdBuffer: string[]
   tacticalActivationCreepIds?: Set<string>
+  tacticalActivationArcaneIds?: Set<string>
   // Caches válidos dentro de um único tick (mesma semântica do cache de alvo
   // acima: pequenas mutações de posição/hp no meio do tick são ignoradas).
   arcaneNearRouteCache: Map<Point[], Map<string, boolean>>
@@ -393,6 +451,7 @@ export type SimulationState = {
   creepMotionMode: CreepMotionMode
   creepSpatialMode: CreepSpatialMode
   creepSpatialRevision: number
+  arcaneTravelMode: ArcaneTravelMode
   time: number
   nextWave: number
   kills: Record<TeamId, number>
@@ -1145,6 +1204,7 @@ export function createInitialState(seed = 'lota-default-seed', options: Simulati
     creepMotionMode: options.creepMotionMode ?? 'planned',
     creepSpatialMode: options.creepSpatialMode ?? 'persistent',
     creepSpatialRevision: 0,
+    arcaneTravelMode: options.arcaneTravelMode ?? 'planned',
     time: matchPreparationStartSeconds,
     nextWave: 0,
     kills: { dawn: 0, dusk: 0 },
@@ -1814,8 +1874,10 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   next.boss = updateBoss(next.boss, next.time, delta)
   if (shouldDecide) {
     materializeCreepMotionPlansForTacticalWindow(next)
+    materializeArcaneTravelPlansForTacticalWindow(next)
     next.creepSpatialRevision += 1
     collectTacticalCreepActivations(next, frameContext)
+    collectTacticalArcaneTravelActivations(next, frameContext)
   }
 
   const needsInitialTeamPlan = next.teamPlans.dawn === undefined || next.teamPlans.dusk === undefined
@@ -1840,6 +1902,7 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   if (shouldDecide) {
     resolveUnitHitboxes(next)
     rebaseCreepMotionPlansAfterHitboxes(next)
+    rebaseArcaneTravelPlansAfterHitboxes(next)
   }
   if (shouldDecide && next.time >= next.nextCombatAiAt) {
     next = updateCombatAiFoundation(next)
@@ -1899,6 +1962,7 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
       ...arcane,
       pos: { ...arcane.pos },
       target: { ...arcane.target },
+      movementDestination: arcane.movementDestination ? { ...arcane.movementDestination } : undefined,
       lastDecisionPos: { ...arcane.lastDecisionPos },
       itemCooldowns: { ...arcane.itemCooldowns },
       skillStates: Object.fromEntries(Object.entries(arcane.skillStates).map(([key, value]) => [key, {
@@ -1907,6 +1971,11 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
       }])),
       skillLevels: { ...arcane.skillLevels },
       channeling: arcane.channeling ? { ...arcane.channeling, target: { ...arcane.channeling.target } } : undefined,
+      travelPlan: arcane.travelPlan ? {
+        ...arcane.travelPlan,
+        from: { ...arcane.travelPlan.from },
+        destination: { ...arcane.travelPlan.destination },
+      } : undefined,
       items: [...arcane.items],
       stats: { ...arcane.stats },
       lastHitBy: arcane.lastHitBy ? { ...arcane.lastHitBy } : undefined,
@@ -2085,11 +2154,14 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
     goldMarkers: state.goldMarkers.map((marker) => [marker.team, marker.pos.x, marker.pos.y, marker.createdAt, marker.expiresAt, marker.amount]),
     skillMarkers: state.skillMarkers.map((marker) => [marker.team, marker.pos.x, marker.pos.y, marker.createdAt, marker.expiresAt, marker.label]),
     recentTeleports: state.recentTeleports.map((record) => [record.team, record.pos.x, record.pos.y, record.startedAt]),
-    arcanes: state.arcanes.map((arcane) => [
-      renderNumber(arcane.pos.x), renderNumber(arcane.pos.y), renderNumber(arcane.respawn), renderNumber(arcane.stats.maxHp),
-      renderNumber(arcane.stats.hp), renderNumber(arcane.stats.maxMana), renderNumber(arcane.stats.mana), renderNumber(arcane.stats.range),
-      arcane.channeling ? { ...arcane.channeling, target: { ...arcane.channeling.target } } : undefined,
-    ]),
+    arcanes: state.arcanes.map((arcane) => {
+      const position = arcane.travelPlan ? sampleArcaneTravelPlan(arcane.travelPlan, state.time) : arcane.pos
+      return [
+        renderNumber(position.x), renderNumber(position.y), renderNumber(arcane.respawn), renderNumber(arcane.stats.maxHp),
+        renderNumber(arcane.stats.hp), renderNumber(arcane.stats.maxMana), renderNumber(arcane.stats.mana), renderNumber(arcane.stats.range),
+        arcane.channeling ? { ...arcane.channeling, target: { ...arcane.channeling.target } } : undefined,
+      ]
+    }),
     creeps: state.creeps.map((creep) => {
       const position = creep.motionPlan ? sampleCreepMotionPlan(creep.motionPlan, state.time) : creep.pos
       return [
@@ -2197,6 +2269,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
     creepMotionMode: 'planned',
     creepSpatialMode: 'persistent',
     creepSpatialRevision: 0,
+    arcaneTravelMode: 'planned',
     time: frame.time,
     nextWave: 0,
     kills: { dawn: frame.kills[0], dusk: frame.kills[1] },
@@ -2778,11 +2851,13 @@ export function respawnArcaneIfReady(arcane: Arcane, time: number, index: number
     ...arcane,
     pos: spawn,
     target: lanePaths[arcane.team][arcane.lane][1],
+    movementDestination: undefined,
     pathIndex: 1,
     respawn: aliveRespawnTimestamp,
     nextCombatEvaluationAt: time,
     combatTargetId: undefined,
     combatTargetIntent: undefined,
+    travelPlan: undefined,
     lastHitBy: undefined,
     skillStates: getPersistentSkillStatesAfterDeath(arcane),
     macroDecision: 'Avancar rota',
@@ -5008,10 +5083,35 @@ export function updateArcaneMovement(
       macroDecision: 'Fora de combate',
       microDecision,
       decision: microDecision,
+      travelPlan: undefined,
     }
   }
-  if (arcane.stats.hp <= 0) return arcane
-  if (arcane.channeling) return updateChannelingArcane(state, arcane)
+  if (arcane.stats.hp <= 0) return arcane.travelPlan ? { ...arcane, travelPlan: undefined } : arcane
+  if (arcane.channeling) return updateChannelingArcane(state, arcane.travelPlan ? { ...arcane, travelPlan: undefined } : arcane)
+
+  if (arcane.travelPlan) {
+    const wakeReason = getArcaneTravelWakeReason(arcane, state, frameContext)
+    if (!wakeReason) {
+      if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.sleepingSkips += 1
+      const manaRegen = resourceRegenForTick(NON_COMBAT_RULES.regeneration.outOfCombatManaRegenPerSecond, delta)
+      if (manaRegen <= 0 || arcane.stats.mana >= arcane.stats.maxMana) return arcane
+      return {
+        ...arcane,
+        stats: {
+          ...arcane.stats,
+          mana: Math.min(arcane.stats.maxMana, arcane.stats.mana + manaRegen),
+        },
+      }
+    }
+    recordArcaneTravelWake(wakeReason)
+    arcane = materializeArcaneTravelPlan(arcane, state.time)
+  }
+
+  if (canUseArcaneKinematicFastPath(arcane, state, shouldDecide)) {
+    if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.kinematicUpdates += 1
+    return updateArcaneKinematics(arcane, state, delta, shouldDecide)
+  }
+  if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.fullUpdates += 1
 
   let target = arcane.target
   let macroDecision = arcane.macroDecision
@@ -5640,7 +5740,22 @@ export function updateArcaneMovement(
       ? state.time + getArcaneDecisionInterval(activeArcane, aiMode, finalMacroDecision) + (arcane.forceDecision ? 0 : aiExecutionDelay)
       : decisionDue
         ? state.time + getArcaneHoldDecisionInterval(activeArcane)
-        : activeArcane.nextDecisionAt
+      : activeArcane.nextDecisionAt
+
+  const travelPlan = createArcaneTravelPlanIfUseful(
+    state,
+    activeArcane,
+    nextPos,
+    target,
+    moveDestination,
+    finalMacroDecision,
+    finalMicroDecision,
+    aiMode,
+    effectiveMoveSpeed * auraMultiplier * moveMultiplier,
+    nextDecisionAt,
+    atBase,
+    frameContext,
+  )
 
   return {
     ...activeArcane,
@@ -5663,7 +5778,9 @@ export function updateArcaneMovement(
     lastDecisionPos: shouldRunDecision ? nextPos : activeArcane.lastDecisionPos,
     decision: finalMicroDecision,
     pos: nextPos,
+    movementDestination: moveDestination,
     stats: nextStats,
+    travelPlan,
   }
 }
 
@@ -6906,6 +7023,10 @@ export function processTimedEffects(state: SimulationState): SimulationState {
 
     const target = state.arcanes.find((arcane) => arcane.id === effect.targetId && arcane.stats.hp > 0 && arcane.respawn <= state.time)
     if (!target) return
+    if (effect.kind === 'dot' && target.travelPlan) {
+      materializeArcaneTravelPlan(target, state.time)
+      if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.cancelledByDamage += 1
+    }
     const sourceArcane = state.arcanes.find((arcane) => effect.sourceId === arcane.id || effect.sourceId.startsWith(`${arcane.id}-`))
     const rawTickValue = effect.value * effect.stacks
     const resolvedTickValue = effect.kind === 'dot'
@@ -6929,6 +7050,7 @@ export function processTimedEffects(state: SimulationState): SimulationState {
         damageTaken: arcane.damageTaken + (isTarget && effect.kind === 'dot' ? appliedValue : 0),
         healingDone: arcane.healingDone + (isSource && effect.kind === 'hot' ? appliedValue : 0),
         healingReceived: arcane.healingReceived + (isTarget && effect.kind === 'hot' ? appliedValue : 0),
+        travelPlan: isTarget && effect.kind === 'dot' ? undefined : arcane.travelPlan,
         stats: isTarget ? {
           ...arcane.stats,
           hp: effect.kind === 'dot' ? arcane.stats.hp - appliedValue : arcane.stats.hp + appliedValue,
@@ -6981,6 +7103,17 @@ export function addTimedEffect(state: SimulationState, target: Arcane, effect: O
     timedEffect,
     ...state.timedEffects.filter((current) => current.id !== id),
   ].slice(0, 160)
+
+  if (
+    target.travelPlan &&
+    (effect.kind === 'stun' || effect.kind === 'hex' || effect.kind === 'sleep' || effect.kind === 'fear' || effect.kind === 'taunt' || effect.kind === 'root')
+  ) {
+    const liveTarget = state.arcanes.find((arcane) => arcane.id === target.id)
+    if (liveTarget?.travelPlan) {
+      materializeArcaneTravelPlan(liveTarget, state.time)
+      if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.cancelledByControl += 1
+    }
+  }
 }
 
 export function getDefaultDispelType(kind: TimedEffect['kind'], polarity: TimedEffect['polarity']): DispelType {
@@ -7074,6 +7207,290 @@ export function absorbDamageWithBarriers(state: SimulationState, targetId: strin
   }).filter((effect) => effect.kind !== 'barrier' || (effect.barrierRemaining ?? effect.value) > 0)
 
   return remainingDamage
+}
+
+export type ArcaneTravelWakeReason = 'arrival' | 'damage' | 'control' | 'decision' | 'call' | 'danger'
+
+export function canUseArcaneKinematicFastPath(arcane: Arcane, state: SimulationState, shouldDecide: boolean) {
+  if (state.arcaneTravelMode !== 'planned' || arcane.forceDecision || state.time < 0) return false
+  if (isArcaneMovementDisabled(state, arcane) || arcane.microDecision.startsWith('Foco em')) return false
+  if (!shouldDecide) return true
+  if (state.time + 0.0001 >= arcane.nextDecisionAt) return false
+
+  const ownBase = teamInfo[arcane.team].base
+  if (distanceSquared(arcane.pos, ownBase) < baseServiceRange * baseServiceRange) return false
+  const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
+  const manaRatio = arcane.stats.mana / Math.max(1, arcane.stats.maxMana)
+  if (hpRatio < 0.82 || manaRatio < 0.62) return false
+  if (arcane.tpScrolls > 0 && arcane.tpCooldownUntil <= state.time && arcane.stats.mana >= teleportManaCost) return false
+  if (state.timedEffects.some((effect) => (
+    effect.targetId === arcane.id && effect.polarity === 'negative' && effect.expiresAt > state.time
+  ))) return false
+  const board = getArcaneCombatBlackboard(state, arcane)
+  return !board || board.phase === 'disengage' || board.phase === 'reset'
+}
+
+export function updateArcaneKinematics(arcane: Arcane, state: SimulationState, delta: number, refreshDestination = false): Arcane {
+  const ownBase = teamInfo[arcane.team].base
+  const atBase = distanceSquared(arcane.pos, ownBase) < baseServiceRange * baseServiceRange
+  const shouldRefreshLane = isLaneAdvanceMicroDecision(arcane.microDecision) && (
+    distanceSquared(arcane.pos, arcane.target) <= 1.35 * 1.35 ||
+    distanceSquared(arcane.pos, arcane.lastDecisionPos) > 1.2 * 1.2
+  )
+  const path = lanePaths[arcane.team][arcane.lane]
+  const pathIndex = shouldRefreshLane
+    ? syncLanePathIndex(arcane.pos, path, arcane.pathIndex)
+    : arcane.pathIndex
+  const target = shouldRefreshLane
+    ? getLaneAdvancePoint(arcane, path, pathIndex)
+    : arcane.target
+  const destination = refreshDestination || shouldRefreshLane || !arcane.movementDestination
+    ? getArcaneMoveDestination(arcane, state, target, arcane.microDecision)
+    : arcane.movementDestination
+  const moveSpeed = getEffectiveArcaneMoveSpeed(state, arcane) *
+    getAuraMultiplier(state, arcane.team) *
+    getArcaneMovementEffectMultiplier(state, arcane)
+  const nextPos = moveToward(arcane.pos, destination, moveSpeed * delta)
+  const hpRegen = atBase
+    ? resourceRegenForTick(NON_COMBAT_RULES.regeneration.baseHealthRegenPerSecond, delta)
+    : 0
+  const manaRegen = resourceRegenForTick(
+    atBase
+      ? NON_COMBAT_RULES.regeneration.baseManaRegenPerSecond
+      : NON_COMBAT_RULES.regeneration.outOfCombatManaRegenPerSecond,
+    delta,
+  )
+  arcane.pathIndex = pathIndex
+  arcane.target = target
+  arcane.movementDestination = destination
+  arcane.pos = nextPos
+  if (hpRegen > 0 || manaRegen > 0) {
+    arcane.stats.hp = Math.min(arcane.stats.maxHp, arcane.stats.hp + hpRegen)
+    arcane.stats.mana = Math.min(arcane.stats.maxMana, arcane.stats.mana + manaRegen)
+  }
+  return arcane
+}
+
+export function getArcaneTravelTargetSignature(point: Point) {
+  return `${point.x.toFixed(3)}:${point.y.toFixed(3)}`
+}
+
+export function getArcaneTravelDecisionSignature(arcane: Pick<Arcane, 'macroDecision' | 'microDecision' | 'aiMode'>) {
+  return `${arcane.macroDecision}|${arcane.microDecision}|${arcane.aiMode}`
+}
+
+export function getArcaneTravelTeamCallSignature(state: SimulationState, team: TeamId) {
+  const call = state.teamCalls[team]
+  return call ? `${call.callerId}|${call.targetId}|${call.createdAt}|${call.expiresAt}` : '-'
+}
+
+export function materializeArcaneTravelPlan(arcane: Arcane, time: number, preservePlan = false): Arcane {
+  if (!arcane.travelPlan) return arcane
+  if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.materializations += 1
+  const pos = sampleArcaneTravelPlan(arcane.travelPlan, time)
+  arcane.pos.x = pos.x
+  arcane.pos.y = pos.y
+  if (!preservePlan) arcane.travelPlan = undefined
+  return arcane
+}
+
+export function materializeArcaneTravelPlansForTacticalWindow(state: SimulationState) {
+  if (state.arcaneTravelMode !== 'planned') return
+  for (const arcane of state.arcanes) materializeArcaneTravelPlan(arcane, state.time, true)
+}
+
+export function rebaseArcaneTravelPlansAfterHitboxes(state: SimulationState) {
+  if (state.arcaneTravelMode !== 'planned') return
+  for (const arcane of state.arcanes) {
+    const plan = arcane.travelPlan
+    if (!plan) continue
+    const expectedPosition = sampleArcaneTravelPlan(plan, state.time)
+    if (distanceSquared(expectedPosition, arcane.pos) < 0.00000001) continue
+    arcane.travelPlan = rebaseArcaneTravelPlan(plan, arcane.pos, state.time)
+  }
+}
+
+export function getArcaneTravelWakeReason(
+  arcane: Arcane,
+  state: SimulationState,
+  frameContext?: TickFrameContext,
+): ArcaneTravelWakeReason | undefined {
+  const plan = arcane.travelPlan
+  if (!plan) return 'decision'
+  if (state.time + 0.0001 >= plan.endsAt) return 'arrival'
+  if (arcane.damageTaken !== plan.damageTakenAtStart) return 'damage'
+  if (isArcaneMovementDisabled(state, arcane)) return 'control'
+  if (arcane.forceDecision || getArcaneTravelTargetSignature(arcane.target) !== plan.targetSignature) return 'decision'
+  if (getArcaneTravelDecisionSignature(arcane) !== plan.decisionSignature) return 'decision'
+  if (getArcaneTravelTeamCallSignature(state, arcane.team) !== plan.teamCallSignature) return 'call'
+  if (frameContext?.tacticalActivationArcaneIds?.has(arcane.id)) return 'danger'
+  return undefined
+}
+
+export function recordArcaneTravelWake(reason: ArcaneTravelWakeReason) {
+  if (!activeArcaneTravelDiagnostics) return
+  if (reason === 'damage') activeArcaneTravelDiagnostics.cancelledByDamage += 1
+  else if (reason === 'control') activeArcaneTravelDiagnostics.cancelledByControl += 1
+  else if (reason === 'decision') activeArcaneTravelDiagnostics.cancelledByDecision += 1
+  else if (reason === 'call') activeArcaneTravelDiagnostics.cancelledByCall += 1
+}
+
+export function hasArcaneTravelTacticalThreat(
+  state: SimulationState,
+  arcane: Arcane,
+  point: Point,
+  frameContext?: TickFrameContext,
+) {
+  const board = getArcaneCombatBlackboard(state, arcane)
+  if (board && board.phase !== 'disengage' && board.phase !== 'reset') return true
+  if (arcane.combatTargetId) return true
+  if (getTeamMemoryDanger(state, arcane.team, point) >= 28) return true
+
+  const visibleEnemies = getVisibleEnemyArcanes(state, arcane.team, frameContext)
+  if (visibleEnemies.some((enemy) => {
+    const awarenessRange = Math.max(arcane.visionRange + 2, enemy.visionRange * 0.55, enemy.stats.range + 5)
+    return distanceSquared(point, enemy.pos) <= awarenessRange * awarenessRange
+  })) return true
+
+  const nearbyEnemyCreeps = queryCreepSpatialGrid(state, point, 9)
+  if (nearbyEnemyCreeps.some((creep) => creep.team !== arcane.team && creep.hp > 0)) return true
+
+  if (state.towers.some((tower) => (
+    tower.team !== arcane.team &&
+    tower.hp > 0 &&
+    distanceSquared(point, tower.pos) <= (tower.range + 4) ** 2
+  ))) return true
+  if (state.structures.some((structure) => (
+    structure.team !== arcane.team &&
+    structure.kind === 'tower_tier_4' &&
+    structure.hp > 0 &&
+    distanceSquared(point, structure.pos) <= (structure.range + 4) ** 2
+  ))) return true
+  if (state.camps.some((camp) => (
+    camp.hp > 0 &&
+    camp.respawn <= state.time &&
+    distanceSquared(point, camp.pos) <= Math.max(8, camp.range + 4) ** 2
+  ))) return true
+  return state.boss.hp > 0 &&
+    state.boss.respawn <= state.time &&
+    distanceSquared(point, state.boss.pos) <= (state.boss.range + 6) ** 2
+}
+
+export function collectTacticalArcaneTravelActivations(state: SimulationState, frameContext: TickFrameContext) {
+  if (state.arcaneTravelMode !== 'planned') return
+  let activations: Set<string> | undefined
+  for (const arcane of state.arcanes) {
+    const plan = arcane.travelPlan
+    if (!plan) continue
+    const effectiveSpeed = getEffectiveArcaneMoveSpeed(state, arcane) *
+      getAuraMultiplier(state, arcane.team) *
+      getArcaneMovementEffectMultiplier(state, arcane)
+    const speedChanged = Math.abs(effectiveSpeed - plan.speed) > 0.02
+    const shouldActivate = speedChanged ||
+      arcane.damageTaken !== plan.damageTakenAtStart ||
+      isArcaneMovementDisabled(state, arcane) ||
+      getArcaneTravelTeamCallSignature(state, arcane.team) !== plan.teamCallSignature ||
+      hasArcaneTravelTacticalThreat(state, arcane, arcane.pos, frameContext)
+    if (!shouldActivate) continue
+    activations ??= new Set<string>()
+    activations.add(arcane.id)
+    if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.tacticalActivations += 1
+  }
+  frameContext.tacticalActivationArcaneIds = activations
+}
+
+export function getArcaneTravelKind(
+  arcane: Arcane,
+  target: Point,
+  macroDecision: string,
+  microDecision: string,
+): ArcaneTravelKind | undefined {
+  const ownBase = teamInfo[arcane.team].base
+  if (distanceSquared(target, ownBase) < baseServiceRange * baseServiceRange) return 'base'
+  if (
+    microDecision === 'Saindo da base' ||
+    microDecision === 'Avancando rota' ||
+    microDecision === 'Priorizando rota no early game' ||
+    macroDecision.includes('rota') ||
+    macroDecision.includes('lane') ||
+    macroDecision.includes('wave')
+  ) return 'lane'
+  if (microDecision.startsWith('Movendo para agrupamento:')) return 'objective'
+  if (microDecision.startsWith('Chegando em ')) return 'formation'
+  const tacticalDecision = [
+    'Last hit', 'deny', 'Atacando', 'Batendo', 'Pressionando', 'Gank',
+    'Limpando', 'Puxando', 'Executando', 'Atacar chefe', 'Foco em',
+    'Rompendo foco', 'Aguardando janela', 'Disputando', 'runa',
+  ].some((token) => microDecision.toLowerCase().includes(token.toLowerCase()))
+  return tacticalDecision ? undefined : 'formation'
+}
+
+export function getArcaneBaseTravelDestination(from: Point, base: Point) {
+  const baseDistance = distance(from, base)
+  const serviceEdge = baseServiceRange - 0.2
+  if (baseDistance <= serviceEdge || baseDistance <= 0.0001) return { ...from }
+  return moveToward(from, base, baseDistance - serviceEdge)
+}
+
+export function createArcaneTravelPlanIfUseful(
+  state: SimulationState,
+  arcane: Arcane,
+  from: Point,
+  target: Point,
+  moveDestination: Point,
+  macroDecision: string,
+  microDecision: string,
+  aiMode: PlayerModeType,
+  speed: number,
+  nextDecisionAt: number,
+  atBase: boolean,
+  frameContext?: TickFrameContext,
+) {
+  if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.candidates += 1
+  if (state.arcaneTravelMode !== 'planned' || speed <= 0.01 || arcane.channeling) return undefined
+  if (atBase) {
+    if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.rejectedAtBase += 1
+    return undefined
+  }
+  const kind = getArcaneTravelKind(arcane, target, macroDecision, microDecision)
+  if (!kind) {
+    if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.rejectedKind += 1
+    return undefined
+  }
+  if (nextDecisionAt <= state.time + 0.065) {
+    if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.rejectedDeadline += 1
+    return undefined
+  }
+  const destination = kind === 'base'
+    ? getArcaneBaseTravelDestination(from, teamInfo[arcane.team].base)
+    : moveDestination
+  if (distanceSquared(from, destination) < 0.45 * 0.45) {
+    if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.rejectedDistance += 1
+    return undefined
+  }
+  if (hasArcaneTravelTacticalThreat(state, arcane, from, frameContext)) {
+    if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.rejectedThreat += 1
+    return undefined
+  }
+
+  const wakeAt = Math.min(nextDecisionAt, state.time + 2.5)
+  const decisionSignature = `${macroDecision}|${microDecision}|${aiMode}`
+  const plan = scheduleArcaneTravelPlan(
+    undefined,
+    kind,
+    from,
+    destination,
+    speed,
+    state.time,
+    wakeAt,
+    getArcaneTravelTargetSignature(target),
+    decisionSignature,
+    getArcaneTravelTeamCallSignature(state, arcane.team),
+    arcane.damageTaken,
+  )
+  if (plan.endsAt <= state.time + 0.065) return undefined
+  if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.plansStarted += 1
+  return plan
 }
 
 export function materializeCreepMotionPlan(creep: Creep, time: number, preservePlan = false): Creep {
@@ -10566,6 +10983,11 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   }
   const targetCurrentHp = targetArcane?.stats.hp ?? targetCreep?.hp ?? targetTower?.hp ?? targetStructure?.hp ?? targetBase?.hp ?? targetCamp?.hp ?? targetBoss?.hp ?? finalDamage
 
+  if (targetArcane?.travelPlan) {
+    materializeArcaneTravelPlan(targetArcane, state.time)
+    if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.cancelledByDamage += 1
+  }
+
   const hit = (value: number) => Math.max(0, value - finalDamage)
   recordObjectiveLossIfDestroyed(state, targetTower, finalDamage, source)
   recordObjectiveLossIfDestroyed(state, targetStructure, finalDamage, source)
@@ -10617,6 +11039,7 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
       nextCombatEvaluationAt: isTarget ? Math.min(arcane.nextCombatEvaluationAt, state.time) : arcane.nextCombatEvaluationAt,
       combatTargetId: isTarget ? undefined : arcane.combatTargetId,
       combatTargetIntent: isTarget ? undefined : arcane.combatTargetIntent,
+      travelPlan: isTarget ? undefined : arcane.travelPlan,
       lastHitBy: isTarget ? source : arcane.lastHitBy,
       damageDealt: arcane.damageDealt + (isSource ? appliedDamage : 0),
       heroDamageDealt: arcane.heroDamageDealt + (isSource && targetArcane ? appliedDamage : 0),

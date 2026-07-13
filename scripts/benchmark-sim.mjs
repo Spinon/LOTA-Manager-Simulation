@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
 
 import {
+  beginArcaneTravelDiagnostics,
   createInitialState,
   createMatchRenderFrame,
   createMatchStaticData,
   decisionGateSeconds,
+  endArcaneTravelDiagnostics,
   loadGameData,
   matchPreparationStartSeconds,
   simulationFrameSeconds,
@@ -38,6 +40,10 @@ if (creepMotionMode !== 'fixed' && creepMotionMode !== 'planned') {
 const creepSpatialMode = getArg('creep-spatial', 'persistent')
 if (creepSpatialMode !== 'rebuild' && creepSpatialMode !== 'persistent') {
   throw new Error(`Modo de indice espacial invalido: ${creepSpatialMode}`)
+}
+const arcaneTravelMode = getArg('arcane-travel', 'planned')
+if (arcaneTravelMode !== 'fixed' && arcaneTravelMode !== 'planned') {
+  throw new Error(`Modo de viagem dos Arcanes invalido: ${arcaneTravelMode}`)
 }
 const segmentSeconds = Math.max(60, Number(getArg('segment-seconds', 300)) || 300)
 const renderFrameIntervalSeconds = 0.2
@@ -74,7 +80,8 @@ function createStateDigest(state) {
 }
 
 function runBenchmark() {
-  let state = createInitialState(seed, { creepMotionMode, creepSpatialMode })
+  beginArcaneTravelDiagnostics()
+  let state = createInitialState(seed, { creepMotionMode, creepSpatialMode, arcaneTravelMode })
   let decisionAccumulator = 0
   let nextFrameAt = state.time
   let nextDetailsAt = state.time
@@ -177,6 +184,7 @@ function runBenchmark() {
   const wallSeconds = (performance.now() - startedAt) / 1000
   const cpuUsage = process.cpuUsage(cpuStartedAt)
   const cpuSeconds = (cpuUsage.user + cpuUsage.system) / 1_000_000
+  const arcaneTravelDiagnostics = endArcaneTravelDiagnostics()
   return {
     wallSeconds,
     cpuSeconds,
@@ -193,6 +201,7 @@ function runBenchmark() {
       transfer: transferMilliseconds,
     },
     segments,
+    arcaneTravelDiagnostics,
     digest: createStateDigest(state),
   }
 }
@@ -207,6 +216,19 @@ const results = Array.from({ length: runCount }, (_, index) => {
     `${result.wallSeconds.toFixed(2)}s wall / ${result.cpuSeconds.toFixed(2)}s CPU ` +
     `(${result.simulationRate.toFixed(1)}x wall; ${result.cpuSimulationRate.toFixed(1)}x CPU) | digest ${result.digest}`,
   )
+  if (result.arcaneTravelDiagnostics) {
+    const diagnostics = result.arcaneTravelDiagnostics
+    console.log(
+      `    arcane travel: ${diagnostics.plansStarted}/${diagnostics.candidates} planos, ` +
+      `${diagnostics.sleepingSkips} sleeps, ${diagnostics.materializations} materializacoes, ` +
+      `${diagnostics.tacticalActivations} ativacoes, ` +
+      `${diagnostics.cancelledByDamage} dano / ${diagnostics.cancelledByControl} controle / ` +
+      `${diagnostics.cancelledByDecision} decisao / ${diagnostics.cancelledByCall} call; ` +
+      `rejeicoes ${diagnostics.rejectedAtBase} base / ${diagnostics.rejectedKind} tipo / ` +
+      `${diagnostics.rejectedDeadline} prazo / ${diagnostics.rejectedDistance} distancia / ${diagnostics.rejectedThreat} ameaca; ` +
+      `${diagnostics.kinematicUpdates} cinemáticos / ${diagnostics.fullUpdates} completos`,
+    )
+  }
   const measuredTotal = Object.values(result.componentMilliseconds).reduce((sum, value) => sum + value, 0)
   console.log(
     `    tick ${formatShare(result.componentMilliseconds.tick, measuredTotal)} | ` +
@@ -246,6 +268,7 @@ console.log(`Seed: ${seed}`)
 console.log(`Modo: ${fullMatch ? 'partida completa' : `até ${formatClock(simulatedSeconds)}`}`)
 console.log(`Movimento de creeps: ${creepMotionMode}`)
 console.log(`Indice espacial de creeps: ${creepSpatialMode}`)
+console.log(`Viagem dos Arcanes: ${arcaneTravelMode}`)
 console.log(`Mediana: ${medianWallSeconds.toFixed(2)}s`)
 console.log(`Taxa mediana: ${medianRate.toFixed(1)} segundos simulados/segundo real`)
 console.log(`CPU mediana: ${medianCpuSeconds.toFixed(2)}s (${medianCpuRate.toFixed(1)} segundos simulados/segundo de CPU)`)

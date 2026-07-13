@@ -22,9 +22,11 @@ O estado central da partida contem:
 
 ## Loop
 
-O jogo avanca por `requestAnimationFrame`.
+A partida inteira e pre-calculada em um Web Worker antes da arena ser liberada. A simulacao usa passo fixo de 30 Hz; o `requestAnimationFrame` pertence somente ao playback e nunca controla regras, movimento ou IA.
 
-O movimento e continuo e usa o delta real do frame. As decisoes de IA sao avaliadas em intervalos de aproximadamente 0,5s. Isso evita movimento truncado sem fazer a IA recalcular tudo a cada frame.
+O gate tatico materializa posicoes e atualiza percepcao a 10 Hz. Cada Arcane conserva seu proprio scheduler de decisao, normalmente entre 0,28s e 1,8s conforme role, modo e atributos. Nos frames intermediarios, uma via cinematica aplica apenas movimento e regeneracao usando o ultimo destino autorizado pela IA.
+
+Fora de combate, deslocamentos estaveis para base, lane, objetivo ou formacao podem virar `ArcaneTravelPlan`: origem, destino, velocidade, chegada e deadline da proxima decisao. O replay amostra esse segmento diretamente, enquanto dano, controle, perigo visivel, mudanca de call ou de decisao materializam e cancelam o plano imediatamente.
 
 Sequencia atual do tick:
 
@@ -37,12 +39,13 @@ Sequencia atual do tick:
 7. Respawna Arcanes prontos.
 8. Respawna campos neutros prontos.
 9. Atualiza o chefe.
-10. Atualiza chamadas de time quando ha decisao.
-11. Atualiza movimento/decisao dos Arcanes.
-12. Atualiza movimento das creeps de rota.
-13. Resolve combate.
-14. Resolve mortes, recompensas, respawn e level up.
-15. Verifica vitoria pela queda da base.
+10. Materializa trajetorias e coleta ativacoes taticas no gate de 10 Hz.
+11. Atualiza chamadas de time quando ha decisao.
+12. Atualiza movimento/decisao dos Arcanes.
+13. Atualiza movimento das creeps de rota.
+14. Resolve hitboxes, combate e eventos criticos.
+15. Resolve mortes, recompensas, respawn e level up.
+16. Verifica vitoria pela queda da base.
 
 ## Fases de Jogo
 

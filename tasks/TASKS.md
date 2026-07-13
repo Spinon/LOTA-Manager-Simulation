@@ -700,7 +700,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T27 - Planos de viagem para Arcanes fora de combate
+### [x] T27 - Planos de viagem para Arcanes fora de combate
 
 **Objetivo**: usar movimento analítico em retornos à base, avanços de rota e deslocamentos longos, mantendo micro tático em alta frequência.
 
@@ -710,6 +710,13 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Preservar o scheduler atual de IA e a autoridade das decisões de combate.
 
 **Critérios**: Arcanes não oscilam nem ignoram perigo; decisões e tempos de chegada permanecem auditáveis; ganho total acumulado de movimento chega a pelo menos 1,5x sobre o baseline da T24.
+
+**Resultado (2026-07-13)**:
+- Arcanes fora de combate agora usam segmentos analíticos para base, lane, objetivo e formação. Frames intermediários reutilizam o destino resolvido no último gate tático; o destino é renovado a 10 Hz e a árvore completa continua respeitando `nextDecisionAt` e `forceDecision`.
+- Dano, DoT, controle de movimento, call, mudança de alvo/decisão, perigo visível, torre, creep, campo e chefe cancelam ou impedem o plano. O replay amostra a posição analítica sem acordar a unidade; respawn, canalização e morte limpam o segmento.
+- O auditor `audit:arcane-travel` repetiu duas seeds de 10 minutos deterministicamente: ganho normalizado agregado de 13,1%, zero planos em alcance hostil, zero clusters de oscilação e as mesmas 11 reversões rápidas do baseline.
+- As travessias completas de movimento/IA caíram 59,4% no auditor (2,46x). Na partida dourada completa, caíram de 646.018 para 232.293 (2,78x); o fim mudou apenas de 42:13 para 42:15, wall rate subiu de 115,4x para 119,3x e CPU rate de 82,8x para 89,3x.
+- Testes cobrem matemática do segmento, deadline, rebase, sono com regeneração, replay, despertar por dano/controle/perigo e a via cinemática de 30 Hz. Suíte completa, lint e build ficaram verdes.
 
 ---
 
