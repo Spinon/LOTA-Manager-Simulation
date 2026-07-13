@@ -45,6 +45,7 @@ import {
 } from '../game-systems/nonCombatFormulas.ts'
 import { expectedTimeToKillStructure, isBackdoorProtected, structureDamageTaken } from '../game-systems/structureFormulas.ts'
 import { getPrimarySkillUsageSituation, getSkillAiUsageScore, getSkillEffectProfile, hasSkillTag, isConfirmedGlobalSkill } from '../game-systems/skillRuntime.ts'
+import { abilityUpgradeItemIds, getGrantedSkillLevel, getRuntimeHeroSkills, type AbilityUpgradeSlot } from '../game-systems/skillUnlocks.ts'
 import {
   getLaneCreepReward,
   getLaneCreepStats,
@@ -932,6 +933,7 @@ export let consumableCatalog: ConsumableItem[] = []
 let shopItemById = new Map<string, ShopItem>()
 let shopItemByName = new Map<string, ShopItem>()
 let shopItemsByInventory = new WeakMap<string[], ShopItem[]>()
+let abilityUpgradeSlotsByInventory = new WeakMap<string[], Set<AbilityUpgradeSlot>>()
 let itemPurchasePlanByInventory = new WeakMap<string[], { plan?: ItemPurchasePlan }>()
 let shopCandidatePoolByHero = new Map<string, ShopItem[]>()
 export let getRecommendedBuildItemIdsForHero = (_heroDefinitionId: string): string[] => []
@@ -952,6 +954,7 @@ export async function loadGameData() {
   shopItemById = new Map(shopCatalog.map((item) => [item.id, item]))
   shopItemByName = new Map(shopCatalog.map((item) => [item.name, item]))
   shopItemsByInventory = new WeakMap()
+  abilityUpgradeSlotsByInventory = new WeakMap()
   itemPurchasePlanByInventory = new WeakMap()
   shopCandidatePoolByHero = new Map()
   consumableCatalog = itemModule.consumableCatalog
@@ -1234,6 +1237,24 @@ export function getHeroDefinition(heroDefinitionId: string) {
     throw new Error(`Hero definition not loaded: ${heroDefinitionId}`)
   }
   return definition
+}
+
+export function getArcaneAbilityUpgradeSlots(arcane: Pick<Arcane, 'items'>) {
+  const cached = abilityUpgradeSlotsByInventory.get(arcane.items)
+  if (cached) return cached
+  const slots = new Set<AbilityUpgradeSlot>()
+  getShopItemsForInventory(arcane.items).forEach((item) => {
+    item.effects.forEach((effect) => {
+      const slot = effect.values.upgradeSlot
+      if (slot === 'scepter' || slot === 'shard') slots.add(slot)
+    })
+  })
+  abilityUpgradeSlotsByInventory.set(arcane.items, slots)
+  return slots
+}
+
+export function getArcaneRuntimeSkills(arcane: Pick<Arcane, 'heroDefinitionId' | 'items'>) {
+  return getRuntimeHeroSkills(getHeroDefinition(arcane.heroDefinitionId), getArcaneAbilityUpgradeSlots(arcane))
 }
 
 export function createBoss(): Boss {
@@ -2648,7 +2669,7 @@ export function getCombatScenarioHeroReadiness(state: SimulationState, arcane: A
   const silenced = isArcaneSilenced(state, arcane)
   const readySkills = silenced
     ? []
-    : (getHeroDefinition(arcane.heroDefinitionId).skills ?? []).filter((skill) => {
+    : getArcaneRuntimeSkills(arcane).filter((skill) => {
         if (skill.kind === 'passive') return false
         const level = getSimpleSkillLevel(arcane, skill)
         return level > 0 &&
@@ -2726,7 +2747,7 @@ export function coordinateCombatBlackboards(state: SimulationState, blackboards:
       .map((id) => state.arcanes.find((arcane) => arcane.id === id))
       .filter((arcane): arcane is Arcane => arcane !== undefined && arcane.stats.hp > 0 && arcane.respawn <= state.time)
     const roleAssignments = assignDynamicCombatRoles(allies.map((arcane) => {
-      const skills = getHeroDefinition(arcane.heroDefinitionId).skills ?? []
+      const skills = getArcaneRuntimeSkills(arcane)
       return {
         id: arcane.id,
         role: arcane.role,
@@ -4074,7 +4095,17 @@ export function getShopCandidatePool(arcane: Arcane) {
     seen.add(item.id)
     candidates.push(item)
   }
-  getRecommendedBuildItemIdsForHero(arcane.heroDefinitionId).forEach((id) => addCandidate(shopItemById.get(id)))
+  const recommendedIds = getRecommendedBuildItemIdsForHero(arcane.heroDefinitionId)
+  const supplemental = getHeroDefinition(arcane.heroDefinitionId).supplementalSkills ?? []
+  recommendedIds.slice(0, 3).forEach((id) => addCandidate(shopItemById.get(id)))
+  if (supplemental.some((skill) => skill.category === 'shard_granted')) {
+    addCandidate(shopItemById.get(abilityUpgradeItemIds.shard))
+  }
+  recommendedIds.slice(3, 4).forEach((id) => addCandidate(shopItemById.get(id)))
+  if (supplemental.some((skill) => skill.category === 'scepter_granted')) {
+    addCandidate(shopItemById.get(abilityUpgradeItemIds.scepter))
+  }
+  recommendedIds.slice(4).forEach((id) => addCandidate(shopItemById.get(id)))
   shopCatalog.forEach(addCandidate)
   shopCandidatePoolByHero.set(cacheKey, candidates)
   return candidates
@@ -6454,7 +6485,7 @@ const emptyArcanePassiveCombatModifiers: ArcanePassiveCombatModifiers = {
   lifestealPct: 0,
   incomingDamagePct: 0,
 }
-const arcanePassiveCombatModifiersCache = new Map<string, WeakMap<SkillLevels, ArcanePassiveCombatModifiers>>()
+const arcanePassiveCombatModifiersCache = new Map<string, WeakMap<SkillLevels, WeakMap<string[], ArcanePassiveCombatModifiers>>>()
 
 export function getArcanePassiveCombatModifiers(state: SimulationState, arcane: Arcane) {
   if (hasTimedEffect(state, arcane.id, 'break')) {
@@ -6466,10 +6497,15 @@ export function getArcanePassiveCombatModifiers(state: SimulationState, arcane: 
     bySkillLevels = new WeakMap()
     arcanePassiveCombatModifiersCache.set(arcane.heroDefinitionId, bySkillLevels)
   }
-  const cached = bySkillLevels.get(arcane.skillLevels)
+  let byItems = bySkillLevels.get(arcane.skillLevels)
+  if (!byItems) {
+    byItems = new WeakMap()
+    bySkillLevels.set(arcane.skillLevels, byItems)
+  }
+  const cached = byItems.get(arcane.items)
   if (cached) return cached
 
-  const modifiers = (getHeroDefinition(arcane.heroDefinitionId).skills ?? [])
+  const modifiers = getArcaneRuntimeSkills(arcane)
     .filter((skill) => skill.kind === 'passive')
     .map((skill) => ({ skill, level: getSimpleSkillLevel(arcane, skill) }))
     .filter(({ level }) => level > 0)
@@ -6491,7 +6527,7 @@ export function getArcanePassiveCombatModifiers(state: SimulationState, arcane: 
         incomingDamagePct: Math.max(modifiers.incomingDamagePct, defensiveReduction),
       }
     }, { ...emptyArcanePassiveCombatModifiers })
-  bySkillLevels.set(arcane.skillLevels, modifiers)
+  byItems.set(arcane.items, modifiers)
   return modifiers
 }
 
@@ -7128,7 +7164,7 @@ export function isArcaneSilenced(state: SimulationState, arcane: Arcane) {
 export function hasAnyCastableSkill(state: SimulationState, arcane: Arcane) {
   if (isArcaneSilenced(state, arcane)) return false
 
-  const skills = getHeroDefinition(arcane.heroDefinitionId).skills ?? []
+  const skills = getArcaneRuntimeSkills(arcane)
   for (const skill of skills) {
     if (skill.kind === 'passive') continue
     const level = getSimpleSkillLevel(arcane, skill)
@@ -7150,7 +7186,7 @@ export function tryCastSimpleSkill(state: SimulationState, arcane: Arcane, fallb
     macroDecision: arcane.macroDecision,
     hpRatio: arcane.stats.hp / Math.max(1, arcane.stats.maxHp),
   })
-  const skills = getHeroDefinition(arcane.heroDefinitionId).skills ?? []
+  const skills = getArcaneRuntimeSkills(arcane)
   const usableSkills = skills
     .filter((skill) => skill.kind !== 'passive')
     .map((skill) => ({ skill, level: getSimpleSkillLevel(arcane, skill) }))
@@ -7179,7 +7215,7 @@ export function getRangedCreepSkillSecureTarget(state: SimulationState, arcane: 
   if (state.time > 12 * 60 || arcane.role.includes('Support')) return undefined
   const timingValue = arcane.stats.level <= 6 || getLevelProgress(arcane.stats.xp) >= 0.72
   if (!timingValue) return undefined
-  const skills = getHeroDefinition(arcane.heroDefinitionId).skills ?? []
+  const skills = getArcaneRuntimeSkills(arcane)
   const availableDamageSkills = skills
     .filter((skill) => skill.kind !== 'passive' && !isUltimateSkill(skill) && !isPositiveSimpleSkill(skill))
     .map((skill) => ({ skill, level: getSimpleSkillLevel(arcane, skill) }))
@@ -7212,7 +7248,7 @@ export function getRangedCreepSkillSecureTarget(state: SimulationState, arcane: 
 
 export function tryCastRangedCreepSecureSkill(state: SimulationState, arcane: Arcane, target: Creep) {
   if (target.type !== 'mage' || target.team === arcane.team || isArcaneSilenced(state, arcane)) return false
-  const skills = (getHeroDefinition(arcane.heroDefinitionId).skills ?? [])
+  const skills = getArcaneRuntimeSkills(arcane)
     .filter((skill) => skill.kind !== 'passive' && !isUltimateSkill(skill) && !isPositiveSimpleSkill(skill))
     .map((skill) => ({ skill, level: getSimpleSkillLevel(arcane, skill) }))
     .filter(({ skill, level }) => {
@@ -7260,6 +7296,10 @@ export function restoreArcaneSkillCooldown(state: SimulationState, arcane: Arcan
 export function getSimpleSkillLevel(arcane: Arcane, skill: HeroSkillDefinition) {
   if (skill.category === 'innate') {
     return Math.min(skill.maxLevel ?? 1, Math.max(1, Math.floor((arcane.stats.level + 4) / 5)))
+  }
+  if (skill.category === 'scepter_granted' || skill.category === 'shard_granted') {
+    const unlocked = getArcaneRuntimeSkills(arcane).some((candidate) => candidate.id === skill.id)
+    return unlocked ? getGrantedSkillLevel(skill, arcane.stats.level) : 0
   }
   return arcane.skillLevels[skill.key] ?? 0
 }
@@ -7663,7 +7703,7 @@ export function applySkillAuraEffects(state: SimulationState) {
   state.arcanes
     .filter((holder) => holder.stats.hp > 0 && holder.respawn <= state.time && !hasTimedEffect(state, holder.id, 'break'))
     .forEach((holder) => {
-      const auraSkills = (getHeroDefinition(holder.heroDefinitionId).skills ?? [])
+      const auraSkills = getArcaneRuntimeSkills(holder)
         .filter((skill) => skill.kind === 'passive' && hasSkillTag(skill, ['aura', 'aura_dot', 'damage_aura', 'vengeance_aura', 'mana_aura']))
         .map((skill) => ({ skill, level: getSimpleSkillLevel(holder, skill) }))
         .filter(({ level }) => level > 0)
@@ -10185,7 +10225,7 @@ export function getArcaneOffensiveThreat(state: SimulationState, arcane: Arcane)
   const cached = offensiveThreatCache.get(arcane)
   if (cached?.time === state.time) return cached
 
-  const offensiveSkills = (getHeroDefinition(arcane.heroDefinitionId).skills ?? [])
+  const offensiveSkills = getArcaneRuntimeSkills(arcane)
     .filter((skill) => skill.kind !== 'passive' && !isPositiveSimpleSkill(skill))
     .map((skill) => ({ skill, level: getSimpleSkillLevel(arcane, skill) }))
     .filter(({ skill, level }) => (

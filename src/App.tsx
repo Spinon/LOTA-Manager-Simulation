@@ -9,6 +9,7 @@ import {
   getArcaneCoordinationReliability,
   getArcaneDamageRangeLabel,
   getArcaneNetWorth,
+  getArcaneRuntimeSkills,
   getArcaneSlowPercent,
   getAuraMultiplier,
   getBossStats,
@@ -1009,7 +1010,7 @@ function TeamPanel({
                   })}
                   <TpSlot arcane={arcane} now={time} compact />
                 </div>
-                <SkillKeyRow skills={getHeroDefinition(arcane.heroDefinitionId).skills ?? []} compact arcane={arcane} now={time} />
+                <SkillKeyRow skills={getArcaneRuntimeSkills(arcane)} compact arcane={arcane} now={time} />
               </div>
             </button>
           )
@@ -2251,8 +2252,8 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
         </section>
         <section className="data-card skills-card">
           <DataCardTitle icon={<Zap size={15} />} title="Skills" />
-          <SkillKeyRow skills={heroDefinition.skills ?? []} arcane={entity} now={state.time} />
-          <SkillSummary skills={heroDefinition.skills ?? []} arcane={entity} />
+          <SkillKeyRow skills={getArcaneRuntimeSkills(entity)} arcane={entity} now={state.time} />
+          <SkillSummary skills={getArcaneRuntimeSkills(entity)} arcane={entity} />
         </section>
         <section className="data-card">
           <DataCardTitle icon={<Target size={15} />} title="Combate" />
@@ -2757,7 +2758,9 @@ function SkillKeyRow({
   arcane?: Arcane
   now?: number
 }) {
-  const orderedKeys: HeroSkillDefinition['key'][] = ['Q', 'W', 'E', 'R']
+  const baseKeys: HeroSkillDefinition['key'][] = ['Q', 'W', 'E', 'R']
+  const extraKeys = skills.map((skill) => skill.key).filter((key) => !baseKeys.includes(key))
+  const orderedKeys = compact ? baseKeys : [...baseKeys, ...new Set(extraKeys)]
   return (
     <div className={compact ? 'ability-row compact' : 'ability-row'}>
       {orderedKeys.map((key) => {

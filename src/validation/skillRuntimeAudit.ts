@@ -1,6 +1,7 @@
 import { HERO_SKILL_RUNTIME_OFFICIAL } from '../data/heroSkillRuntimeOfficial.ts'
 import type { HeroSkillDefinition } from '../game-systems/heroAttributes.ts'
 import { getOfficialSkillsForHero } from '../game-systems/officialHeroSkillsAdapter.ts'
+import { getSkillRuntimeUnlockRule, type RuntimeSkillSet } from '../game-systems/skillUnlocks.ts'
 
 export type SkillSupportStatus = 'complete' | 'partial' | 'approximate' | 'missing'
 
@@ -19,7 +20,7 @@ export type SkillRuntimeAuditRow = {
   kind: HeroSkillDefinition['kind']
   target: HeroSkillDefinition['target']
   damageType: HeroSkillDefinition['damageType']
-  runtimeSet: 'primary' | 'supplemental'
+  runtimeSet: RuntimeSkillSet
   status: SkillSupportStatus
   families: SkillSupportFamily[]
   tags: string[]
@@ -130,11 +131,12 @@ function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
   const valueKeys = Object.keys(skill.values).sort()
   const tokens = new Set([...tags, ...valueKeys].map((token) => token.toLowerCase()))
   const add = (id: string, status: SkillSupportStatus, evidence: string) => families.push({ id, status, evidence })
+  const unlockRule = getSkillRuntimeUnlockRule(skill, runtimeSet)
 
   add(
     'activation',
-    runtimeSet === 'primary' ? 'complete' : 'missing',
-    runtimeSet === 'primary' ? 'available to the runtime skill selector' : 'imported but no unlock path adds it to the runtime skill selector',
+    unlockRule === 'unsupported_contextual' ? 'missing' : 'complete',
+    getUnlockEvidence(unlockRule),
   )
 
   if (skill.kind === 'passive') {
@@ -312,4 +314,11 @@ function getWorstStatus(families: SkillSupportFamily[]) {
 
 function createStatusCounts(): Record<SkillSupportStatus, number> {
   return { complete: 0, partial: 0, approximate: 0, missing: 0 }
+}
+
+function getUnlockEvidence(rule: ReturnType<typeof getSkillRuntimeUnlockRule>) {
+  if (rule === 'primary') return 'available to the runtime skill selector'
+  if (rule === 'scepter_item') return 'unlocked by an inventory item with upgradeSlot=scepter'
+  if (rule === 'shard_item') return 'unlocked by an inventory item with upgradeSlot=shard'
+  return 'imported contextual/subskill action without a dedicated activation state machine'
 }

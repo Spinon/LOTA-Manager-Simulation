@@ -23,10 +23,13 @@ import {
   getCombatTargetTowerExposure,
   getBountyRuneSide,
   getArcanePassiveCombatModifiers,
+  getArcaneAbilityUpgradeSlots,
   getArcaneDefinitionVisionRange,
+  getArcaneRuntimeSkills,
   getCampClearAssessment,
   getHeroDefinition,
   getItemPurchasePlan,
+  getShopCandidatePool,
   getPlayerAiProfile,
   getPlayerMentalState,
   getPregameBountyRunePlan,
@@ -44,6 +47,7 @@ import {
   getSimpleSkillAffectedTargets,
   getSimpleSkillExecuteMultiplier,
   getSimpleSkillDamage,
+  getSimpleSkillLevel,
   getLastHitTarget,
   getLastHitCandidateFromCreeps,
   getLanePullCamp,
@@ -122,6 +126,56 @@ function createStateAtGameStart(seed: string) {
 }
 
 await loadGameData()
+
+{
+  const unlockState = createInitialState('skill-upgrade-unlock-test')
+  const arcane = unlockState.arcanes[0]
+  const scepterName = shopCatalog.find((item) => item.id === 'i135_grand_spell_scepter')!.name
+  const shardName = shopCatalog.find((item) => item.id === 'i136_spell_shard')!.name
+  arcane.heroDefinitionId = 'h076_brute_mage'
+  arcane.stats.level = 18
+  arcane.items = []
+  const definition = getHeroDefinition(arcane.heroDefinitionId)
+  const scepterSkill = definition.supplementalSkills!.find((skill) => skill.category === 'scepter_granted')!
+  const shardSkill = definition.supplementalSkills!.find((skill) => skill.category === 'shard_granted')!
+  const upgradeCandidateIds = getShopCandidatePool(arcane).map((item) => item.id)
+  assert.ok(upgradeCandidateIds.indexOf('i136_spell_shard') >= 0 && upgradeCandidateIds.indexOf('i136_spell_shard') <= 3, 'Shard should enter the build after the first core items')
+  assert.ok(upgradeCandidateIds.indexOf('i135_grand_spell_scepter') >= 0 && upgradeCandidateIds.indexOf('i135_grand_spell_scepter') <= 5, 'Scepter should enter the build before inventory completion')
+
+  assert.equal(getArcaneRuntimeSkills(arcane).includes(scepterSkill), false, 'Scepter skills should remain locked without the upgrade item')
+  assert.equal(getSimpleSkillLevel(arcane, scepterSkill), 0, 'locked granted skills should have no runtime level')
+  arcane.items = [scepterName]
+  assert.deepEqual([...getArcaneAbilityUpgradeSlots(arcane)], ['scepter'])
+  assert.equal(getArcaneRuntimeSkills(arcane).includes(scepterSkill), true, 'the item upgradeSlot should unlock Scepter-granted skills')
+  assert.equal(getSimpleSkillLevel(arcane, scepterSkill), 1, 'single-level granted skills should become immediately usable')
+  unlockState.time = 600
+  const enemy = unlockState.arcanes.find((candidate) => candidate.team !== arcane.team)!
+  arcane.skillLevels = {}
+  arcane.stats.maxMana = 1_000
+  arcane.stats.mana = 1_000
+  arcane.stats.maxHp = 2_000
+  arcane.stats.hp = 2_000
+  arcane.pos = { x: 50, y: 50 }
+  enemy.pos = { x: 51, y: 50 }
+  enemy.stats.hp = enemy.stats.maxHp * 0.2
+  assert.equal(tryCastSimpleSkill(unlockState, arcane, enemy), true, 'the AI skill selector should cast an unlocked granted skill')
+  assert.equal(arcane.stats.mana, 600, 'the granted skill should spend its official mana cost')
+  assert.equal(hasTimedEffect(unlockState, enemy.id, 'stun'), true, 'the granted skill should execute its normalized runtime effect')
+  assert.equal(arcane.itemCooldowns[scepterSkill.id], 607, 'the granted skill should use its official cooldown')
+
+  arcane.items = [shardName]
+  assert.deepEqual([...getArcaneAbilityUpgradeSlots(arcane)], ['shard'])
+  assert.equal(getArcaneRuntimeSkills(arcane).includes(shardSkill), true, 'the item upgradeSlot should unlock Shard-granted skills')
+  assert.equal(getSimpleSkillLevel(arcane, scepterSkill), 0, 'selling the Scepter should remove its granted skill')
+
+  arcane.heroDefinitionId = 'h066_complex_mage'
+  arcane.items = [scepterName, shardName]
+  assert.equal(
+    getArcaneRuntimeSkills(arcane).some((skill) => skill.key.startsWith('S')),
+    false,
+    'contextual invoked skills must not be unlocked merely by owning both upgrade items',
+  )
+}
 
 assert.equal(getRoleGpmTarget('Safe Lane', 40 * 60), 760)
 assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)

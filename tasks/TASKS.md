@@ -463,8 +463,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - A matriz automática passou a catalogar as 734 habilidades oficiais dos 127 heróis, incluindo inatas, habilidades ocultas/invocadas e concessões de Scepter/Shard. O relatório humano está em `tasks/SKILL_RUNTIME_AUDIT.md` e a matriz integral revisável em `tasks/SKILL_RUNTIME_AUDIT.json`.
 - O teste compara fingerprints do catálogo vivo com a matriz persistida. Uma skill nova, alteração de targeting ou mudança de suporte agora falha até a classificação ser revisada e regenerada com `npm run audit:skill-runtime`.
 - O adaptador normaliza durações oficiais de fear, taunt, sleep, hex, disarm, break e leash; `does_mute` também produz a tag canônica. O runtime aplica a duração específica de cada controle em vez de reutilizar uma duração genérica para todos.
-- Estado atual honesto: 3 skills completas, 564 parciais, 11 aproximações intencionais e 156 com bloqueio ausente. O principal bloco ausente é a ativação das skills suplementares; channeling, summons, transformações, auras e passivas especiais permanecem explicitamente parciais/aproximadas.
-- Próxima rodada: conectar unlocks de Scepter/Shard e habilidades invocadas ao seletor runtime; depois resolver channeling no término do canal e criar entidades reais para summons por família.
+- Baseline inicial: 3 skills completas, 564 parciais, 11 aproximações intencionais e 156 com bloqueio ausente. O principal bloco ausente era a ativação das skills suplementares; channeling, summons, transformações, auras e passivas especiais permaneciam explicitamente parciais/aproximadas.
+
+**Progresso dos unlocks de Scepter/Shard (2026-07-13)**:
+- O inventário agora lê semanticamente `upgradeSlot=scepter|shard` dos efeitos dos itens e monta um único kit runtime por Arcane. Comprar ou vender o item adiciona/remove imediatamente as skills concedidas sem gastar pontos de habilidade.
+- As 69 skills concedidas (32 Scepter e 37 Shard) entraram no seletor da IA, readiness de combate, análise de papéis, passivas, auras, ameaça ofensiva e painel detalhado. Skills concedidas com vários níveis escalam pela curva 6/12/18; as demais entram no nível 1.
+- O plano de compras injeta Shard depois dos três primeiros itens de build e Scepter antes do fechamento do inventário quando o herói possui a concessão correspondente. O cache do kit usa máscara de upgrades e o cache de passivas também invalida pela referência do inventário.
+- Testes cobrem compra, venda, separação dos slots, nível concedido, seleção/cast real pela IA, mana, cooldown, stun e bloqueio das subskills contextuais. A ativação catalogada subiu de 638 para 707 skills; restam 27 subskills/invocadas que exigem máquina de estado própria.
+- Auditoria atual: 3 completas, 612 parciais, 13 aproximações intencionais e 106 ausentes. Próxima rodada: modelar subskills contextuais/invocadas; depois resolver channeling no término do canal e summons como entidades reais.
+- Testes, lint e build verdes. Benchmark determinístico mediano: 56,1x wall / 52,6x CPU, digest `9ebd3080f5fadc7e` estável nas três rodadas.
 
 ---
 
