@@ -43,6 +43,32 @@ export type DynamicCombatRole =
 
 export type CombatPositioningBand = 'frontline' | 'midline' | 'backline' | 'flank'
 export type CombatControlType = 'stun' | 'root' | 'silence' | 'disable' | 'interrupt'
+export type CombatScenarioIntent = 'engage' | 'hold' | 'reinforce' | 'disengage'
+
+export interface CombatReinforcementProjection {
+  heroId: string
+  etaSeconds: number
+  arrivalPower: number
+}
+
+export interface CombatScenarioAssessment {
+  intent: CombatScenarioIntent
+  engageScore: number
+  reinforcementScore: number
+  localPowerAdvantage: number
+  projectedPowerAdvantage: number
+  wavePowerAdvantage: number
+  towerInfluence: number
+  levelTimingAdvantage: number
+  objectiveValue: number
+  alliedReinforcements: CombatReinforcementProjection[]
+  enemyReinforcements: CombatReinforcementProjection[]
+  towerId?: string
+  towerAggroTargetId?: string
+  towerTankHeroId?: string
+  requestTowerAggroDrop: boolean
+  reasonTags: string[]
+}
 
 export interface CombatRoleAssignment {
   heroId: string
@@ -187,6 +213,7 @@ export interface CombatBlackboard {
   damageReservations: CombatDamageReservation[]
   saveReservations: CombatSaveReservation[]
   formationPlan?: CombatFormationPlan
+  scenario?: CombatScenarioAssessment
   closestEnemyDistance: number
   alliedAverageHealthPct: number
   enemyAverageHealthPct: number

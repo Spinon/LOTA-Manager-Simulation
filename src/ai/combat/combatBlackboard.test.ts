@@ -9,6 +9,7 @@ import {
   canReserveSave,
   createCombatFormationPlan,
 } from './coordination/combatCoordination.ts'
+import { analyzeCombatScenario, getTeamEncounterType, type CombatScenarioHeroInput } from './scenarios/combatScenarioAnalyzer.ts'
 import { createEmptyCombatBlackboards, updateCombatBlackboards } from './teamfight/combatBlackboard.ts'
 import type { CombatDetectionInput, CombatHeroSnapshot } from './types/combatAiTypes.ts'
 
@@ -35,6 +36,46 @@ function hero(
 
 function input(gameTime: number, heroes: CombatHeroSnapshot[], mapObjects: CombatDetectionInput['mapObjects'] = []): CombatDetectionInput {
   return { matchSeed: 'combat-blackboard-test', gameTime, heroes, mapObjects }
+}
+
+function scenarioHero(
+  id: string,
+  team: 'dawn' | 'dusk',
+  x: number,
+  values: Partial<CombatScenarioHeroInput> = {},
+): CombatScenarioHeroInput {
+  return {
+    id,
+    team,
+    role: 'Offlane',
+    pos: { x, y: 50 },
+    healthPct: 1,
+    manaPct: 1,
+    level: 6,
+    levelProgress: 0.2,
+    moveSpeed: 2.5,
+    combatPower: 100,
+    effectiveHealth: 1_000,
+    rotationCost: 10,
+    visibleToTeam: true,
+    canTankTower: false,
+    ...values,
+  }
+}
+
+function scenarioInput(overrides: Partial<Parameters<typeof analyzeCombatScenario>[0]> = {}): Parameters<typeof analyzeCombatScenario>[0] {
+  return {
+    teamId: 'dawn',
+    encounterType: 'river_skirmish',
+    center: { x: 50, y: 50 },
+    radius: 4,
+    alliedHeroIds: ['d-local'],
+    enemyHeroIds: ['r-local'],
+    heroes: [scenarioHero('d-local', 'dawn', 48), scenarioHero('r-local', 'dusk', 52)],
+    creeps: [],
+    towers: [],
+    ...overrides,
+  }
 }
 
 const laneTrade = detectCombatEncounters(input(240, [
@@ -80,6 +121,103 @@ const highGroundFight = detectCombatEncounters(input(1_200, [
   { id: 'dusk-t4', kind: 'tower', pos: { x: 90, y: 90 }, active: true, team: 'dusk', range: 7 },
 ]))
 assert.equal(highGroundFight[0].encounterType, 'high_ground_fight', 'base fights should take precedence over tower dives')
+
+const reinforcementScenario = analyzeCombatScenario(scenarioInput({
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48, { combatPower: 90 }),
+    scenarioHero('r-local', 'dusk', 52, { combatPower: 125 }),
+    scenarioHero('d-support', 'dawn', 63, { role: 'Dedicated Support', combatPower: 110, rotationCost: 4 }),
+  ],
+}))
+assert.equal(reinforcementScenario.intent, 'reinforce', 'a timely ally that swings local power should trigger reinforcement')
+assert.deepEqual(reinforcementScenario.alliedReinforcements.map((reinforcement) => reinforcement.heroId), ['d-support'])
+assert.ok(reinforcementScenario.projectedPowerAdvantage > reinforcementScenario.localPowerAdvantage)
+
+const hiddenEnemyScenario = analyzeCombatScenario(scenarioInput({
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48),
+    scenarioHero('r-local', 'dusk', 52),
+    scenarioHero('r-hidden', 'dusk', 58, { combatPower: 300, visibleToTeam: false }),
+  ],
+}))
+assert.equal(hiddenEnemyScenario.enemyReinforcements.length, 0, 'fogged enemies must not leak into reinforcement estimates')
+
+const visibleEnemyScenario = analyzeCombatScenario(scenarioInput({
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48),
+    scenarioHero('r-local', 'dusk', 52),
+    scenarioHero('r-visible', 'dusk', 58, { combatPower: 240, visibleToTeam: true, rotationCost: 0 }),
+  ],
+}))
+assert.deepEqual(visibleEnemyScenario.enemyReinforcements.map((reinforcement) => reinforcement.heroId), ['r-visible'])
+assert.ok(visibleEnemyScenario.projectedPowerAdvantage < visibleEnemyScenario.localPowerAdvantage)
+
+const enemyWaveScenario = analyzeCombatScenario(scenarioInput({
+  encounterType: 'lane_trade',
+  creeps: Array.from({ length: 6 }, (_, index) => ({
+    team: 'dusk' as const,
+    pos: { x: 50 + index * 0.2, y: 50 },
+    healthPct: 1,
+    damage: 40,
+  })),
+}))
+assert.equal(enemyWaveScenario.intent, 'hold', 'a large enemy wave should block an otherwise even extended trade')
+assert.ok(enemyWaveScenario.wavePowerAdvantage < -90)
+
+const enemyTower = { id: 'r-t1', team: 'dusk' as const, pos: { x: 50, y: 50 }, range: 7, active: true }
+const unsupportedDive = analyzeCombatScenario(scenarioInput({ encounterType: 'tower_dive', towers: [enemyTower] }))
+assert.equal(unsupportedDive.intent, 'disengage', 'a dive without wave or a valid tank must be abandoned')
+assert.ok(unsupportedDive.reasonTags.includes('no_wave_no_tank'))
+
+const tankedDive = analyzeCombatScenario(scenarioInput({
+  encounterType: 'tower_dive',
+  towers: [enemyTower],
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48, { canTankTower: true, effectiveHealth: 2_400 }),
+    scenarioHero('r-local', 'dusk', 52),
+  ],
+}))
+assert.notEqual(tankedDive.intent, 'disengage', 'a healthy validated tank should unlock no-wave staging')
+assert.equal(tankedDive.towerTankHeroId, 'd-local')
+
+const alliedTower = { ...enemyTower, id: 'd-t1', team: 'dawn' as const, aggroTargetId: 'r-local' }
+const counterDive = analyzeCombatScenario(scenarioInput({ encounterType: 'tower_dive', towers: [alliedTower] }))
+assert.equal(counterDive.intent, 'engage', 'an enemy caught under the allied tower should create a counter-dive window')
+assert.equal(getTeamEncounterType('tower_dive', 'dawn', counterDive, [alliedTower]), 'counter_dive')
+assert.equal(getTeamEncounterType('tower_dive', 'dusk', counterDive, [alliedTower]), 'tower_dive')
+
+const levelTimingScenario = analyzeCombatScenario(scenarioInput({
+  encounterType: 'lane_trade',
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48, { levelProgress: 0.94 }),
+    scenarioHero('r-local', 'dusk', 52),
+  ],
+}))
+assert.equal(levelTimingScenario.intent, 'hold', 'a nearly completed level timing should delay a marginal lane commit')
+assert.ok(levelTimingScenario.reasonTags.includes('level_timing_wait'))
+
+const costlyCarryRotation = analyzeCombatScenario(scenarioInput({
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48),
+    scenarioHero('r-local', 'dusk', 52),
+    scenarioHero('d-carry', 'dawn', 60, { role: 'Safe Lane', combatPower: 105, rotationCost: 100 }),
+    scenarioHero('d-support', 'dawn', 62, { role: 'Dedicated Support', combatPower: 80, rotationCost: 3 }),
+  ],
+}))
+assert.deepEqual(costlyCarryRotation.alliedReinforcements.map((reinforcement) => reinforcement.heroId), ['d-support'], 'a carry near an economy timing should skip a low-value rotation')
+
+const aggroTransfer = analyzeCombatScenario(scenarioInput({
+  encounterType: 'tower_dive',
+  towers: [{ ...enemyTower, aggroTargetId: 'd-low' }],
+  alliedHeroIds: ['d-low', 'd-tank'],
+  heroes: [
+    scenarioHero('d-low', 'dawn', 48, { healthPct: 0.32 }),
+    scenarioHero('d-tank', 'dawn', 49, { canTankTower: true, effectiveHealth: 2_800 }),
+    scenarioHero('r-local', 'dusk', 52),
+  ],
+}))
+assert.equal(aggroTransfer.requestTowerAggroDrop, true, 'a low-health tower tank should request an aggro transfer')
+assert.equal(aggroTransfer.towerTankHeroId, 'd-tank')
 
 const opening = updateCombatBlackboards({
   gameTime: 240,

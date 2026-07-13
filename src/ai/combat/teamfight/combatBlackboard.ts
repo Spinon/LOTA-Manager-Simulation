@@ -97,6 +97,12 @@ function buildBlackboard(
       backlineHeroIds: [...previous.formationPlan.backlineHeroIds],
       flankHeroIds: [...previous.formationPlan.flankHeroIds],
     } : undefined,
+    scenario: previous?.scenario ? {
+      ...previous.scenario,
+      alliedReinforcements: previous.scenario.alliedReinforcements.map((reinforcement) => ({ ...reinforcement })),
+      enemyReinforcements: previous.scenario.enemyReinforcements.map((reinforcement) => ({ ...reinforcement })),
+      reasonTags: [...previous.scenario.reasonTags],
+    } : undefined,
     closestEnemyDistance: encounter.closestEnemyDistance,
     alliedAverageHealthPct: encounter.averageHealthPct[team],
     enemyAverageHealthPct: encounter.averageHealthPct[enemyTeam],

@@ -399,6 +399,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Testes cobrem atribuição de papéis/formação, fila de CC, interrupt urgente, anti-overkill de ultimate e overlap emergencial de saves; regressão de staging sob torre também permanece coberta.
 - Benchmark determinístico após a integração: 57,7x wall / 53,0x CPU, digest `810ed3fb5e8af9b1` estável nas três rodadas; testes, lint e build verdes.
 
+**Progresso dos cenários (2026-07-13)**:
+- O blackboard agora calcula poder local e projetado, ETA de reforços, influência de waves, torres, objetivos e timings de nível antes de escolher `engage`, `hold`, `reinforce` ou `disengage`.
+- Reforços inimigos só entram na previsão quando visíveis; aliados usam informação de equipe. Custo de rotação preserva o farm de cores em lutas pequenas, mas perde peso em teamfights e defesa de base.
+- O mesmo encontro sob torre é lido por time: atacante vê `tower_dive`, defensor vê `counter_dive`. Dive sem wave/tank recua; tank validado permite staging; holder frágil pede transferência de aggro.
+- A intenção ganhou autoridade de movimento: participantes esperam reforços, reforços viajam ao encontro e um `disengage` coletivo interrompe a aproximação. O inspetor mostra intenção, poder atual/projetado, wave e reforços.
+- Dez cenários puros e integrações runtime cobrem fog, reforços, custo do HC, wave inimiga, level timing, dive, counter-dive e troca de tank. Uma partida de auditoria terminou organicamente em 41,9min (36-27), sem watchdog.
+- Benchmark determinístico: 66,0x wall / 60,2x CPU, digest `8e32e8bb28c2bccb` estável em três rodadas; baseline da rodada era 53,3x / 46,5x.
+- Ainda pendente nesta fase: pulls/contest de pull, ranged creep como objetivo explícito, teleporte de reforço e cenários completos de chase/counter-initiation.
+
 **Restrições**:
 - O arquivo-fonte é especificação/pseudocódigo; funções simbólicas devem ser adaptadas aos tipos, fórmulas, skills, itens e status já existentes, sem criar uma segunda resolução de combate.
 - Atualização normal por encontro entre 250-500ms, com reavaliação imediata somente nos eventos críticos listados; caches espaciais e de contexto devem ser reutilizados.

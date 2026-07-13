@@ -368,6 +368,7 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   assert.equal(combatUpdated.combatBlackboards.dawn.length, 1, 'simulation should materialize a dawn combat blackboard')
   assert.equal(combatUpdated.combatBlackboards.dusk.length, 1, 'simulation should materialize a dusk combat blackboard')
   assert.equal(combatUpdated.combatBlackboards.dawn[0].encounterId, combatUpdated.combatBlackboards.dusk[0].encounterId)
+  assert.ok(combatUpdated.combatBlackboards.dawn[0].scenario, 'the runtime blackboard should include wave, tower and reinforcement context')
   const stableSignature = getCombatCriticalEventSignature(combatUpdated)
   combatUpdated.arcanes[0].stats.hp = combatUpdated.arcanes[0].stats.maxHp * 0.25
   assert.notEqual(getCombatCriticalEventSignature(combatUpdated), stableSignature, 'critical health crossings should invalidate combat context')
@@ -388,7 +389,11 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   towerState.creeps = []
   const towerCombat = updateCombatAiFoundation(towerState)
   const towerBoard = towerCombat.combatBlackboards.dawn[0]
+  const counterDiveBoard = towerCombat.combatBlackboards.dusk[0]
   assert.ok(towerBoard, 'a tower bait should still be recognized as an encounter')
+  assert.equal(towerBoard.scenario?.intent, 'disengage', 'unsupported tower pressure should be rejected by the scenario layer')
+  assert.equal(counterDiveBoard.encounterType, 'counter_dive', 'the defending team should read the same encounter as a counter-dive')
+  assert.equal(counterDiveBoard.scenario?.intent, 'engage', 'the allied tower should authorize a counter-dive response')
   assert.equal(getCombatTargetTowerExposure(towerCombat, diver.team, bait.pos), 100)
   const towerAssessment = getCombatFocusAssessment(towerCombat, diver, bait, towerBoard, [bait])
   assert.equal(towerAssessment.canApproach, false, 'combat focus must not authorize an unsupported tower dive')

@@ -2202,7 +2202,11 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
     const damageRange = getArcaneDamageRangeLabel(state, entity, auraMultiplier)
     const teamPlan = state.teamPlans[entity.team]
     const combatBoard = state.combatBlackboards[entity.team]
-      .find((board) => board.alliedHeroIds.includes(entity.id) || board.enemyHeroIds.includes(entity.id))
+      .find((board) => (
+        board.alliedHeroIds.includes(entity.id) ||
+        board.enemyHeroIds.includes(entity.id) ||
+        board.scenario?.alliedReinforcements.some((reinforcement) => reinforcement.heroId === entity.id)
+      ))
     const combatFocus = combatBoard?.primaryTargetId
       ? state.arcanes.find((arcane) => arcane.id === combatBoard.primaryTargetId)
       : undefined
@@ -2280,6 +2284,10 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
               ['Encontro', combatBoard ? getCombatEncounterLabel(combatBoard.encounterType) : 'Fora de luta'],
               ['Fase', combatBoard ? getCombatPhaseLabel(combatBoard.phase) : '-'],
               ['Local', combatBoard ? `${combatBoard.alliedHeroIds.length}v${combatBoard.enemyHeroIds.length}` : '-'],
+              ['Intencao', combatBoard?.scenario ? getCombatScenarioIntentLabel(combatBoard.scenario.intent) : '-'],
+              ['Poder', combatBoard?.scenario ? `${combatBoard.scenario.localPowerAdvantage > 0 ? '+' : ''}${Math.round(combatBoard.scenario.localPowerAdvantage)} -> ${combatBoard.scenario.projectedPowerAdvantage > 0 ? '+' : ''}${Math.round(combatBoard.scenario.projectedPowerAdvantage)}` : '-'],
+              ['Wave', combatBoard?.scenario ? `${combatBoard.scenario.wavePowerAdvantage > 0 ? '+' : ''}${Math.round(combatBoard.scenario.wavePowerAdvantage)}` : '-'],
+              ['Reforcos', combatBoard?.scenario ? `${combatBoard.scenario.alliedReinforcements.length} / ${combatBoard.scenario.enemyReinforcements.length}` : '-'],
               ['Foco', combatFocus?.player ?? '-'],
               ['Conf.', combatBoard ? `${combatBoard.targetFocusConfidence}%` : '-'],
               ['Risco', combatBoard?.primaryTargetDanger !== undefined ? `${Math.round(combatBoard.primaryTargetDanger)}` : '-'],
@@ -2823,6 +2831,14 @@ function getCombatPhaseLabel(phase: string) {
     reset: 'Reset',
   }
   return labels[phase] ?? phase
+}
+
+function getCombatScenarioIntentLabel(intent: string) {
+  if (intent === 'engage') return 'Entrar'
+  if (intent === 'hold') return 'Segurar'
+  if (intent === 'reinforce') return 'Reforcar'
+  if (intent === 'disengage') return 'Sair'
+  return intent
 }
 
 function getItemEffectKindLabel(kind: string) {
