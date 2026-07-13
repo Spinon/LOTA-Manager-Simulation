@@ -1,0 +1,95 @@
+{
+  "task": "T29",
+  "status": "complete",
+  "date": "2026-07-13",
+  "seed": "performance-reference",
+  "configuration": {
+    "clock": "event",
+    "tacticalScheduling": true,
+    "replayClock": "bound",
+    "objectMode": "--creep-storage object",
+    "soaMode": "--creep-storage soa"
+  },
+  "correctness": {
+    "simulatedSeconds": 2856.9,
+    "winner": "dusk",
+    "kills": "9-53",
+    "objectDigest": "9b15acd1421f3008",
+    "soaDigest": "9b15acd1421f3008",
+    "lockstepGlobalSteps": 5000,
+    "lockstepFinalTime": 1033.686,
+    "note": "The digest differs from T28 because the audit fixed a stale creep-array reference that could let one creep attack twice inside 132ms. Object and SoA modes agree after the correctness fix."
+  },
+  "pureSimulation": {
+    "replayCapture": false,
+    "object": {
+      "wallSeconds": 15.54,
+      "cpuSeconds": 20.59,
+      "wallRate": 183.8,
+      "cpuRate": 138.7,
+      "peakHeapMegabytes": 147.8,
+      "retainedHeapMegabytes": 33.2
+    },
+    "soa": {
+      "wallSeconds": 15.95,
+      "cpuSeconds": 21.36,
+      "wallRate": 179.1,
+      "cpuRate": 133.8,
+      "peakHeapMegabytes": 132.7,
+      "retainedHeapMegabytes": 36.0
+    },
+    "peakHeapReductionPercent": 10.22,
+    "note": "Wall and CPU rates were noisy and did not establish a pure-simulation speedup; the accepted result is the lower allocation pressure."
+  },
+  "garbageCollection": {
+    "object": {
+      "events": 316,
+      "scavengeEvents": 311,
+      "markEvents": 5,
+      "totalPauseMilliseconds": 405.07,
+      "averagePauseMilliseconds": 1.282
+    },
+    "soa": {
+      "events": 322,
+      "scavengeEvents": 317,
+      "markEvents": 6,
+      "totalPauseMilliseconds": 368.19,
+      "averagePauseMilliseconds": 1.143
+    },
+    "totalPauseReductionPercent": 9.10,
+    "averagePauseReductionPercent": 10.84
+  },
+  "fullReplayPath": {
+    "replayCapture": true,
+    "object": {
+      "wallSeconds": 18.09,
+      "cpuSeconds": 24.25,
+      "wallRate": 157.9,
+      "cpuRate": 117.8,
+      "peakHeapMegabytes": 151.1,
+      "retainedHeapMegabytes": 29.6
+    },
+    "soa": {
+      "wallSeconds": 17.55,
+      "cpuSeconds": 24.44,
+      "wallRate": 162.8,
+      "cpuRate": 116.9,
+      "peakHeapMegabytes": 162.6,
+      "retainedHeapMegabytes": 32.0,
+      "replayMegabytes": 85.2
+    },
+    "wallRateGainPercent": 3.10,
+    "wallTimeReductionPercent": 2.99,
+    "normalizedGainOverT28Percent": 12.82,
+    "note": "Replay allocations dominate peak heap in this path; T30 addresses that layer."
+  },
+  "validation": {
+    "tests": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "lockstep": "passed",
+    "browserSmoke": "passed",
+    "replayInspector": "passed",
+    "browserConsoleErrors": 0
+  }
+}

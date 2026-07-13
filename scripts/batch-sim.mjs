@@ -24,6 +24,10 @@ const clockMode = getArg('clock', 'event')
 if (clockMode !== 'fixed' && clockMode !== 'event') {
   throw new Error(`Modo de relogio invalido: ${clockMode}`)
 }
+const creepStorageMode = getArg('creep-storage', 'soa')
+if (creepStorageMode !== 'object' && creepStorageMode !== 'soa') {
+  throw new Error(`Modo de armazenamento de creeps invalido: ${creepStorageMode}`)
+}
 
 const watchdogMinutes = Math.max(60, Number(getArg('watchdog-minutes', 90)) || 90)
 const watchdogSeconds = watchdogMinutes * 60
@@ -40,7 +44,7 @@ const batchStartedAt = performance.now()
 for (let matchIndex = 0; matchIndex < matchCount; matchIndex += 1) {
   const seed = `${seedPrefix}-${matchIndex + 1}`
   const matchStartedAt = performance.now()
-  let state = createInitialState(seed)
+  let state = createInitialState(seed, { creepStorageMode })
   const simulationClock = createSimulationClock(clockMode)
   const rosters = { dawn: [], dusk: [] }
   for (const arcane of state.arcanes) rosters[arcane.team].push(arcane.name)
@@ -137,6 +141,7 @@ console.log('')
 console.log('=== Relatório de balanceamento ===')
 console.log(`Partidas: ${results.length} (${totalWallMinutes.toFixed(1)}min de CPU)`)
 console.log(`Relogio: ${clockMode}`)
+console.log(`Armazenamento de creeps: ${creepStorageMode}`)
 console.log(`Terminaram organicamente: ${finished.length}/${results.length} (${Math.round((finished.length / results.length) * 100)}%)`)
 console.log(`Watchdog de diagnóstico (${watchdogMinutes}min): ${results.length - finished.length} partida(s) travada(s)`)
 console.log(`Duração p50/p90: ${(percentile(durations, 0.5) / 60).toFixed(1)} / ${(percentile(durations, 0.9) / 60).toFixed(1)}min`)

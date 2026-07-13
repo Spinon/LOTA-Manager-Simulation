@@ -44,6 +44,10 @@ const creepSpatialMode = getArg('creep-spatial', 'persistent')
 if (creepSpatialMode !== 'rebuild' && creepSpatialMode !== 'persistent') {
   throw new Error(`Modo de indice espacial invalido: ${creepSpatialMode}`)
 }
+const creepStorageMode = getArg('creep-storage', 'soa')
+if (creepStorageMode !== 'object' && creepStorageMode !== 'soa') {
+  throw new Error(`Modo de armazenamento de creeps invalido: ${creepStorageMode}`)
+}
 const arcaneTravelMode = getArg('arcane-travel', 'planned')
 if (arcaneTravelMode !== 'fixed' && arcaneTravelMode !== 'planned') {
   throw new Error(`Modo de viagem dos Arcanes invalido: ${arcaneTravelMode}`)
@@ -60,6 +64,10 @@ const clockMaxFrames = Math.max(1, Math.floor(Number(getArg('clock-max-frames', 
 const replayClockBound = getArg('replay-clock-bound', 'on')
 if (replayClockBound !== 'on' && replayClockBound !== 'off') {
   throw new Error(`Acoplamento do replay invalido: ${replayClockBound}`)
+}
+const replayCapture = getArg('replay-capture', 'on')
+if (replayCapture !== 'on' && replayCapture !== 'off') {
+  throw new Error(`Captura do replay invalida: ${replayCapture}`)
 }
 const segmentSeconds = Math.max(60, Number(getArg('segment-seconds', 300)) || 300)
 const renderFrameIntervalSeconds = 0.2
@@ -96,8 +104,9 @@ function createStateDigest(state) {
 }
 
 function runBenchmark() {
+  if (typeof global.gc === 'function') global.gc()
   beginArcaneTravelDiagnostics()
-  let state = createInitialState(seed, { creepMotionMode, creepSpatialMode, arcaneTravelMode })
+  let state = createInitialState(seed, { creepMotionMode, creepSpatialMode, creepStorageMode, arcaneTravelMode })
   const simulationClock = createSimulationClock(clockMode, clockMaxFrames)
   let nextFrameAt = state.time
   let nextDetailsAt = state.time
@@ -112,13 +121,16 @@ function runBenchmark() {
   let simulationChunkSteps = defaultSimulationChunkSteps
   let stepsInCurrentChunk = 0
   let chunkStartedAt = 0
+  const initialMemory = process.memoryUsage()
+  let peakHeapUsed = initialMemory.heapUsed
+  let peakArrayBuffers = initialMemory.arrayBuffers
   let segmentStartedAt = performance.now()
   let segmentStartTime = state.time
   let nextSegmentAt = state.time + segmentSeconds
   const segments = []
   const replayEncoder = new ReplayChunkEncoder()
 
-  structuredClone(createMatchStaticData(state))
+  if (replayCapture === 'on') structuredClone(createMatchStaticData(state))
   const cpuStartedAt = process.cpuUsage()
   const startedAt = performance.now()
   segmentStartedAt = startedAt
@@ -152,8 +164,10 @@ function runBenchmark() {
     if (state.time + 0.0001 >= nextFrameAt) {
       const includeDetails = state.time + 0.0001 >= nextDetailsAt
       measuredAt = performance.now()
-      pendingFrames.push(createMatchRenderFrame(state, includeDetails))
-      frameMilliseconds += performance.now() - measuredAt
+      if (replayCapture === 'on') {
+        pendingFrames.push(createMatchRenderFrame(state, includeDetails))
+        frameMilliseconds += performance.now() - measuredAt
+      }
       if (includeDetails) nextDetailsAt = state.time + renderDetailsIntervalSeconds
       do nextFrameAt += renderFrameIntervalSeconds
       while (nextFrameAt <= state.time + 0.0001)
@@ -170,6 +184,9 @@ function runBenchmark() {
 
     if (state.time + 0.0001 >= nextSegmentAt || state.winner) {
       const now = performance.now()
+      const memory = process.memoryUsage()
+      peakHeapUsed = Math.max(peakHeapUsed, memory.heapUsed)
+      peakArrayBuffers = Math.max(peakArrayBuffers, memory.arrayBuffers)
       const elapsedSimulation = state.time - segmentStartTime
       const elapsedWall = (now - segmentStartedAt) / 1000
       segments.push({
@@ -198,10 +215,15 @@ function runBenchmark() {
     })
   }
   flushFrames()
+  const endingMemory = process.memoryUsage()
+  peakHeapUsed = Math.max(peakHeapUsed, endingMemory.heapUsed)
+  peakArrayBuffers = Math.max(peakArrayBuffers, endingMemory.arrayBuffers)
 
   const wallSeconds = (performance.now() - startedAt) / 1000
   const cpuUsage = process.cpuUsage(cpuStartedAt)
   const cpuSeconds = (cpuUsage.user + cpuUsage.system) / 1_000_000
+  if (typeof global.gc === 'function') global.gc()
+  const finalMemory = process.memoryUsage()
   const arcaneTravelDiagnostics = endArcaneTravelDiagnostics()
   return {
     wallSeconds,
@@ -221,6 +243,13 @@ function runBenchmark() {
     segments,
     arcaneTravelDiagnostics,
     clockDiagnostics: readSimulationClockDiagnostics(simulationClock),
+    memory: {
+      initialHeapUsed: initialMemory.heapUsed,
+      peakHeapUsed,
+      finalHeapUsed: finalMemory.heapUsed,
+      peakArrayBuffers,
+      finalArrayBuffers: finalMemory.arrayBuffers,
+    },
     winner: state.winner,
     kills: state.kills,
     digest: createStateDigest(state),
@@ -257,6 +286,11 @@ const results = Array.from({ length: runCount }, (_, index) => {
     `${clock.skippedFrames} frames saltados, ${clock.fixedStepTicks} ticks em ilhas, ` +
     `${clock.eventWakeups} despertares por evento, pico ${clock.peakIslandCount} ilhas / ` +
     `${clock.peakTacticalEntityCount} entidades, ${clock.tacticalEntitySamples} microamostras`,
+  )
+  console.log(
+    `    memoria: heap ${formatBytes(result.memory.initialHeapUsed)} inicial / ` +
+    `${formatBytes(result.memory.peakHeapUsed)} pico / ${formatBytes(result.memory.finalHeapUsed)} final; ` +
+    `array buffers ${formatBytes(result.memory.peakArrayBuffers)} pico`,
   )
   const measuredTotal = Object.values(result.componentMilliseconds).reduce((sum, value) => sum + value, 0)
   console.log(
@@ -297,10 +331,12 @@ console.log(`Seed: ${seed}`)
 console.log(`Modo: ${fullMatch ? 'partida completa' : `até ${formatClock(simulatedSeconds)}`}`)
 console.log(`Movimento de creeps: ${creepMotionMode}`)
 console.log(`Indice espacial de creeps: ${creepSpatialMode}`)
+console.log(`Armazenamento de creeps: ${creepStorageMode}`)
 console.log(`Viagem dos Arcanes: ${arcaneTravelMode}`)
 console.log(`Relogio: ${clockMode}`)
 console.log(`Horizonte maximo do relogio: ${clockMaxFrames} frames`)
 console.log(`Relogio preso ao replay: ${replayClockBound}`)
+console.log(`Captura do replay: ${replayCapture}`)
 console.log(`Substeps taticos: ${tacticalSubsteps}`)
 console.log(`Mediana: ${medianWallSeconds.toFixed(2)}s`)
 console.log(`Taxa mediana: ${medianRate.toFixed(1)} segundos simulados/segundo real`)
@@ -309,6 +345,10 @@ console.log(`Digest: ${results[0].digest}`)
 
 function formatShare(value, total) {
   return `${(value / 1000).toFixed(2)}s (${(value / Math.max(1, total) * 100).toFixed(1)}%)`
+}
+
+function formatBytes(value) {
+  return `${(value / 1024 / 1024).toFixed(1)} MB`
 }
 
 function formatClock(time) {

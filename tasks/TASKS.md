@@ -745,7 +745,9 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T29 - Estado orientado a dados para unidades numerosas
+### [x] T29 - Estado orientado a dados para unidades numerosas
+
+> Concluída em 2026-07-13 - Canais quentes das creeps agora possuem armazenamento SoA em arrays tipados, com fachadas estáveis para os sistemas existentes e buffers reutilizados no movimento.
 
 **Objetivo**: reduzir alocações e melhorar localidade de cache depois que as fronteiras de movimento estiverem estáveis.
 
@@ -755,6 +757,13 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Evitar conversão objeto/array dentro do tick.
 
 **Critérios**: queda mensurável de GC e heap; replay e inspector continuam funcionais; testes e digests aprovados.
+
+**Resultado (2026-07-13)**:
+- Posição, HP, time, lane, tipo, alvo, waypoint e agenda de ataque/percepção das creeps foram migrados para um `CreepComponentStore` com arrays tipados, crescimento geométrico, IDs de alvo internados e slots estáveis. As fachadas de objetos continuam disponíveis para IA, combate e replay, sem reconstrução objeto/array por tick.
+- Movimento usa drafts e buffers reutilizados; dano, aggro, spawn, clone e materialização de planos sincronizam somente os componentes afetados. A auditoria também encontrou e corrigiu uma referência obsoleta que permitia à mesma creep atacar duas vezes em 132ms após uma troca do array de entidades.
+- Em simulação pura, o pico de heap caiu de 147,8 MB para 132,7 MB (-10,2%). Sob `--trace-gc`, as pausas acumuladas caíram de 405,07ms para 368,19ms (-9,1%), apesar de uma pequena variação na quantidade de coletas.
+- Com captura binária real do replay, a taxa da partida completa subiu de 157,9x para 162,8x (+3,1%). A candidata repetiu exatamente o modo de objetos: 46:37, vitória Dusk, 9-53 e digest `9b15acd1421f3008`.
+- O replay completo, seek, inspector, painéis e mapa foram validados no navegador sem erros de console. Testes, lint e build ficaram verdes. Medições completas em `reports/creep-components-audit.json`.
 
 ---
 

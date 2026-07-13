@@ -1511,6 +1511,8 @@ let state: SimulationState = initialState
 
 {
   const targetedDamageState = createStateAtGameStart('targeted-damage-regression')
+  targetedDamageState.creepStorageMode = 'object'
+  targetedDamageState.creepComponents = undefined
   const creep = targetedDamageState.creeps[0]
   const source = { id: 'test-environment', label: 'Test', team: creep.team === 'dawn' ? 'dusk' : 'dawn', damageType: 'pure' } as const
   const collectionsBefore = {
@@ -1522,13 +1524,25 @@ let state: SimulationState = initialState
     camps: targetedDamageState.camps,
   }
   damageEntity(targetedDamageState, creep.id, 10, source)
-  assert.notStrictEqual(targetedDamageState.creeps, collectionsBefore.creeps, 'damage should replace the targeted entity collection')
+  assert.strictEqual(targetedDamageState.creeps, collectionsBefore.creeps, 'damage should retain the creep collection while replacing its target')
   assert.equal(targetedDamageState.creeps[0].hp, creep.hp - 10, 'targeted creep damage should update the indexed entity')
   assert.strictEqual(targetedDamageState.arcanes, collectionsBefore.arcanes, 'unrelated arcane collections should retain identity')
   assert.strictEqual(targetedDamageState.towers, collectionsBefore.towers, 'unrelated tower collections should retain identity')
   assert.strictEqual(targetedDamageState.structures, collectionsBefore.structures, 'unrelated structure collections should retain identity')
   assert.strictEqual(targetedDamageState.bases, collectionsBefore.bases, 'unrelated base collections should retain identity')
   assert.strictEqual(targetedDamageState.camps, collectionsBefore.camps, 'unrelated camp collections should retain identity')
+}
+
+{
+  const targetedDamageState = createStateAtGameStart('targeted-damage-soa-regression')
+  const creep = targetedDamageState.creeps[0]
+  const creepsBefore = targetedDamageState.creeps
+  const hpBefore = creep.hp
+  const source = { id: 'test-environment', label: 'Test', team: creep.team === 'dawn' ? 'dusk' : 'dawn', damageType: 'pure' } as const
+  damageEntity(targetedDamageState, creep.id, 10, source)
+  assert.strictEqual(targetedDamageState.creeps, creepsBefore, 'SoA damage should retain the stable creep facade collection')
+  assert.notStrictEqual(targetedDamageState.creeps[0], creep, 'SoA damage should preserve object-mode target reference semantics')
+  assert.equal(targetedDamageState.creeps[0].hp, hpBefore - 10, 'SoA damage should update the typed HP component')
 }
 
 {

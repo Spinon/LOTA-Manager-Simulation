@@ -81,6 +81,18 @@ import {
   type CreepMotionPlan,
 } from './creepMotionPlans.ts'
 import {
+  appendCreepComponents,
+  cloneCreepsIntoComponentStore,
+  createCreepComponentStore,
+  getCreepComponentSlot,
+  getCreepUpdateDraft,
+  replaceCreepComponentFacade,
+  syncCreepAttackSchedule,
+  syncCreepPositionComponents,
+  type CreepComponentStore,
+  type CreepStorageMode,
+} from './creepComponents.ts'
+import {
   createPersistentSpatialGrid,
   queryPersistentSpatialGridIdsInto,
   queryPersistentSpatialGridInto,
@@ -114,6 +126,7 @@ export type ArcaneTravelMode = 'fixed' | 'planned'
 export type SimulationOptions = {
   creepMotionMode?: CreepMotionMode
   creepSpatialMode?: CreepSpatialMode
+  creepStorageMode?: CreepStorageMode
   arcaneTravelMode?: ArcaneTravelMode
 }
 export type ArcaneTravelDiagnostics = {
@@ -457,6 +470,8 @@ export type SimulationState = {
   matchSeed: string
   creepMotionMode: CreepMotionMode
   creepSpatialMode: CreepSpatialMode
+  creepStorageMode: CreepStorageMode
+  creepComponents?: CreepComponentStore
   creepSpatialRevision: number
   arcaneTravelMode: ArcaneTravelMode
   time: number
@@ -1205,11 +1220,14 @@ export function createInitialState(seed = 'lota-default-seed', options: Simulati
     return allocateArcaneSkillPoints(baseArcane)
   })
 
+  const creepStorageMode = options.creepStorageMode ?? 'soa'
   return {
     runtimeToken: {},
     matchSeed: seed,
     creepMotionMode: options.creepMotionMode ?? 'planned',
     creepSpatialMode: options.creepSpatialMode ?? 'persistent',
+    creepStorageMode,
+    creepComponents: creepStorageMode === 'soa' ? createCreepComponentStore() : undefined,
     creepSpatialRevision: 0,
     arcaneTravelMode: options.arcaneTravelMode ?? 'planned',
     time: matchPreparationStartSeconds,
@@ -1803,7 +1821,12 @@ export function tick(
   const previousDayCycle = getDayCycle(previousTime)
   next.time = Number((next.time + clockDelta).toFixed(3))
   if (next.time >= 0 && next.time >= next.nextWave) {
-    next.creeps.push(...spawnWave(next))
+    const wave = spawnWave(next)
+    next.creeps.push(...(
+      next.creepStorageMode === 'soa' && next.creepComponents
+        ? appendCreepComponents(next.creepComponents, wave)
+        : wave
+    ))
     next.nextWave += NON_COMBAT_RULES.map.waveIntervalSeconds
     next.creepSpatialRevision += 1
   }
@@ -2082,6 +2105,19 @@ export function resetDisengagedNeutralCamps(camps: Camp[], time: number) {
 }
 
 export function cloneSimulationStateForTick(state: SimulationState): SimulationState {
+  const creepSnapshots = state.creeps.map((creep) => ({
+    ...creep,
+    pos: { ...creep.pos },
+    motionPlan: creep.motionPlan ? {
+      ...creep.motionPlan,
+      from: { ...creep.motionPlan.from },
+      destination: { ...creep.motionPlan.destination },
+    } : undefined,
+    lastHitBy: creep.lastHitBy ? { ...creep.lastHitBy } : undefined,
+  }))
+  const clonedCreeps = state.creepStorageMode === 'soa'
+    ? cloneCreepsIntoComponentStore(creepSnapshots)
+    : undefined
   return {
     ...state,
     kills: { ...state.kills },
@@ -2127,16 +2163,8 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
       stats: { ...arcane.stats },
       lastHitBy: arcane.lastHitBy ? { ...arcane.lastHitBy } : undefined,
     })),
-    creeps: state.creeps.map((creep) => ({
-      ...creep,
-      pos: { ...creep.pos },
-      motionPlan: creep.motionPlan ? {
-        ...creep.motionPlan,
-        from: { ...creep.motionPlan.from },
-        destination: { ...creep.motionPlan.destination },
-      } : undefined,
-      lastHitBy: creep.lastHitBy ? { ...creep.lastHitBy } : undefined,
-    })),
+    creepComponents: clonedCreeps?.store,
+    creeps: clonedCreeps?.creeps ?? creepSnapshots,
     towers: state.towers.map((tower) => ({ ...tower, pos: { ...tower.pos } })),
     structures: state.structures.map((structure) => ({ ...structure, pos: { ...structure.pos } })),
     bases: state.bases.map((base) => ({ ...base, pos: { ...base.pos } })),
@@ -2415,6 +2443,8 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
     matchSeed: frame.matchSeed,
     creepMotionMode: 'planned',
     creepSpatialMode: 'persistent',
+    creepStorageMode: 'object',
+    creepComponents: undefined,
     creepSpatialRevision: 0,
     arcaneTravelMode: 'planned',
     time: frame.time,
@@ -7660,7 +7690,11 @@ export function materializeCreepMotionPlan(creep: Creep, time: number, preserveP
 
 export function materializeCreepMotionPlansForTacticalWindow(state: SimulationState) {
   if (state.creepMotionMode !== 'planned' || !state.creeps.some((creep) => creep.motionPlan)) return
-  for (const creep of state.creeps) materializeCreepMotionPlan(creep, state.time, true)
+  for (const creep of state.creeps) {
+    if (!creep.motionPlan) continue
+    materializeCreepMotionPlan(creep, state.time, true)
+    if (state.creepComponents) syncCreepPositionComponents(state.creepComponents, creep)
+  }
 }
 
 export function rebaseCreepMotionPlansAfterHitboxes(state: SimulationState) {
@@ -7697,6 +7731,46 @@ export function updateCreepsForTick(
 ) {
   const planned = state.creepMotionMode === 'planned'
   if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.candidates += state.creeps.length
+  if (state.creepStorageMode === 'soa' && state.creepComponents) {
+    const updates = state.creepComponents.updateBuffer
+    updates.length = state.creeps.length
+    for (let creepIndex = 0; creepIndex < state.creeps.length; creepIndex += 1) {
+      state.creepComponents.updateDirty[creepIndex] = 0
+      let creep = state.creeps[creepIndex]
+      if (getCreepComponentSlot(state.creepComponents, creep) === undefined) {
+        appendCreepComponents(state.creepComponents, [creep])
+      }
+      const draft = getCreepUpdateDraft(state.creepComponents, creep)
+      const movementDelta = fineStepEntityIds?.has(creep.id) ? fineStepDelta : delta
+      let updated = creep
+      if (!planned || !creep.motionPlan) {
+        if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.movementUpdates += 1
+        updated = updateCreepMovement(creep, state, movementDelta, frameContext, draft)
+      } else if (!shouldWakeCreepMotionPlan(creep, state, frameContext)) {
+        if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.sleepingSkips += 1
+      } else {
+        const materialized = materializeCreepMotionPlan(creep, state.time, true)
+        state.creepComponents.updateDirty[creepIndex] = 1
+        if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.movementUpdates += 1
+        updated = updateCreepMovement(materialized, state, 0, frameContext, draft)
+      }
+      updates[creepIndex] = updated
+    }
+    for (let creepIndex = 0; creepIndex < state.creeps.length; creepIndex += 1) {
+      const current = state.creeps[creepIndex]
+      const updated = updates[creepIndex]
+      if (updated === current) {
+        if (state.creepComponents.updateDirty[creepIndex]) {
+          syncCreepPositionComponents(state.creepComponents, current)
+        }
+      } else {
+        state.creeps[creepIndex] = replaceCreepComponentFacade(state.creepComponents, current, updated)
+      }
+    }
+    updates.length = 0
+    teamVisionProviderCache.delete(state)
+    return state.creeps
+  }
   if (!planned) return state.creeps.map((creep) => {
     if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.movementUpdates += 1
     const movementDelta = fineStepEntityIds?.has(creep.id) ? fineStepDelta : delta
@@ -7736,13 +7810,18 @@ export function getCreepMotionWakeAt(
     : time + creepTargetEvaluationIntervalSeconds
 }
 
-export function updateCreepMovement(creep: Creep, state: SimulationState, delta: number, frameContext: TickFrameContext): Creep {
+export function updateCreepMovement(
+  creep: Creep,
+  state: SimulationState,
+  delta: number,
+  frameContext: TickFrameContext,
+  draft?: Creep,
+): Creep {
   const pullCamp = getActivePullCampForCreep(state, creep)
   if (pullCamp) {
     const moveTarget = getCreepMoveDestination(creep, pullCamp)
     const nextPos = moveToward(creep.pos, moveTarget, 4.2 * delta)
-    return {
-      ...creep,
+    return writeCreepMovementUpdate(creep, {
       pos: nextPos,
       pullCampId: pullCamp.id,
       routeTargetId: pullCamp.id,
@@ -7751,18 +7830,17 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
         ? creep.pullUntil
         : state.time + lanePullDurationSeconds,
       motionPlan: undefined,
-    }
+    }, draft)
   }
   if (creep.pullCampId || creep.pullUntil) {
-    creep = {
-      ...creep,
+    creep = writeCreepMovementUpdate(creep, {
       pathIndex: syncLanePathIndex(creep.pos, lanePaths[creep.team][creep.lane], creep.pathIndex),
       pullCampId: undefined,
       pullUntil: undefined,
       routeTargetId: undefined,
       nextRouteTargetEvaluationAt: state.time,
       motionPlan: undefined,
-    }
+    }, draft)
   }
 
   const retainedTarget = creep.routeTargetId ? getCombatTargetById(state, creep.routeTargetId) : undefined
@@ -7775,11 +7853,10 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
   if (evaluationDue || (creep.routeTargetId && !retainedVisionTarget)) {
     attackTarget = getCachedRouteCreepTarget(creep, state, 'attack', frameContext)
     visibleTarget = attackTarget ?? getCachedRouteCreepTarget(creep, state, 'vision', frameContext)
-    creep = {
-      ...creep,
+    creep = writeCreepMovementUpdate(creep, {
       routeTargetId: (attackTarget ?? visibleTarget)?.id,
       nextRouteTargetEvaluationAt: state.time + creepTargetEvaluationIntervalSeconds,
-    }
+    }, draft)
   } else {
     frameContext.routeCreepTargetCache.attack.set(creep.id, attackTarget ?? null)
     frameContext.routeCreepTargetCache.vision.set(creep.id, visibleTarget ?? null)
@@ -7787,8 +7864,7 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
 
   if (attackTarget) {
     if (state.creepMotionMode === 'planned' && canHoldCreepMotionTarget(attackTarget)) {
-      return {
-        ...creep,
+      return writeCreepMovementUpdate(creep, {
         motionPlan: scheduleCreepMotionPlan(
           creep.motionPlan,
           'hold',
@@ -7798,18 +7874,18 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
           state.time,
           getCreepMotionWakeAt(creep, state.time, 'hold', state.creepSpatialMode),
         ),
-      }
+      }, draft)
     }
-    return creep.motionPlan ? { ...creep, motionPlan: undefined } : creep
+    return creep.motionPlan ? writeCreepMovementUpdate(creep, { motionPlan: undefined }, draft) : creep
   }
 
   if (visibleTarget) {
     const moveTarget = getCreepMoveDestination(creep, visibleTarget)
     const nextPos = moveToward(creep.pos, moveTarget, 4.2 * delta)
     if (distanceSquared(nextPos, creep.pos) < 0.0001) {
-      return creep.motionPlan ? { ...creep, motionPlan: undefined } : creep
+      return creep.motionPlan ? writeCreepMovementUpdate(creep, { motionPlan: undefined }, draft) : creep
     }
-    return { ...creep, pos: nextPos, motionPlan: undefined }
+    return writeCreepMovementUpdate(creep, { pos: nextPos, motionPlan: undefined }, draft)
   }
 
   const path = lanePaths[creep.team][creep.lane]
@@ -7820,8 +7896,7 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
   const nextPos = moveToward(creep.pos, formationPoint(path[pathIndex], creep.id), 4.2 * delta)
   if (state.creepMotionMode === 'planned') {
     const destination = formationPoint(path[pathIndex], creep.id)
-    return {
-      ...creep,
+    return writeCreepMovementUpdate(creep, {
       pathIndex,
       pos: nextPos,
       motionPlan: scheduleCreepMotionPlan(
@@ -7833,10 +7908,16 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
         state.time,
         getCreepMotionWakeAt(creep, state.time, 'route', state.creepSpatialMode),
       ),
-    }
+    }, draft)
   }
   if (pathIndex === creep.pathIndex && distanceSquared(nextPos, creep.pos) < 0.0001) return creep
-  return { ...creep, pathIndex, pos: nextPos }
+  return writeCreepMovementUpdate(creep, { pathIndex, pos: nextPos }, draft)
+}
+
+function writeCreepMovementUpdate(creep: Creep, changes: Partial<Creep>, draft?: Creep) {
+  if (!draft) return { ...creep, ...changes }
+  Object.assign(draft, creep, changes)
+  return draft
 }
 
 export function getCachedRouteCreepTarget(creep: Creep, state: SimulationState, mode: RouteCreepTargetMode, frameContext: TickFrameContext) {
@@ -9816,6 +9897,7 @@ export function resolveCombat(
     if (target) {
       if (!isCachedRouteCreepAttackTargetValid(creep, target, next)) return
       creep.lastAttack = next.time
+      if (next.creepComponents) syncCreepAttackSchedule(next.creepComponents, creep)
       next.effects = addAttackEffect(next.effects, {
         kind: 'creep',
         action: 'attack',
@@ -10373,6 +10455,23 @@ export function applyTowerAggro(state: SimulationState, defendingTeam: TeamId, a
 export function applyCreepAggro(state: SimulationState, defendingTeam: TeamId, attackerId: string) {
   const attacker = state.arcanes.find((arcane) => arcane.id === attackerId)
   if (!attacker) return
+
+  if (state.creepStorageMode === 'soa') {
+    for (let index = 0; index < state.creeps.length; index += 1) {
+      const creep = state.creeps[index]
+      if (creep.team !== defendingTeam || distance(creep.pos, attacker.pos) > creep.range) continue
+      const replacement = {
+        ...creep,
+        aggroTargetId: attackerId,
+        aggroUntil: state.time + 3.2,
+        motionPlan: undefined,
+      }
+      state.creeps[index] = state.creepComponents
+        ? replaceCreepComponentFacade(state.creepComponents, creep, replacement)
+        : replacement
+    }
+    return
+  }
 
   state.creeps = state.creeps.map((creep) => {
     if (creep.team !== defendingTeam || distance(creep.pos, attacker.pos) > creep.range) {
@@ -11141,9 +11240,16 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   recordObjectiveLossIfDestroyed(state, targetStructure, finalDamage, source)
   recordObjectiveLossIfDestroyed(state, targetBase, finalDamage, source)
   if (targetCreep && targetCreepIndex !== undefined) {
-    const creeps = [...state.creeps]
-    creeps[targetCreepIndex] = { ...targetCreep, hp: hit(targetCreep.hp), lastHitBy: source }
-    state.creeps = creeps
+    if (state.creepStorageMode === 'soa') {
+      const replacement = { ...targetCreep, hp: hit(targetCreep.hp), lastHitBy: source }
+      state.creeps[targetCreepIndex] = state.creepComponents
+        ? replaceCreepComponentFacade(state.creepComponents, targetCreep, replacement)
+        : replacement
+      teamVisionProviderCache.delete(state)
+    } else {
+      state.creeps[targetCreepIndex] = { ...targetCreep, hp: hit(targetCreep.hp), lastHitBy: source }
+      teamVisionProviderCache.delete(state)
+    }
   } else if (targetTower && targetTowerIndex !== undefined) {
     const towers = [...state.towers]
     towers[targetTowerIndex] = { ...targetTower, hp: hit(targetTower.hp) }
