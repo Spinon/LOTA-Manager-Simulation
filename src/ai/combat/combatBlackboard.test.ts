@@ -59,6 +59,10 @@ function scenarioHero(
     rotationCost: 10,
     visibleToTeam: true,
     canTankTower: false,
+    controlReady: false,
+    escapeReady: false,
+    combatResourceReady: true,
+    disabled: false,
     ...values,
   }
 }
@@ -74,6 +78,9 @@ function scenarioInput(overrides: Partial<Parameters<typeof analyzeCombatScenari
     heroes: [scenarioHero('d-local', 'dawn', 48), scenarioHero('r-local', 'dusk', 52)],
     creeps: [],
     towers: [],
+    phase: 'sustain',
+    objectiveOpportunityValue: 0,
+    recentEnemyTeleportCount: 0,
     ...overrides,
   }
 }
@@ -218,6 +225,104 @@ const aggroTransfer = analyzeCombatScenario(scenarioInput({
 }))
 assert.equal(aggroTransfer.requestTowerAggroDrop, true, 'a low-health tower tank should request an aggro transfer')
 assert.equal(aggroTransfer.towerTankHeroId, 'd-tank')
+
+const disciplinedChase = analyzeCombatScenario(scenarioInput({
+  encounterType: 'chase',
+  phase: 'chase',
+  alliedHeroIds: ['d-core', 'd-support'],
+  primaryTargetId: 'r-local',
+  heroes: [
+    scenarioHero('d-core', 'dawn', 48, { role: 'Safe Lane', combatPower: 135 }),
+    scenarioHero('d-support', 'dawn', 49, { role: 'Dedicated Support', controlReady: true }),
+    scenarioHero('r-local', 'dusk', 52, { healthPct: 0.16, escapeReady: false }),
+  ],
+}))
+assert.equal(disciplinedChase.chaseAllowed, true, 'a visible low-health target may be chased by an intact formation')
+assert.equal(disciplinedChase.intent, 'engage')
+assert.ok(disciplinedChase.chaseScore >= 14)
+
+const foggedChase = analyzeCombatScenario(scenarioInput({
+  encounterType: 'chase',
+  phase: 'chase',
+  primaryTargetId: 'r-local',
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48),
+    scenarioHero('r-local', 'dusk', 52, { healthPct: 0.12, visibleToTeam: false }),
+  ],
+}))
+assert.equal(foggedChase.chaseAllowed, false, 'losing the focused target in fog must end the chase')
+assert.equal(foggedChase.chaseStopReason, 'dangerous_fog')
+
+const brokenFormationChase = analyzeCombatScenario(scenarioInput({
+  encounterType: 'chase',
+  phase: 'chase',
+  alliedHeroIds: ['d-core', 'd-support'],
+  heroes: [
+    scenarioHero('d-core', 'dawn', 34, { role: 'Safe Lane' }),
+    scenarioHero('d-support', 'dawn', 49, { role: 'Dedicated Support' }),
+    scenarioHero('r-local', 'dusk', 52, { healthPct: 0.12 }),
+  ],
+}))
+assert.equal(brokenFormationChase.chaseStopReason, 'formation_break', 'an isolated support should terminate the chase')
+assert.ok(brokenFormationChase.formationIntegrity < 0.5)
+
+const teleportThreatChase = analyzeCombatScenario(scenarioInput({
+  encounterType: 'chase',
+  phase: 'chase',
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48),
+    scenarioHero('r-local', 'dusk', 52, { healthPct: 0.18 }),
+  ],
+  recentEnemyTeleportCount: 2,
+}))
+assert.equal(teleportThreatChase.chaseStopReason, 'enemy_reinforcements', 'multiple enemy teleports should cancel a chase')
+
+const objectiveConversionChase = analyzeCombatScenario(scenarioInput({
+  encounterType: 'chase',
+  phase: 'chase',
+  objectiveOpportunityValue: 48,
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48),
+    scenarioHero('r-local', 'dusk', 52, { healthPct: 0.48, escapeReady: true }),
+  ],
+}))
+assert.equal(objectiveConversionChase.chaseStopReason, 'better_objective', 'a nearby high-value objective should beat a marginal chase')
+
+const spentResourcesChase = analyzeCombatScenario(scenarioInput({
+  encounterType: 'chase',
+  phase: 'chase',
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48, { combatResourceReady: false }),
+    scenarioHero('r-local', 'dusk', 52, { healthPct: 0.42, escapeReady: true }),
+  ],
+}))
+assert.equal(spentResourcesChase.chaseStopReason, 'resources_spent', 'a mobile target should not be chased after combat resources are spent')
+
+const counterInitiationThreat = analyzeCombatScenario(scenarioInput({
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48, { combatPower: 90 }),
+    scenarioHero('r-local', 'dusk', 51, { controlReady: true, combatPower: 130 }),
+    scenarioHero('r-controller', 'dusk', 53, { controlReady: true, combatPower: 130 }),
+  ],
+  enemyHeroIds: ['r-local', 'r-controller'],
+  recentEnemyTeleportCount: 1,
+  towers: [enemyTower],
+}))
+assert.ok(counterInitiationThreat.counterInitiationRisk >= 68, 'ready enemy control, tower and teleport threat should expose a counter-initiation')
+assert.notEqual(counterInitiationThreat.intent, 'engage')
+
+const counterInitiationWindow = analyzeCombatScenario(scenarioInput({
+  encounterType: 'counter_dive',
+  alliedHeroIds: ['d-local', 'd-controller'],
+  heroes: [
+    scenarioHero('d-local', 'dawn', 48, { controlReady: true }),
+    scenarioHero('d-controller', 'dawn', 49, { controlReady: true }),
+    scenarioHero('r-local', 'dusk', 52, { disabled: true }),
+  ],
+  towers: [alliedTower],
+}))
+assert.ok(counterInitiationWindow.counterInitiationOpportunity >= 60)
+assert.equal(counterInitiationWindow.intent, 'engage', 'ready allied control should punish an enemy committed under an allied tower')
 
 const opening = updateCombatBlackboards({
   gameTime: 240,

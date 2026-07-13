@@ -44,6 +44,14 @@ export type DynamicCombatRole =
 export type CombatPositioningBand = 'frontline' | 'midline' | 'backline' | 'flank'
 export type CombatControlType = 'stun' | 'root' | 'silence' | 'disable' | 'interrupt'
 export type CombatScenarioIntent = 'engage' | 'hold' | 'reinforce' | 'disengage'
+export type CombatChaseStopReason =
+  | 'dangerous_fog'
+  | 'formation_break'
+  | 'resources_spent'
+  | 'enemy_reinforcements'
+  | 'counter_initiation'
+  | 'better_objective'
+  | 'low_value'
 
 export interface CombatReinforcementProjection {
   heroId: string
@@ -55,6 +63,12 @@ export interface CombatScenarioAssessment {
   intent: CombatScenarioIntent
   engageScore: number
   reinforcementScore: number
+  chaseAllowed: boolean
+  chaseScore: number
+  formationIntegrity: number
+  counterInitiationRisk: number
+  counterInitiationOpportunity: number
+  chaseStopReason?: CombatChaseStopReason
   localPowerAdvantage: number
   projectedPowerAdvantage: number
   wavePowerAdvantage: number

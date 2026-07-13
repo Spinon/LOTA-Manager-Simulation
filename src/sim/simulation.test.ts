@@ -78,6 +78,7 @@ import {
   tryCastRangedCreepSecureSkill,
   tick,
   updateCreepMovement,
+  updateArcaneMovement,
   updateCombatAiFoundation,
   updateBoss,
   type Arcane,
@@ -412,6 +413,34 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   assert.equal(towerAssessment.canApproach, false, 'combat focus must not authorize an unsupported tower dive')
   const stagingPoint = getCombatStagingPoint(towerCombat, diver, bait, towerBoard, towerAssessment)
   assert.ok(distance(stagingPoint, defendingTower.pos) > distance(diver.pos, defendingTower.pos), 'tower staging should create distance instead of rushing the bait')
+
+  const chaseState = createInitialState('combat-chase-stop-integration')
+  chaseState.time = 420
+  const chaser = chaseState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const chased = chaseState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  chaser.pos = { x: 48, y: 50 }
+  chased.pos = { x: 52, y: 50 }
+  chased.stats = { ...chased.stats, hp: chased.stats.maxHp * 0.18 }
+  chaseState.arcanes = chaseState.arcanes.map((arcane) => (
+    arcane.id === chaser.id || arcane.id === chased.id ? arcane : { ...arcane, stats: { ...arcane.stats, hp: 0 } }
+  ))
+  const chaseCombat = updateCombatAiFoundation(chaseState)
+  const chaseBoard = chaseCombat.combatBlackboards.dawn[0]
+  assert.equal(chaseBoard.phase, 'chase')
+  assert.ok(chaseBoard.scenario)
+  chaseBoard.scenario = {
+    ...chaseBoard.scenario!,
+    intent: 'hold',
+    chaseAllowed: false,
+    chaseStopReason: 'dangerous_fog',
+  }
+  const liveChaser = chaseCombat.arcanes.find((arcane) => arcane.id === chaser.id)!
+  liveChaser.forceDecision = true
+  liveChaser.nextDecisionAt = chaseCombat.time
+  chaseCombat.arcanes.find((arcane) => arcane.id === chased.id)!.stats.hp = 0
+  const stoppedChaser = updateArcaneMovement(liveChaser, chaseCombat, simulationFrameSeconds, true)
+  assert.equal(stoppedChaser.macroDecision, 'Encerrar perseguicao', 'scenario authority should stop movement even after the focus disappears')
+  assert.equal(stoppedChaser.microDecision, 'Reagrupando sem visao do alvo')
 }
 
 {

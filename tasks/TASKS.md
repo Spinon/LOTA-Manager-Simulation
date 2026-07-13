@@ -372,7 +372,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - [x] **Fundação**: tipos runtime, detector/classificador de encontros, contexto espacial, eventos de invalidação e ciclo de vida determinístico do blackboard.
 - [x] **Cérebro básico**: máquina de fases `pre_contact -> opening -> commit/sustain -> chase/disengage`, score de alvo, foco compartilhado, stickiness e troca de alvo.
 - [x] **Coordenação**: papéis dinâmicos, formação, reservas de CC/dano/save/interrupt, anti-overkill e uso contextual de ultimates.
-- [ ] **Cenários**: skirmishes/reforços, trades de lane, level timings, influência da wave, runas/camps/pulls, dive, counter-dive e transferência de aggro.
+- [x] **Cenários**: skirmishes/reforços, trades de lane, level timings, influência da wave, runas/camps/pulls, dive, counter-dive e transferência de aggro.
 - [ ] **Humanização e tuning**: integrar mechanics, laning, map awareness, teamfight, positioning, communication, discipline, clutch, mastery, fatigue e tilt ao modelo de execução.
 
 **Progresso da fundação (2026-07-12)**:
@@ -415,7 +415,13 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Reforços aprovados pelo blackboard podem usar TP quando canal + trecho final economizam pelo menos dois segundos sobre caminhar. Rotação rejeitada pelo custo econômico continua sem autoridade para teleportar.
 - Auditoria headless de 12min produziu pull real com quatro creeps desviados. Testes cobrem planejamento, desvio, combate bilateral, retorno à lane, contestação, ranged last hit/deny, spell secure e canal de TP.
 - Benchmark determinístico: 62,9x wall / 60,3x CPU, digest `88d5b9ccd239aba0` estável; uma partida terminou organicamente em 49,4min, sem watchdog. O placar 9-63 desta única seed fica registrado como outlier para a próxima amostra de balanceamento.
-- Pendente para concluir os cenários: chase com limite de formação/fog/reforços, counter-initiation e ampliar a matriz para os 30 casos da especificação.
+**Conclusão dos cenários de chase e counter-initiation (2026-07-13)**:
+- Chase ganhou score próprio para chance de kill, escape do alvo, conversão, valor da vítima, overextension, reforços/TPs, formação e custo de abandonar um objetivo. Fog perigosa, suporte isolado, recursos gastos, reforços inimigos e objetivo melhor encerram a perseguição explicitamente.
+- Integridade de formação usa a distância ao aliado mais próximo e pune especialmente suporte isolado. O movimento recebe autoridade de `Encerrar perseguicao` mesmo quando o foco já desapareceu, impedindo que a seleção oportunista reabra o chase no mesmo ciclo.
+- Counter-initiation considera controles e escapes realmente aprendidos, com mana e cooldown disponíveis, status de disable, torre, poder local/projetado e teletransportes recentes. A IA distingue uma janela aliada para virar a luta do risco de avançar sobre controle inimigo preparado.
+- Inimigos locais fora da visão deixaram de vazar poder para a análise do cenário. O inspetor mostra chase, formação e oportunidade/risco de counter sem ampliar os frames compactos do replay.
+- A matriz automatizada agora supera 30 casos comportamentais entre detecção, cenários, ciclo de vida, foco e coordenação; há regressão runtime específica para fim de chase sem alvo visível. Testes, lint e build verdes.
+- Benchmark determinístico: 50,7x wall / 45,6x CPU, digest `fb9c6b45dee0bc55`. Uma partida de auditoria terminou organicamente em 58,1min (53-34), sem watchdog; o volume alto de kills desta seed permanece para o rebalance geral.
 
 **Restrições**:
 - O arquivo-fonte é especificação/pseudocódigo; funções simbólicas devem ser adaptadas aos tipos, fórmulas, skills, itens e status já existentes, sem criar uma segunda resolução de combate.
@@ -480,6 +486,22 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Fog de equipe inclui Arcanes, creeps, torres, estruturas e base aliados. Foco coletivo, ataques, skills, itens e perseguição não podem adquirir ou atualizar a posição de um Arcane fora da visão.
 - Testes cobrem limite dentro/fora do raio, diferença dia/noite, provedores aliados e bloqueio/liberação de foco pelo fog.
 - Pendente para paridade avançada: árvores/obstrução, diferença de elevação no highground, wards e efeitos específicos que concedem visão aérea ou True Sight.
+
+---
+
+### [ ] T19 - Campos neutros compostos por criaturas individuais
+
+**Objetivo**: substituir cada campo agregado por uma composição real de criaturas neutras, preservando stacks e pull, com comportamento, atributos, habilidades e recompensas próprios por unidade.
+
+**Escopo**:
+- Importar/catalogar cada criatura neutra com família, tier, quantidade por campo, HP, mana, dano, BAT/attack speed, armor, resistências, alcance, movimento, visão, collision size, bounty e XP individuais.
+- Gerar composições válidas por campo e minuto, incluindo variantes e criaturas especiais, sem representar o stack como multiplicador de um único círculo.
+- Implementar runtime por criatura: aquisição e prioridade de alvo, aggro compartilhado, leash, perseguição, retorno ao spawn, reset, regen, ataque, cast de skills, morte individual e distribuição correta de ouro/XP.
+- Adaptar pull e stack para grupos reais: spawn box, bloqueio, horário de stack, neutral creep aggro, interação com lane creeps, dispersão e retorno independente sem duplicar recompensas.
+- Integrar avaliação da IA pela composição efetiva do campo, dano recebido projetado, tempo de clear, resistências, disables e risco de contestação; suportar last hit/steal de criaturas individuais.
+- Renderizar cada criatura e seu HP/respawn sem perder desempenho, usando dados compactos no replay e índices espaciais compartilhados.
+
+**Critérios**: nenhum campo ativo usa HP/dano agregado; stacks contêm grupos completos; criaturas atacam, usam habilidades, resetam e recompensam individualmente; pull/stack/farm continuam determinísticos; testes de composição e benchmark, lint e build verdes.
 
 ---
 

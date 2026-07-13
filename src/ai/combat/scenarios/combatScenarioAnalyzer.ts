@@ -1,6 +1,8 @@
 import { pointDistance } from '../analysis/combatContextAnalyzer.ts'
 import type {
+  CombatChaseStopReason,
   CombatEncounterType,
+  CombatPhase,
   CombatPoint,
   CombatReinforcementProjection,
   CombatScenarioAssessment,
@@ -22,6 +24,10 @@ export interface CombatScenarioHeroInput {
   rotationCost: number
   visibleToTeam: boolean
   canTankTower: boolean
+  controlReady: boolean
+  escapeReady: boolean
+  combatResourceReady: boolean
+  disabled: boolean
 }
 
 export interface CombatScenarioCreepInput {
@@ -50,6 +56,10 @@ export interface CombatScenarioInput {
   heroes: CombatScenarioHeroInput[]
   creeps: CombatScenarioCreepInput[]
   towers: CombatScenarioTowerInput[]
+  phase: CombatPhase
+  primaryTargetId?: string
+  objectiveOpportunityValue: number
+  recentEnemyTeleportCount: number
 }
 
 const reinforcementHorizonSeconds = 11
@@ -60,7 +70,7 @@ export function analyzeCombatScenario(input: CombatScenarioInput): CombatScenari
   const alliedIds = new Set(input.alliedHeroIds)
   const enemyIds = new Set(input.enemyHeroIds)
   const localAllies = input.heroes.filter((hero) => hero.team === input.teamId && alliedIds.has(hero.id))
-  const localEnemies = input.heroes.filter((hero) => hero.team === enemyTeam && enemyIds.has(hero.id))
+  const localEnemies = input.heroes.filter((hero) => hero.team === enemyTeam && enemyIds.has(hero.id) && hero.visibleToTeam)
   const objectiveValue = getObjectiveValue(input.encounterType)
   const alliedReinforcements = projectReinforcements(input, input.teamId, alliedIds, objectiveValue, true)
   const enemyReinforcements = projectReinforcements(input, enemyTeam, enemyIds, objectiveValue, false)
@@ -85,6 +95,23 @@ export function analyzeCombatScenario(input: CombatScenarioInput): CombatScenari
     : undefined
   const replacementTank = towerTank && towerTank.id !== aggroHolder?.id ? towerTank : undefined
   const requestTowerAggroDrop = Boolean(aggroHolder && aggroHolder.healthPct < 0.44 && replacementTank)
+  const formationIntegrity = getFormationIntegrity(localAllies)
+  const counterInitiationRisk = getCounterInitiationRisk(
+    localAllies,
+    localEnemies,
+    enemyReinforcements,
+    projectedPowerAdvantage,
+    towerInfluence,
+    formationIntegrity,
+    input.recentEnemyTeleportCount,
+  )
+  const counterInitiationOpportunity = getCounterInitiationOpportunity(
+    input.encounterType,
+    localAllies,
+    localEnemies,
+    localPowerAdvantage,
+    towerInfluence,
+  )
   const engageScore = round(
     localPowerAdvantage * 0.42 +
     projectedPowerAdvantage * 0.24 +
@@ -92,7 +119,9 @@ export function analyzeCombatScenario(input: CombatScenarioInput): CombatScenari
     towerInfluence * 0.68 +
     levelTimingAdvantage +
     healthAdvantage * 24 +
-    objectiveValue * 0.16,
+    objectiveValue * 0.16 +
+    counterInitiationOpportunity * 0.2 -
+    counterInitiationRisk * 0.2,
   )
   const averageAllyEta = average(alliedReinforcements.map((reinforcement) => reinforcement.etaSeconds))
   const reinforcementScore = round(
@@ -110,13 +139,51 @@ export function analyzeCombatScenario(input: CombatScenarioInput): CombatScenari
     projectedPowerAdvantage >= localPowerAdvantage + 9 &&
     projectedPowerAdvantage > -12
 
+  const chaseTarget = getChaseTarget(input, localEnemies)
+  const chaseScore = getChaseScore({
+    input,
+    target: chaseTarget,
+    localAllies,
+    localEnemies,
+    localPowerAdvantage,
+    projectedPowerAdvantage,
+    enemyReinforcements,
+    formationIntegrity,
+    counterInitiationRisk,
+  })
+  const chaseStopReason = input.phase === 'chase'
+    ? getChaseStopReason({
+        input,
+        target: chaseTarget,
+        localAllies,
+        localEnemies,
+        localPowerAdvantage,
+        formationIntegrity,
+        counterInitiationRisk,
+        projectedPowerAdvantage,
+        chaseScore,
+        enemyReinforcements,
+      })
+    : undefined
+  const chaseAllowed = input.phase !== 'chase' || chaseStopReason === undefined
+
   let intent: CombatScenarioAssessment['intent']
-  if (noWaveTowerDive || (engageScore <= -20 && projectedPowerAdvantage <= -9)) {
+  if (!chaseAllowed) {
+    intent = chaseStopReason === 'counter_initiation' || projectedPowerAdvantage <= -18
+      ? 'disengage'
+      : 'hold'
+  } else if (input.phase === 'chase') {
+    intent = 'engage'
+  } else if (noWaveTowerDive || (engageScore <= -20 && projectedPowerAdvantage <= -9)) {
     intent = 'disengage'
   } else if (canWaitForReinforcement && reinforcementScore >= 8) {
     intent = 'reinforce'
   } else if (waitingForLevelTiming && engageScore < 18) {
     intent = 'hold'
+  } else if (counterInitiationRisk >= 70 && counterInitiationOpportunity < 34) {
+    intent = projectedPowerAdvantage <= -14 ? 'disengage' : 'hold'
+  } else if (counterInitiationOpportunity >= 34 && counterInitiationRisk <= 58) {
+    intent = 'engage'
   } else if (engageScore >= 6) {
     intent = 'engage'
   } else {
@@ -131,12 +198,22 @@ export function analyzeCombatScenario(input: CombatScenarioInput): CombatScenari
     towerInfluence > 0 ? 'allied_tower_influence' : towerInfluence < 0 ? 'enemy_tower_influence' : 'no_tower_influence',
     waitingForLevelTiming ? 'level_timing_wait' : 'level_timing_ready',
     noWaveTowerDive ? 'no_wave_no_tank' : 'siege_access_ok',
+    formationIntegrity >= 0.66 ? 'formation_intact' : 'formation_stretched',
+    counterInitiationRisk >= 60 ? 'counter_initiation_threat' : 'counter_initiation_safe',
+    counterInitiationOpportunity >= 34 ? 'counter_initiation_window' : 'counter_initiation_unavailable',
+    chaseStopReason ? `chase_stop_${chaseStopReason}` : input.phase === 'chase' ? 'chase_authorized' : 'chase_not_active',
   ]
 
   return {
     intent,
     engageScore,
     reinforcementScore,
+    chaseAllowed,
+    chaseScore,
+    formationIntegrity: round(formationIntegrity),
+    counterInitiationRisk: round(counterInitiationRisk),
+    counterInitiationOpportunity: round(counterInitiationOpportunity),
+    chaseStopReason,
     localPowerAdvantage: round(localPowerAdvantage),
     projectedPowerAdvantage: round(projectedPowerAdvantage),
     wavePowerAdvantage: round(wavePowerAdvantage),
@@ -151,6 +228,138 @@ export function analyzeCombatScenario(input: CombatScenarioInput): CombatScenari
     requestTowerAggroDrop,
     reasonTags,
   }
+}
+
+type ChaseContext = {
+  input: CombatScenarioInput
+  target: CombatScenarioHeroInput | undefined
+  localAllies: CombatScenarioHeroInput[]
+  localEnemies: CombatScenarioHeroInput[]
+  localPowerAdvantage: number
+  projectedPowerAdvantage: number
+  enemyReinforcements: CombatReinforcementProjection[]
+  formationIntegrity: number
+  counterInitiationRisk: number
+}
+
+type ChaseStopContext = ChaseContext & {
+  chaseScore: number
+}
+
+function getChaseTarget(input: CombatScenarioInput, visibleEnemies: CombatScenarioHeroInput[]) {
+  if (input.primaryTargetId) {
+    return visibleEnemies.find((hero) => hero.id === input.primaryTargetId)
+  }
+  return [...visibleEnemies].sort((left, right) => left.healthPct - right.healthPct || left.id.localeCompare(right.id))[0]
+}
+
+function getChaseScore(context: ChaseContext) {
+  const { input, target, localAllies, localEnemies, localPowerAdvantage, projectedPowerAdvantage, enemyReinforcements, formationIntegrity, counterInitiationRisk } = context
+  if (!target) return -100
+  const killProbability = clamp(
+    (1 - target.healthPct) * 72 +
+    Math.max(0, localPowerAdvantage) * 0.32 +
+    Math.max(0, localAllies.length - localEnemies.length) * 9,
+    0,
+    100,
+  )
+  const targetNoEscape = target.escapeReady ? 0 : 18
+  const objectiveConversion = getObjectiveValue(input.encounterType) * 0.42
+  const bountyValue = target.role === 'Safe Lane'
+    ? 18
+    : target.role === 'Mid'
+      ? 15
+      : target.role === 'Offlane'
+        ? 11
+        : 7
+  const overextensionRisk = Math.max(0, pointDistance(target.pos, input.center) - input.radius * 0.7) * 4 +
+    Math.max(0, -projectedPowerAdvantage) * 0.22
+  const enemyReinforcementRisk = enemyReinforcements.length * 9 + input.recentEnemyTeleportCount * 15
+  const formationBreak = (1 - formationIntegrity) * 46
+  const objectiveOpportunityCost = input.objectiveOpportunityValue * 0.74
+  return round(
+    killProbability +
+    targetNoEscape +
+    objectiveConversion +
+    bountyValue -
+    overextensionRisk -
+    enemyReinforcementRisk -
+    formationBreak -
+    objectiveOpportunityCost -
+    counterInitiationRisk * 0.34,
+  )
+}
+
+function getChaseStopReason(context: ChaseStopContext): CombatChaseStopReason | undefined {
+  const { input, target, localAllies, formationIntegrity, counterInitiationRisk, projectedPowerAdvantage, chaseScore, enemyReinforcements } = context
+  if (!target) return 'dangerous_fog'
+  if (localAllies.length >= 2 && formationIntegrity < 0.5) return 'formation_break'
+  if (input.recentEnemyTeleportCount >= 2 || enemyReinforcements.length >= 2) return 'enemy_reinforcements'
+  if (counterInitiationRisk >= 68 || projectedPowerAdvantage <= -24) return 'counter_initiation'
+  if (input.objectiveOpportunityValue >= 32 && input.objectiveOpportunityValue > chaseScore * 0.72) return 'better_objective'
+  const noCombatResources = localAllies.every((hero) => !hero.combatResourceReady)
+  if (noCombatResources && target.escapeReady && target.healthPct > 0.24) return 'resources_spent'
+  if (chaseScore < 14) return 'low_value'
+  return undefined
+}
+
+function getFormationIntegrity(allies: CombatScenarioHeroInput[]) {
+  if (allies.length <= 1) return 1
+  let maximumNearestDistance = 0
+  let isolatedSupport = false
+  allies.forEach((hero) => {
+    const nearestAllyDistance = Math.min(...allies
+      .filter((ally) => ally.id !== hero.id)
+      .map((ally) => pointDistance(hero.pos, ally.pos)))
+    maximumNearestDistance = Math.max(maximumNearestDistance, nearestAllyDistance)
+    if (hero.role.includes('Support') && nearestAllyDistance > 9) isolatedSupport = true
+  })
+  return clamp(1 - Math.max(0, maximumNearestDistance - 5) / 14 - (isolatedSupport ? 0.2 : 0), 0, 1)
+}
+
+function getCounterInitiationRisk(
+  allies: CombatScenarioHeroInput[],
+  enemies: CombatScenarioHeroInput[],
+  enemyReinforcements: CombatReinforcementProjection[],
+  projectedPowerAdvantage: number,
+  towerInfluence: number,
+  formationIntegrity: number,
+  recentEnemyTeleportCount: number,
+) {
+  const enemyControl = enemies.filter((hero) => hero.controlReady && !hero.disabled).length
+  const alliedControl = allies.filter((hero) => hero.controlReady && !hero.disabled).length
+  return clamp(
+    enemyControl * 17 +
+    enemyReinforcements.length * 9 +
+    recentEnemyTeleportCount * 15 +
+    Math.max(0, -projectedPowerAdvantage) * 0.32 +
+    Math.max(0, -towerInfluence) * 0.3 +
+    (1 - formationIntegrity) * 34 -
+    alliedControl * 5,
+    0,
+    100,
+  )
+}
+
+function getCounterInitiationOpportunity(
+  encounterType: CombatEncounterType,
+  allies: CombatScenarioHeroInput[],
+  enemies: CombatScenarioHeroInput[],
+  localPowerAdvantage: number,
+  towerInfluence: number,
+) {
+  const alliedControl = allies.filter((hero) => hero.controlReady && !hero.disabled).length
+  const disabledEnemies = enemies.filter((hero) => hero.disabled).length
+  const counterDiveBonus = encounterType === 'counter_dive' ? 28 : 0
+  return clamp(
+    alliedControl * 15 +
+    disabledEnemies * 20 +
+    Math.max(0, localPowerAdvantage) * 0.22 +
+    Math.max(0, towerInfluence) * 0.42 +
+    counterDiveBonus,
+    0,
+    100,
+  )
 }
 
 export function getTeamEncounterType(
