@@ -8199,7 +8199,7 @@ export function applySimpleNegativeSkillEffects(
     })
   }
 
-  applySimpleNamedControl(state, caster, skill, target, profile.duration)
+  applySimpleNamedControl(state, caster, skill, target, profile)
   if (target.channeling && getSimpleSkillControlDuration(skill, profile) > 0) {
     target.channeling = undefined
   }
@@ -8223,19 +8223,19 @@ export function applySimpleNamedControl(
   caster: Arcane,
   skill: HeroSkillDefinition,
   target: Arcane,
-  duration: number,
+  profile: ReturnType<typeof getSkillEffectProfile>,
 ) {
-  const controls: Array<{ tags: string[]; kind: TimedEffect['kind'] }> = [
-    { tags: ['hex'], kind: 'hex' },
-    { tags: ['sleep'], kind: 'sleep' },
-    { tags: ['fear'], kind: 'fear' },
-    { tags: ['taunt'], kind: 'taunt' },
-    { tags: ['disarm'], kind: 'disarm' },
-    { tags: ['break'], kind: 'break' },
-    { tags: ['mute'], kind: 'mute' },
+  const controls: Array<{ tags: string[]; kind: TimedEffect['kind']; duration: number }> = [
+    { tags: ['hex'], kind: 'hex', duration: profile.hexDuration },
+    { tags: ['sleep'], kind: 'sleep', duration: profile.sleepDuration },
+    { tags: ['fear'], kind: 'fear', duration: profile.fearDuration },
+    { tags: ['taunt'], kind: 'taunt', duration: profile.tauntDuration },
+    { tags: ['disarm'], kind: 'disarm', duration: profile.disarmDuration },
+    { tags: ['break'], kind: 'break', duration: profile.breakDuration },
+    { tags: ['mute'], kind: 'mute', duration: profile.muteDuration },
   ]
   controls.forEach((control) => {
-    if (!hasAnySimpleSkillTag(skill, control.tags)) return
+    if (!hasAnySimpleSkillTag(skill, control.tags) || control.duration <= 0) return
     addTimedEffect(state, target, {
       sourceId: `${caster.id}-${skill.id}-${control.kind}`,
       sourceName: skill.name,
@@ -8243,7 +8243,7 @@ export function applySimpleNamedControl(
       kind: control.kind,
       polarity: 'negative',
       value: 1,
-      duration,
+      duration: control.duration,
     })
   })
 }

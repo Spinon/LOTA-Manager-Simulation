@@ -459,6 +459,13 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 **Critérios**: 100% das skills catalogadas com status explícito; nenhuma skill ativa sem custo/cooldown/efeito; relatório persistido e testes/lint/build verdes.
 
+**Progresso da auditoria e controles nomeados (2026-07-13)**:
+- A matriz automática passou a catalogar as 734 habilidades oficiais dos 127 heróis, incluindo inatas, habilidades ocultas/invocadas e concessões de Scepter/Shard. O relatório humano está em `tasks/SKILL_RUNTIME_AUDIT.md` e a matriz integral revisável em `tasks/SKILL_RUNTIME_AUDIT.json`.
+- O teste compara fingerprints do catálogo vivo com a matriz persistida. Uma skill nova, alteração de targeting ou mudança de suporte agora falha até a classificação ser revisada e regenerada com `npm run audit:skill-runtime`.
+- O adaptador normaliza durações oficiais de fear, taunt, sleep, hex, disarm, break e leash; `does_mute` também produz a tag canônica. O runtime aplica a duração específica de cada controle em vez de reutilizar uma duração genérica para todos.
+- Estado atual honesto: 3 skills completas, 564 parciais, 11 aproximações intencionais e 156 com bloqueio ausente. O principal bloco ausente é a ativação das skills suplementares; channeling, summons, transformações, auras e passivas especiais permanecem explicitamente parciais/aproximadas.
+- Próxima rodada: conectar unlocks de Scepter/Shard e habilidades invocadas ao seletor runtime; depois resolver channeling no término do canal e criar entidades reais para summons por família.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

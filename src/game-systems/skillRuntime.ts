@@ -10,6 +10,13 @@ export type SkillEffectProfile = {
   stunDuration: number
   rootDuration: number
   silenceDuration: number
+  fearDuration: number
+  tauntDuration: number
+  sleepDuration: number
+  hexDuration: number
+  disarmDuration: number
+  breakDuration: number
+  muteDuration: number
   heal: number
   barrier: number
   armorDelta: number
@@ -75,6 +82,13 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
     stunDuration: Math.max(0, getSkillValue(skill, 'stun', level, hasSkillTag(skill, ['stun', 'bash', 'hex', 'sleep', 'taunt', 'fear']) ? duration || 1 : 0)),
     rootDuration: Math.max(0, getSkillValue(skill, 'root', level, hasSkillTag(skill, ['root', 'net', 'leash', 'mobility_lockout']) ? duration || 1.5 : 0)),
     silenceDuration: Math.max(0, getSkillValue(skill, 'silence', level, hasSkillTag(skill, ['silence', 'spell_lockout']) ? duration || 1.5 : 0)),
+    fearDuration: getNamedControlDuration(skill, 'fearDuration', 'fear', level, duration),
+    tauntDuration: getNamedControlDuration(skill, 'tauntDuration', 'taunt', level, duration),
+    sleepDuration: getNamedControlDuration(skill, 'sleepDuration', 'sleep', level, duration),
+    hexDuration: getNamedControlDuration(skill, 'hexDuration', 'hex', level, duration),
+    disarmDuration: getNamedControlDuration(skill, 'disarmDuration', 'disarm', level, duration),
+    breakDuration: getNamedControlDuration(skill, 'breakDuration', 'break', level, duration),
+    muteDuration: getNamedControlDuration(skill, 'muteDuration', 'mute', level, duration),
     heal: Math.max(0, getSkillValue(skill, 'heal', level, 0)),
     barrier: defensiveBarrier ? Math.max(0, barrierValue) : 0,
     armorDelta: armorSkill
@@ -120,4 +134,15 @@ export function getPrimarySkillUsageSituation(input: {
 
 function clampPercent(value: number) {
   return Math.max(0, Math.min(0.95, value / 100))
+}
+
+function getNamedControlDuration(
+  skill: HeroSkillDefinition,
+  valueKey: string,
+  tag: string,
+  level: number,
+  fallbackDuration: number,
+) {
+  if (!hasSkillTag(skill, [tag])) return 0
+  return Math.max(0.1, getSkillValue(skill, valueKey, level, fallbackDuration || 1))
 }

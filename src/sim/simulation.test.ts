@@ -1078,6 +1078,17 @@ let state: SimulationState = initialState
   assert.equal(affected.length, enemies.length, 'area skills should resolve every enemy inside their radius')
   applySimpleNegativeSkillEffects(skillState, caster, areaRoot, 1, enemies[0])
   assert.equal(hasTimedEffect(skillState, enemies[0].id, 'root'), true, 'root skills should apply the root control state')
+  const namedControl: HeroSkillDefinition = {
+    ...areaRoot,
+    id: 'named-control-test',
+    tags: ['fear', 'disarm', 'mute'],
+    mechanics: ['fear', 'disarm', 'mute'],
+    values: { fearDuration: 1.4, disarmDuration: 2.2, duration: 3 },
+  }
+  applySimpleNegativeSkillEffects(skillState, caster, namedControl, 1, enemies[1])
+  assert.equal(hasTimedEffect(skillState, enemies[1].id, 'fear'), true, 'fear should reach the effective timed-control runtime')
+  assert.equal(hasTimedEffect(skillState, enemies[1].id, 'disarm'), true, 'disarm should reach the effective timed-control runtime')
+  assert.equal(hasTimedEffect(skillState, enemies[1].id, 'mute'), true, 'mute should use the base duration when the official skill has no dedicated duration')
   assert.equal(isPositiveSimpleSkill({ ...areaRoot, damageType: 'none', tags: ['global_heal'] }), true, 'compound heal tags should target allies')
   assert.equal(isPositiveSimpleSkill({ ...areaRoot, damageType: 'none', tags: ['anti_heal'] }), false, 'anti-heal must not be misclassified as healing')
 

@@ -173,9 +173,16 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
   const specialDamage = pickDamageSpecial(skill)
   assignNumbers(values, 'damage', hasPositiveNumber(skill.damages) ? skill.damages : specialDamage)
   assignAlias(values, skill, 'radius', ['radius', 'area_of_effect', 'aoe', 'damage_radius'])
-  assignAlias(values, skill, 'stun', ['stun_duration', 'stun'])
-  assignAlias(values, skill, 'silence', ['silence_duration', 'silence'])
-  assignAlias(values, skill, 'root', ['root_duration', 'root'])
+  assignControlDurationAlias(values, skill, 'stun', 'stun')
+  assignControlDurationAlias(values, skill, 'silence', 'silence')
+  assignControlDurationAlias(values, skill, 'root', 'root')
+  assignControlDurationAlias(values, skill, 'fearDuration', 'fear')
+  assignControlDurationAlias(values, skill, 'tauntDuration', 'taunt')
+  assignControlDurationAlias(values, skill, 'sleepDuration', 'sleep')
+  assignControlDurationAlias(values, skill, 'hexDuration', 'hex')
+  assignControlDurationAlias(values, skill, 'disarmDuration', 'disarm')
+  assignControlDurationAlias(values, skill, 'breakDuration', 'break')
+  assignControlDurationAlias(values, skill, 'leashDuration', 'leash')
   assignAlias(values, skill, 'heal', ['heal', 'heal_amount', 'health_restore'])
   assignAlias(values, skill, 'barrier', ['barrier', 'shield', 'damage_absorb'])
   assignAlias(values, skill, 'slowPct', ['slow', 'movespeed_slow', 'movement_slow', 'enemy_slow'], true)
@@ -199,6 +206,21 @@ function assignAlias(target: HeroSkillDefinition['values'], skill: RuntimeSkill,
   const picked = pickSpecial(skill, names)
   if (picked.length === 0) return
   target[key] = absolute ? picked.map((value) => Math.abs(value)) : picked
+}
+
+function assignControlDurationAlias(
+  target: HeroSkillDefinition['values'],
+  skill: RuntimeSkill,
+  key: string,
+  control: string,
+) {
+  const exact = pickSpecial(skill, [`${control}_duration`, control])
+  const fuzzy = skill.specialValues.find((special) => (
+    special.name.includes(`${control}_duration`) &&
+    !['bonus', 'tooltip', 'pct', 'percent', 'penalty', 'self_'].some((token) => special.name.includes(token))
+  ))
+  const picked = exact.length > 0 ? exact : fuzzy ? [...fuzzy.baseValues] : []
+  if (picked.length > 0) target[key] = picked
 }
 
 function pickSpecial(skill: RuntimeSkill, names: string[]) {
@@ -253,6 +275,14 @@ function getSkillTags(skill: RuntimeSkill, values: HeroSkillDefinition['values']
   if ('stun' in values) tags.add('stun')
   if ('silence' in values) tags.add('silence')
   if ('root' in values) tags.add('root')
+  if ('fearDuration' in values) tags.add('fear')
+  if ('tauntDuration' in values) tags.add('taunt')
+  if ('sleepDuration' in values) tags.add('sleep')
+  if ('hexDuration' in values) tags.add('hex')
+  if ('disarmDuration' in values) tags.add('disarm')
+  if ('breakDuration' in values || skill.specialValues.some((value) => value.name === 'does_break')) tags.add('break')
+  if ('leashDuration' in values) tags.add('leash')
+  if (skill.specialValues.some((value) => value.name === 'does_mute')) tags.add('mute')
   if ('heal' in values) tags.add('heal')
   if ('slowPct' in values) tags.add('slow')
   if ('summons' in values) tags.add('summon')

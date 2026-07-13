@@ -45,4 +45,20 @@ assert.equal(getPrimarySkillUsageSituation({ phase: 'mid', aiMode: 'join_fight',
 assert.equal(isConfirmedGlobalSkill({ ...skill, target: 'global' }), false, 'a malformed global target should not become map-wide without global metadata')
 assert.equal(isConfirmedGlobalSkill({ ...skill, target: 'global', sourceTag: 'global_nuke', values: { ...skill.values, global: true } }), true)
 
+const namedControlSkill: HeroSkillDefinition = {
+  ...skill,
+  id: 'test-named-controls',
+  tags: ['fear', 'disarm', 'mute'],
+  mechanics: ['fear', 'disarm', 'mute'],
+  values: {
+    duration: 2,
+    fearDuration: [1.2, 1.8],
+    disarmDuration: [2.4, 3.1],
+  },
+}
+const namedControlProfile = getSkillEffectProfile(namedControlSkill, 2)
+assert.equal(namedControlProfile.fearDuration, 1.8)
+assert.equal(namedControlProfile.disarmDuration, 3.1)
+assert.equal(namedControlProfile.muteDuration, 2, 'named controls without an explicit duration should use the official base duration')
+
 console.log('skillRuntime tests passed')
