@@ -657,7 +657,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T25 - Planos cinemáticos para creeps de rota
+### [x] T25 - Planos cinemáticos para creeps de rota
 
 **Objetivo**: eliminar atualizações de movimento a 30Hz quando uma creep apenas percorre um trecho previsível da rota.
 
@@ -668,6 +668,13 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Criar modo A/B headless entre movimento fixo e planejado, usando seeds douradas e relatório de divergências.
 
 **Critérios**: contatos de wave, ataques, pulls e objetivos permanecem determinísticos; nenhuma creep atravessa um alvo; reduzir ao menos 10% do tempo total ou 35% de `updateCreepMovement` na partida completa; testes, lint e build verdes.
+
+**Resultado (2026-07-13)**:
+- Creeps livres agora usam `MotionPlan` quantizado de rota ou espera. A posição fica analítica entre ativações e é materializada em percepção tática, aggro, pull, combate com estruturas, hitbox e captura do replay; last hit, deny, ouro e XP continuam pertencendo a entidades individuais.
+- O modo A/B `fixed|planned` entrou no benchmark e no auditor `audit:creep-motion`. O relatório de duas seeds por 10 minutos registrou 14,9% de ganho total e 66,5% menos chamadas de `updateCreepMovement`; a repetição do modo planejado produziu o mesmo digest em todas as seeds.
+- Na partida completa `creep-motion-full-1`, o motor fixo simulou 65:49 em 44,33s e o planejado 48:47 em 30,63s, ambos com vitória de Dusk. Como a duração da partida divergiu, a comparação normalizada é a evidência principal: 69,5% menos atualizações por segundo simulado e taxa de simulação 7,3% maior (89,1x para 95,6x).
+- Os primeiros contatos diferiram entre -3,96s e +1,75s conforme seed e rota; as cascatas econômicas e de duração estão preservadas nos relatórios `reports/creep-motion-audit.json` e `reports/creep-motion-audit-full.json`, em vez de serem tratadas como equivalência artificial ao motor antigo.
+- Testes cobrem amostragem, chegada, espera, rebase, sono a 30Hz, posição exata no replay e waves opostas sem atravessamento. Suíte completa, lint, build e verificação do replay no navegador em 1x/32x ficaram verdes e sem erros de console.
 
 ---
 

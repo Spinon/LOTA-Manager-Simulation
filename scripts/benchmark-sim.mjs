@@ -31,6 +31,10 @@ const simulatedSeconds = Math.max(30, Number(getArg('seconds', 300)) || 300)
 const fullMatch = hasArg('full')
 const runCount = Math.max(1, Number(getArg('runs', fullMatch ? 1 : 3)) || 1)
 const seed = getArg('seed', 'performance-reference')
+const creepMotionMode = getArg('creep-motion', 'planned')
+if (creepMotionMode !== 'fixed' && creepMotionMode !== 'planned') {
+  throw new Error(`Modo de movimento invalido: ${creepMotionMode}`)
+}
 const segmentSeconds = Math.max(60, Number(getArg('segment-seconds', 300)) || 300)
 const renderFrameIntervalSeconds = 0.2
 const renderDetailsIntervalSeconds = 2
@@ -66,7 +70,7 @@ function createStateDigest(state) {
 }
 
 function runBenchmark() {
-  let state = createInitialState(seed)
+  let state = createInitialState(seed, { creepMotionMode })
   let decisionAccumulator = 0
   let nextFrameAt = state.time
   let nextDetailsAt = state.time
@@ -236,6 +240,7 @@ console.log('')
 console.log('=== Benchmark da simulação ===')
 console.log(`Seed: ${seed}`)
 console.log(`Modo: ${fullMatch ? 'partida completa' : `até ${formatClock(simulatedSeconds)}`}`)
+console.log(`Movimento de creeps: ${creepMotionMode}`)
 console.log(`Mediana: ${medianWallSeconds.toFixed(2)}s`)
 console.log(`Taxa mediana: ${medianRate.toFixed(1)} segundos simulados/segundo real`)
 console.log(`CPU mediana: ${medianCpuSeconds.toFixed(2)}s (${medianCpuRate.toFixed(1)} segundos simulados/segundo de CPU)`)

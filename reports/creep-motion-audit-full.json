@@ -1,0 +1,609 @@
+{
+  "generatedAt": "2026-07-13T19:51:14.062Z",
+  "matches": 1,
+  "minutes": 120,
+  "fixedWallSeconds": 44.3259393,
+  "plannedWallSeconds": 30.6291063,
+  "gainPct": 30.900265660021788,
+  "movementUpdateReductionPct": 77.38864428415857,
+  "deterministic": true,
+  "results": [
+    {
+      "seed": "creep-motion-full-1",
+      "fixed": {
+        "wallSeconds": 44.3259393,
+        "diagnostics": {
+          "candidates": 5247014,
+          "movementUpdates": 5247014,
+          "sleepingSkips": 0,
+          "materializations": 0
+        },
+        "digest": "d26db61a11b17265",
+        "summary": {
+          "time": 3948.675,
+          "winner": "dusk",
+          "kills": {
+            "dawn": 10,
+            "dusk": 46
+          },
+          "creepCount": 55,
+          "firstContacts": {
+            "top": 25.074,
+            "mid": 14.019,
+            "bot": 19.002
+          },
+          "teamEconomy": {
+            "dawn": {
+              "gold": 7165.305466980766,
+              "xp": 236230
+            },
+            "dusk": {
+              "gold": 15850.127383607292,
+              "xp": 285320
+            }
+          },
+          "towerHp": [
+            [
+              "dawn-top-t1",
+              0
+            ],
+            [
+              "dawn-top-t2",
+              0
+            ],
+            [
+              "dawn-mid-t1",
+              0
+            ],
+            [
+              "dawn-mid-t2",
+              0
+            ],
+            [
+              "dawn-bot-t1",
+              0
+            ],
+            [
+              "dawn-bot-t2",
+              0
+            ],
+            [
+              "dawn-top-t3",
+              0
+            ],
+            [
+              "dawn-mid-t3",
+              0
+            ],
+            [
+              "dawn-bot-t3",
+              0
+            ],
+            [
+              "dusk-top-t1",
+              0
+            ],
+            [
+              "dusk-top-t2",
+              0
+            ],
+            [
+              "dusk-mid-t1",
+              0
+            ],
+            [
+              "dusk-mid-t2",
+              726.4565217391354
+            ],
+            [
+              "dusk-bot-t1",
+              0
+            ],
+            [
+              "dusk-bot-t2",
+              0
+            ],
+            [
+              "dusk-top-t3",
+              1008.2692307692272
+            ],
+            [
+              "dusk-mid-t3",
+              2000
+            ],
+            [
+              "dusk-bot-t3",
+              0
+            ]
+          ],
+          "structureHp": [
+            [
+              "dawn-top-barracks_melee",
+              0
+            ],
+            [
+              "dawn-top-barracks_ranged",
+              0
+            ],
+            [
+              "dawn-mid-barracks_melee",
+              0
+            ],
+            [
+              "dawn-mid-barracks_ranged",
+              0
+            ],
+            [
+              "dawn-bot-barracks_melee",
+              0
+            ],
+            [
+              "dawn-bot-barracks_ranged",
+              0
+            ],
+            [
+              "dusk-top-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-top-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-bot-barracks_melee",
+              1351.875000000001
+            ],
+            [
+              "dusk-bot-barracks_ranged",
+              0
+            ],
+            [
+              "dawn-base-t4-left",
+              0
+            ],
+            [
+              "dawn-base-t4-right",
+              0
+            ],
+            [
+              "dusk-base-t4-left",
+              2100
+            ],
+            [
+              "dusk-base-t4-right",
+              2100
+            ]
+          ],
+          "baseHp": [
+            [
+              "base-dawn",
+              0
+            ],
+            [
+              "base-dusk",
+              4500
+            ]
+          ],
+          "arcanes": [
+            {
+              "id": "d-quasar",
+              "gold": 0,
+              "xp": 54394,
+              "kills": 2,
+              "deaths": 11,
+              "assists": 3,
+              "laneCreepKills": 136,
+              "denies": 30
+            },
+            {
+              "id": "d-aster",
+              "gold": 3143.7271573480893,
+              "xp": 42707,
+              "kills": 3,
+              "deaths": 7,
+              "assists": 2,
+              "laneCreepKills": 156,
+              "denies": 66
+            },
+            {
+              "id": "d-bulwark",
+              "gold": 3865.1892501379793,
+              "xp": 60841,
+              "kills": 1,
+              "deaths": 19,
+              "assists": 6,
+              "laneCreepKills": 114,
+              "denies": 24
+            },
+            {
+              "id": "d-orbit",
+              "gold": 156.389059494697,
+              "xp": 33163,
+              "kills": 0,
+              "deaths": 14,
+              "assists": 4,
+              "laneCreepKills": 79,
+              "denies": 32
+            },
+            {
+              "id": "d-bloom",
+              "gold": 0,
+              "xp": 45125,
+              "kills": 4,
+              "deaths": 9,
+              "assists": 2,
+              "laneCreepKills": 144,
+              "denies": 33
+            },
+            {
+              "id": "r-ignis",
+              "gold": 8092.24305674208,
+              "xp": 106121,
+              "kills": 24,
+              "deaths": 0,
+              "assists": 18,
+              "laneCreepKills": 257,
+              "denies": 50
+            },
+            {
+              "id": "r-vega",
+              "gold": 813.9108994822752,
+              "xp": 42274,
+              "kills": 7,
+              "deaths": 5,
+              "assists": 19,
+              "laneCreepKills": 162,
+              "denies": 69
+            },
+            {
+              "id": "r-mara",
+              "gold": 4265.232167898258,
+              "xp": 58484,
+              "kills": 7,
+              "deaths": 1,
+              "assists": 17,
+              "laneCreepKills": 163,
+              "denies": 40
+            },
+            {
+              "id": "r-noct",
+              "gold": 1967.6483376452866,
+              "xp": 35448,
+              "kills": 3,
+              "deaths": 3,
+              "assists": 8,
+              "laneCreepKills": 63,
+              "denies": 30
+            },
+            {
+              "id": "r-cinder",
+              "gold": 711.0929218393937,
+              "xp": 42993,
+              "kills": 5,
+              "deaths": 6,
+              "assists": 24,
+              "laneCreepKills": 86,
+              "denies": 41
+            }
+          ]
+        }
+      },
+      "planned": {
+        "wallSeconds": 30.6291063,
+        "diagnostics": {
+          "candidates": 3718020,
+          "movementUpdates": 1186421,
+          "sleepingSkips": 2531599,
+          "materializations": 1995582
+        },
+        "digest": "b44fca6ac9cc6f40",
+        "summary": {
+          "time": 2927.028,
+          "winner": "dusk",
+          "kills": {
+            "dawn": 14,
+            "dusk": 43
+          },
+          "creepCount": 49,
+          "firstContacts": {
+            "top": 24.744,
+            "mid": 14.151,
+            "bot": 20.751
+          },
+          "teamEconomy": {
+            "dawn": {
+              "gold": 6930.220065356282,
+              "xp": 95493
+            },
+            "dusk": {
+              "gold": 10724.625714036616,
+              "xp": 157026
+            }
+          },
+          "towerHp": [
+            [
+              "dawn-top-t1",
+              0
+            ],
+            [
+              "dawn-top-t2",
+              0
+            ],
+            [
+              "dawn-mid-t1",
+              0
+            ],
+            [
+              "dawn-mid-t2",
+              0
+            ],
+            [
+              "dawn-bot-t1",
+              0
+            ],
+            [
+              "dawn-bot-t2",
+              0
+            ],
+            [
+              "dawn-top-t3",
+              0
+            ],
+            [
+              "dawn-mid-t3",
+              0
+            ],
+            [
+              "dawn-bot-t3",
+              0
+            ],
+            [
+              "dusk-top-t1",
+              0
+            ],
+            [
+              "dusk-top-t2",
+              17.04891304348081
+            ],
+            [
+              "dusk-mid-t1",
+              0
+            ],
+            [
+              "dusk-mid-t2",
+              1884.5108695652184
+            ],
+            [
+              "dusk-bot-t1",
+              0
+            ],
+            [
+              "dusk-bot-t2",
+              1225.5869565217433
+            ],
+            [
+              "dusk-top-t3",
+              2000
+            ],
+            [
+              "dusk-mid-t3",
+              2000
+            ],
+            [
+              "dusk-bot-t3",
+              2000
+            ]
+          ],
+          "structureHp": [
+            [
+              "dawn-top-barracks_melee",
+              0
+            ],
+            [
+              "dawn-top-barracks_ranged",
+              0
+            ],
+            [
+              "dawn-mid-barracks_melee",
+              0
+            ],
+            [
+              "dawn-mid-barracks_ranged",
+              0
+            ],
+            [
+              "dawn-bot-barracks_melee",
+              0
+            ],
+            [
+              "dawn-bot-barracks_ranged",
+              0
+            ],
+            [
+              "dusk-top-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-top-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-bot-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-bot-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-base-t4-left",
+              0
+            ],
+            [
+              "dawn-base-t4-right",
+              0
+            ],
+            [
+              "dusk-base-t4-left",
+              2100
+            ],
+            [
+              "dusk-base-t4-right",
+              2100
+            ]
+          ],
+          "baseHp": [
+            [
+              "base-dawn",
+              0
+            ],
+            [
+              "base-dusk",
+              4500
+            ]
+          ],
+          "arcanes": [
+            {
+              "id": "d-quasar",
+              "gold": 3455.4717161285594,
+              "xp": 22130,
+              "kills": 3,
+              "deaths": 9,
+              "assists": 4,
+              "laneCreepKills": 89,
+              "denies": 35
+            },
+            {
+              "id": "d-aster",
+              "gold": 527.4331811654838,
+              "xp": 27348,
+              "kills": 7,
+              "deaths": 6,
+              "assists": 4,
+              "laneCreepKills": 120,
+              "denies": 57
+            },
+            {
+              "id": "d-bulwark",
+              "gold": 1774.0062285990687,
+              "xp": 18788,
+              "kills": 2,
+              "deaths": 19,
+              "assists": 6,
+              "laneCreepKills": 44,
+              "denies": 24
+            },
+            {
+              "id": "d-orbit",
+              "gold": 226.6793699347516,
+              "xp": 13279,
+              "kills": 1,
+              "deaths": 19,
+              "assists": 3,
+              "laneCreepKills": 41,
+              "denies": 28
+            },
+            {
+              "id": "d-bloom",
+              "gold": 946.6295695284192,
+              "xp": 13948,
+              "kills": 1,
+              "deaths": 13,
+              "assists": 5,
+              "laneCreepKills": 52,
+              "denies": 26
+            },
+            {
+              "id": "r-ignis",
+              "gold": 2975.1766109836317,
+              "xp": 75225,
+              "kills": 26,
+              "deaths": 2,
+              "assists": 7,
+              "laneCreepKills": 176,
+              "denies": 46
+            },
+            {
+              "id": "r-vega",
+              "gold": 2297.225471014498,
+              "xp": 27964,
+              "kills": 10,
+              "deaths": 4,
+              "assists": 12,
+              "laneCreepKills": 105,
+              "denies": 61
+            },
+            {
+              "id": "r-mara",
+              "gold": 2127.23708953592,
+              "xp": 19613,
+              "kills": 5,
+              "deaths": 6,
+              "assists": 11,
+              "laneCreepKills": 65,
+              "denies": 17
+            },
+            {
+              "id": "r-noct",
+              "gold": 1399.6190694251256,
+              "xp": 15789,
+              "kills": 0,
+              "deaths": 3,
+              "assists": 14,
+              "laneCreepKills": 37,
+              "denies": 33
+            },
+            {
+              "id": "r-cinder",
+              "gold": 1925.36747307744,
+              "xp": 18435,
+              "kills": 2,
+              "deaths": 4,
+              "assists": 15,
+              "laneCreepKills": 40,
+              "denies": 34
+            }
+          ]
+        }
+      },
+      "plannedRepeatDigest": "b44fca6ac9cc6f40",
+      "divergence": {
+        "winnerChanged": false,
+        "killDelta": {
+          "dawn": 4,
+          "dusk": -3
+        },
+        "creepCountDelta": -6,
+        "teamGoldDelta": {
+          "dawn": -235.0854016244839,
+          "dusk": -5125.501669570676
+        },
+        "teamXpDelta": {
+          "dawn": -140737,
+          "dusk": -128294
+        },
+        "contactDelta": {
+          "top": -0.33000000000000185,
+          "mid": 0.13199999999999967,
+          "bot": 1.7490000000000023
+        }
+      }
+    }
+  ]
+}

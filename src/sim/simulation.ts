@@ -74,6 +74,12 @@ import {
   type LaneCreepKind,
 } from '../game-systems/unitSeedsAdapter.ts'
 import { currentVision, isDay, worldVisionToMapRadius } from '../game-systems/visionFormulas.ts'
+import {
+  rebaseCreepMotionPlan,
+  scheduleCreepMotionPlan,
+  sampleCreepMotionPlan,
+  type CreepMotionPlan,
+} from './creepMotionPlans.ts'
 
 export type TeamId = 'dawn' | 'dusk'
 export type TeamMatchOutcome = 'winner' | 'loser' | 'draw'
@@ -88,7 +94,36 @@ export type PowerRuneKind = 'haste' | 'arcane' | 'shield' | 'damage'
 export type StructureKind = 'barracks_melee' | 'barracks_ranged' | 'tower_tier_4'
 export type TeamObjectiveKind = 'tower' | 'structure' | 'base' | 'boss' | 'pickoff'
 export type DecisionStatus = 'sharp' | 'steady' | 'hesitant' | 'tilted'
+export type CreepMotionMode = 'fixed' | 'planned'
+export type SimulationOptions = { creepMotionMode?: CreepMotionMode }
+export type CreepMotionDiagnostics = {
+  candidates: number
+  movementUpdates: number
+  sleepingSkips: number
+  materializations: number
+}
 export type Selected = { kind: EntityKind; id: string } | undefined
+
+let activeCreepMotionDiagnostics: CreepMotionDiagnostics | undefined
+
+export function beginCreepMotionDiagnostics() {
+  activeCreepMotionDiagnostics = {
+    candidates: 0,
+    movementUpdates: 0,
+    sleepingSkips: 0,
+    materializations: 0,
+  }
+}
+
+export function readCreepMotionDiagnostics(): CreepMotionDiagnostics | undefined {
+  return activeCreepMotionDiagnostics ? { ...activeCreepMotionDiagnostics } : undefined
+}
+
+export function endCreepMotionDiagnostics() {
+  const diagnostics = readCreepMotionDiagnostics()
+  activeCreepMotionDiagnostics = undefined
+  return diagnostics
+}
 
 export type Point = { x: number; y: number }
 export type Stats = {
@@ -212,6 +247,7 @@ export type Creep = {
   aggroUntil?: number
   pullCampId?: string
   pullUntil?: number
+  motionPlan?: CreepMotionPlan
 }
 export type Tower = {
   id: string
@@ -333,6 +369,7 @@ export type TeamFortification = {
 }
 export type SimulationState = {
   matchSeed: string
+  creepMotionMode: CreepMotionMode
   time: number
   nextWave: number
   kills: Record<TeamId, number>
@@ -1016,7 +1053,7 @@ export const rosterSeed: Omit<Arcane, 'pos' | 'target' | 'pathIndex' | 'respawn'
   { id: 'r-cinder', team: 'dusk', player: 'Cinder', name: 'Winter Controller', heroDefinitionId: 'h104_winter_controller', role: 'Dedicated Support', lane: 'top', portrait: 'WC', items: ['Ward'] },
 ]
 
-export function createInitialState(seed = 'lota-default-seed'): SimulationState {
+export function createInitialState(seed = 'lota-default-seed', options: SimulationOptions = {}): SimulationState {
   const randomizedRoster = createRandomizedTestRoster(seed)
   const arcanes = randomizedRoster.map((arcane, index) => {
     const spawn = teamInfo[arcane.team].base
@@ -1080,6 +1117,7 @@ export function createInitialState(seed = 'lota-default-seed'): SimulationState 
 
   return {
     matchSeed: seed,
+    creepMotionMode: options.creepMotionMode ?? 'planned',
     time: matchPreparationStartSeconds,
     nextWave: 0,
     kills: { dawn: 0, dusk: 0 },
@@ -1742,6 +1780,7 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   })
   next = processJungleStacks(next, previousTime)
   next.boss = updateBoss(next.boss, next.time, delta)
+  if (shouldDecide) materializeCreepMotionPlansForTacticalWindow(next)
 
   const needsInitialTeamPlan = next.teamPlans.dawn === undefined || next.teamPlans.dusk === undefined
   if ((shouldDecide || needsInitialTeamPlan) && (needsInitialTeamPlan || next.time >= next.nextTeamDecisionAt)) {
@@ -1759,10 +1798,13 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
         : arcane
     ))
   }
-  next.creeps = next.creeps.map((creep) => updateCreepMovement(creep, next, delta, frameContext))
+  next.creeps = updateCreepsForTick(next, delta, frameContext)
   // Separação de hitbox é cosmética (evita unidades empilhadas); rodar só nos
   // ticks de decisão (10Hz) é indistinguível no playback de 5Hz e poupa CPU.
-  if (shouldDecide) resolveUnitHitboxes(next)
+  if (shouldDecide) {
+    resolveUnitHitboxes(next)
+    rebaseCreepMotionPlansAfterHitboxes(next)
+  }
   if (shouldDecide && next.time >= next.nextCombatAiAt) {
     next = updateCombatAiFoundation(next)
     next.nextCombatAiAt = next.time + COMBAT_AI_RULES.updateIntervalSeconds
@@ -1836,6 +1878,11 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
     creeps: state.creeps.map((creep) => ({
       ...creep,
       pos: { ...creep.pos },
+      motionPlan: creep.motionPlan ? {
+        ...creep.motionPlan,
+        from: { ...creep.motionPlan.from },
+        destination: { ...creep.motionPlan.destination },
+      } : undefined,
       lastHitBy: creep.lastHitBy ? { ...creep.lastHitBy } : undefined,
     })),
     towers: state.towers.map((tower) => ({ ...tower, pos: { ...tower.pos } })),
@@ -2007,11 +2054,14 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
       renderNumber(arcane.stats.hp), renderNumber(arcane.stats.maxMana), renderNumber(arcane.stats.mana), renderNumber(arcane.stats.range),
       arcane.channeling ? { ...arcane.channeling, target: { ...arcane.channeling.target } } : undefined,
     ]),
-    creeps: state.creeps.map((creep) => [
-      creep.id, creep.team, creep.lane, creep.type, renderNumber(creep.pos.x),
-      renderNumber(creep.pos.y), renderNumber(creep.hp), renderNumber(creep.maxHp),
-      renderNumber(creep.range),
-    ]),
+    creeps: state.creeps.map((creep) => {
+      const position = creep.motionPlan ? sampleCreepMotionPlan(creep.motionPlan, state.time) : creep.pos
+      return [
+        creep.id, creep.team, creep.lane, creep.type, renderNumber(position.x),
+        renderNumber(position.y), renderNumber(creep.hp), renderNumber(creep.maxHp),
+        renderNumber(creep.range),
+      ]
+    }),
     towerHp: state.towers.map((tower) => renderNumber(tower.hp)),
     structureHp: state.structures.map((structure) => renderNumber(structure.hp)),
     baseHp: state.bases.map((base) => renderNumber(base.hp)),
@@ -2107,6 +2157,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
 
   return {
     matchSeed: frame.matchSeed,
+    creepMotionMode: 'planned',
     time: frame.time,
     nextWave: 0,
     kills: { dawn: frame.kills[0], dusk: frame.kills[1] },
@@ -6986,6 +7037,79 @@ export function absorbDamageWithBarriers(state: SimulationState, targetId: strin
   return remainingDamage
 }
 
+export function materializeCreepMotionPlan(creep: Creep, time: number, preservePlan = false): Creep {
+  if (!creep.motionPlan) return creep
+  if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.materializations += 1
+  const pos = sampleCreepMotionPlan(creep.motionPlan, time)
+  creep.pos.x = pos.x
+  creep.pos.y = pos.y
+  if (!preservePlan) creep.motionPlan = undefined
+  return creep
+}
+
+export function materializeCreepMotionPlansForTacticalWindow(state: SimulationState) {
+  if (state.creepMotionMode !== 'planned' || !state.creeps.some((creep) => creep.motionPlan)) return
+  for (const creep of state.creeps) materializeCreepMotionPlan(creep, state.time, true)
+}
+
+export function rebaseCreepMotionPlansAfterHitboxes(state: SimulationState) {
+  if (state.creepMotionMode !== 'planned') return
+  for (const creep of state.creeps) {
+    const plan = creep.motionPlan
+    if (!plan) continue
+    const expectedPosition = sampleCreepMotionPlan(plan, state.time)
+    if (distanceSquared(expectedPosition, creep.pos) < 0.00000001) continue
+    creep.motionPlan = rebaseCreepMotionPlan(plan, creep.pos, state.time)
+  }
+}
+
+export function shouldWakeCreepMotionPlan(creep: Creep, state: SimulationState) {
+  const plan = creep.motionPlan
+  if (!plan) return true
+  if (state.time + 0.0001 >= plan.endsAt || creep.pullCampId || creep.pullUntil) return true
+  if (creep.aggroTargetId && (creep.aggroUntil ?? 0) > state.time) return true
+  if (!creep.routeTargetId) return false
+
+  const target = getCombatTargetById(state, creep.routeTargetId)
+  if (!target) return true
+  if ('player' in target) return target.stats.hp <= 0 || target.respawn > state.time || plan.kind === 'route'
+  return target.hp <= 0 || plan.kind === 'route'
+}
+
+export function updateCreepsForTick(state: SimulationState, delta: number, frameContext: TickFrameContext) {
+  const planned = state.creepMotionMode === 'planned'
+  if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.candidates += state.creeps.length
+  if (!planned) return state.creeps.map((creep) => {
+    if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.movementUpdates += 1
+    return updateCreepMovement(creep, state, delta, frameContext)
+  })
+
+  return state.creeps.map((creep) => {
+    if (!creep.motionPlan) {
+      if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.movementUpdates += 1
+      return updateCreepMovement(creep, state, delta, frameContext)
+    }
+    if (!shouldWakeCreepMotionPlan(creep, state)) {
+      if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.sleepingSkips += 1
+      return creep
+    }
+    const materialized = materializeCreepMotionPlan(creep, state.time, true)
+    if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.movementUpdates += 1
+    return updateCreepMovement(materialized, state, 0, frameContext)
+  })
+}
+
+export function canHoldCreepMotionTarget(target: CombatTarget) {
+  return !('player' in target) && !('strength' in target) && !isBoss(target)
+}
+
+export function getCreepMotionWakeAt(creep: Creep, time: number) {
+  const scheduledEvaluation = creep.nextRouteTargetEvaluationAt ?? time + creepTargetEvaluationIntervalSeconds
+  return scheduledEvaluation > time + 0.0001
+    ? Math.min(scheduledEvaluation, time + creepTargetEvaluationIntervalSeconds)
+    : time + creepTargetEvaluationIntervalSeconds
+}
+
 export function updateCreepMovement(creep: Creep, state: SimulationState, delta: number, frameContext: TickFrameContext): Creep {
   const pullCamp = getActivePullCampForCreep(state, creep)
   if (pullCamp) {
@@ -7000,6 +7124,7 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
       pullUntil: creep.pullUntil && creep.pullUntil > state.time
         ? creep.pullUntil
         : state.time + lanePullDurationSeconds,
+      motionPlan: undefined,
     }
   }
   if (creep.pullCampId || creep.pullUntil) {
@@ -7010,6 +7135,7 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
       pullUntil: undefined,
       routeTargetId: undefined,
       nextRouteTargetEvaluationAt: state.time,
+      motionPlan: undefined,
     }
   }
 
@@ -7034,14 +7160,30 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
   }
 
   if (attackTarget) {
-    return creep
+    if (state.creepMotionMode === 'planned' && canHoldCreepMotionTarget(attackTarget)) {
+      return {
+        ...creep,
+        motionPlan: scheduleCreepMotionPlan(
+          creep.motionPlan,
+          'hold',
+          creep.pos,
+          creep.pos,
+          0,
+          state.time,
+          getCreepMotionWakeAt(creep, state.time),
+        ),
+      }
+    }
+    return creep.motionPlan ? { ...creep, motionPlan: undefined } : creep
   }
 
   if (visibleTarget) {
     const moveTarget = getCreepMoveDestination(creep, visibleTarget)
     const nextPos = moveToward(creep.pos, moveTarget, 4.2 * delta)
-    if (distanceSquared(nextPos, creep.pos) < 0.0001) return creep
-    return { ...creep, pos: nextPos }
+    if (distanceSquared(nextPos, creep.pos) < 0.0001) {
+      return creep.motionPlan ? { ...creep, motionPlan: undefined } : creep
+    }
+    return { ...creep, pos: nextPos, motionPlan: undefined }
   }
 
   const path = lanePaths[creep.team][creep.lane]
@@ -7050,6 +7192,23 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
     pathIndex += 1
   }
   const nextPos = moveToward(creep.pos, formationPoint(path[pathIndex], creep.id), 4.2 * delta)
+  if (state.creepMotionMode === 'planned') {
+    const destination = formationPoint(path[pathIndex], creep.id)
+    return {
+      ...creep,
+      pathIndex,
+      pos: nextPos,
+      motionPlan: scheduleCreepMotionPlan(
+        creep.motionPlan,
+        'route',
+        nextPos,
+        destination,
+        4.2,
+        state.time,
+        getCreepMotionWakeAt(creep, state.time),
+      ),
+    }
+  }
   if (pathIndex === creep.pathIndex && distanceSquared(nextPos, creep.pos) < 0.0001) return creep
   return { ...creep, pathIndex, pos: nextPos }
 }
@@ -9006,6 +9165,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
 
   next.creeps.forEach((creep) => {
     if (pregame) return
+    if (creep.motionPlan?.kind === 'route') return
     if (next.time < creep.lastAttack + 1.25) return
     const target = getCachedRouteCreepTarget(creep, next, 'attack', frameContext)
     if (target) {
@@ -9038,7 +9198,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
       ? next.arcanes.find((arcane) => arcane.id === tower.aggroTargetId && arcane.stats.hp > 0 && arcane.respawn <= next.time && distance(tower.pos, arcane.pos) <= tower.range)
       : undefined
     const target = aggroTarget
-      ?? nearestCreepAtIndices(tower.pos, next.creeps, enemyCreepIndicesByTeam[tower.team], tower.range)
+      ?? nearestCreepAtIndices(tower.pos, next.creeps, enemyCreepIndicesByTeam[tower.team], tower.range, next.time)
       ?? nearestAliveEnemyArcane(tower.pos, next.arcanes, tower.team, next.time, tower.range)
     if (target) {
       tower.lastAttack = next.time
@@ -9073,7 +9233,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
       ? next.arcanes.find((arcane) => arcane.id === structure.aggroTargetId && arcane.stats.hp > 0 && arcane.respawn <= next.time && distance(structure.pos, arcane.pos) <= structure.range)
       : undefined
     const target = aggroTarget
-      ?? nearestCreepAtIndices(structure.pos, next.creeps, enemyCreepIndicesByTeam[structure.team], structure.range)
+      ?? nearestCreepAtIndices(structure.pos, next.creeps, enemyCreepIndicesByTeam[structure.team], structure.range, next.time)
       ?? nearestAliveEnemyArcane(structure.pos, next.arcanes, structure.team, next.time, structure.range)
     if (target) {
       structure.lastAttack = next.time
@@ -9604,6 +9764,7 @@ export function applyCreepAggro(state: SimulationState, defendingTeam: TeamId, a
       ...creep,
       aggroTargetId: attackerId,
       aggroUntil: state.time + 3.2,
+      motionPlan: undefined,
     }
   })
 }
@@ -10787,16 +10948,20 @@ export function nearest<T extends { pos: Point }>(point: Point, entities: T[], r
   return closest
 }
 
-export function nearestCreepAtIndices(point: Point, creeps: Creep[], indices: number[], range: number) {
+export function nearestCreepAtIndices(point: Point, creeps: Creep[], indices: number[], range: number, time?: number) {
   let closest: Creep | undefined
   let closestDistanceSquared = range * range
   for (const index of indices) {
     const creep = creeps[index]
-    const creepDistanceSquared = distanceSquared(point, creep.pos)
+    const creepPosition = creep.motionPlan && time !== undefined
+      ? sampleCreepMotionPlan(creep.motionPlan, time)
+      : creep.pos
+    const creepDistanceSquared = distanceSquared(point, creepPosition)
     if (creepDistanceSquared > closestDistanceSquared) continue
     closest = creep
     closestDistanceSquared = creepDistanceSquared
   }
+  if (closest?.motionPlan && time !== undefined) materializeCreepMotionPlan(closest, time, true)
   return closest
 }
 

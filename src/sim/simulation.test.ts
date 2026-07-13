@@ -91,6 +91,7 @@ import {
   tryCastRangedCreepSecureSkill,
   tick,
   updateCreepMovement,
+  updateCreepsForTick,
   updateArcaneMovement,
   updateCombatAiFoundation,
   updateBoss,
@@ -100,6 +101,7 @@ import {
   type SimulationState,
   type TickFrameContext,
 } from './simulation.ts'
+import { sampleCreepMotionPlan } from './creepMotionPlans.ts'
 import { getSkillEffectProfile } from '../game-systems/skillRuntime.ts'
 import { parentSkillStateKey, ringmasterSouvenirAbilityIds, ringmasterSouvenirStateKey } from '../game-systems/skillUnlocks.ts'
 import type { HeroSkillDefinition } from '../game-systems/heroAttributes.ts'
@@ -953,6 +955,57 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
 }
 
 {
+  const motionState = createInitialState('creep-motion-plan-runtime-test', { creepMotionMode: 'planned' })
+  motionState.time = 120
+  motionState.arcanes.forEach((arcane) => { arcane.stats.hp = 0 })
+  const routeCreep = spawnWave(motionState).find((candidate) => candidate.team === 'dawn' && candidate.lane === 'mid')!
+  motionState.creeps = [routeCreep]
+
+  motionState.creeps = updateCreepsForTick(motionState, simulationFrameSeconds, createTickFrameContext())
+  const plannedCreep = motionState.creeps[0]
+  assert.equal(plannedCreep.motionPlan?.kind, 'route', 'an uncontested lane creep should enter a route motion plan')
+  const storedPosition = { ...plannedCreep.pos }
+  const expectedPosition = sampleCreepMotionPlan(plannedCreep.motionPlan!, motionState.time + simulationFrameSeconds)
+
+  motionState.time += simulationFrameSeconds
+  motionState.creeps = updateCreepsForTick(motionState, simulationFrameSeconds, createTickFrameContext())
+  assert.deepEqual(motionState.creeps[0].pos, storedPosition, 'a sleeping route creep should not materialize every 30Hz tick')
+  assert.ok(distance(expectedPosition, storedPosition) > 0, 'the analytical plan should continue advancing while its stored position sleeps')
+  const replayPosition = createMatchRenderFrame(motionState).creeps[0]
+  assert.equal(replayPosition[4], Number(expectedPosition.x.toFixed(3)), 'replay frames should sample the analytical position without waking the creep')
+  assert.equal(replayPosition[5], Number(expectedPosition.y.toFixed(3)), 'replay frames should preserve smooth analytical movement')
+
+  motionState.time = plannedCreep.motionPlan!.endsAt + simulationFrameSeconds
+  motionState.creeps = updateCreepsForTick(motionState, simulationFrameSeconds, createTickFrameContext())
+  assert.ok(distance(motionState.creeps[0].pos, storedPosition) > 0, 'a due route plan should materialize before reevaluation')
+  assert.equal(motionState.creeps[0].motionPlan?.kind, 'route', 'an uncontested creep should schedule its next route segment')
+}
+
+{
+  const contactState = createInitialState('creep-motion-contact-test', { creepMotionMode: 'planned' })
+  contactState.time = 120
+  contactState.arcanes.forEach((arcane) => { arcane.stats.hp = 0 })
+  const contactWave = spawnWave(contactState)
+  const dawnCreep = contactWave.find((candidate) => candidate.team === 'dawn' && candidate.lane === 'mid')!
+  const duskCreep = contactWave.find((candidate) => candidate.team === 'dusk' && candidate.lane === 'mid')!
+  Object.assign(dawnCreep, { pos: { x: 47, y: 50 }, range: 1.2, visionRange: 10, damage: 0, hp: 10_000, maxHp: 10_000 })
+  Object.assign(duskCreep, { pos: { x: 53, y: 50 }, range: 1.2, visionRange: 10, damage: 0, hp: 10_000, maxHp: 10_000 })
+  contactState.creeps = [dawnCreep, duskCreep]
+
+  let minimumSeparation = Number.POSITIVE_INFINITY
+  for (let step = 0; step < 90; step += 1) {
+    contactState.time += simulationFrameSeconds
+    contactState.creeps = updateCreepsForTick(contactState, simulationFrameSeconds, createTickFrameContext())
+    resolveCombat(contactState, createTickFrameContext())
+    const separation = contactState.creeps[1].pos.x - contactState.creeps[0].pos.x
+    minimumSeparation = Math.min(minimumSeparation, separation)
+    assert.ok(separation >= 0, 'opposing creeps must stop to fight instead of crossing through each other')
+  }
+  assert.ok(minimumSeparation < 4, 'opposing creeps should close the initial gap before holding attack range')
+  assert.ok(contactState.creeps.every((creep) => creep.motionPlan?.kind === 'hold'), 'creeps in attack range should sleep on a hold plan')
+}
+
+{
   const creepPriorityState = createInitialState('ranged-creep-priority-test')
   creepPriorityState.time = 240
   const core = creepPriorityState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Safe Lane')!
@@ -1293,6 +1346,7 @@ let state: SimulationState = initialState
   const target = scheduledState.creeps.find((candidate) => candidate.team === 'dusk')!
   tower.lastAttack = -10
   target.pos = { ...tower.pos }
+  target.motionPlan = undefined
   target.lastAttack = scheduledState.time
   scheduledState.towers = [tower]
   scheduledState.creeps = [target]
