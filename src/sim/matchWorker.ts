@@ -15,7 +15,6 @@ import { getReplayChunkTransferables, ReplayChunkEncoder, type EncodedReplayChun
 export type MatchWorkerRequest =
   | { type: 'start'; seed: string; runId: number }
   | { type: 'cancel'; runId: number }
-  | { type: 'playbackStarted'; runId: number }
   | { type: 'cursor'; runId: number; cursor: number }
 
 export type MatchWorkerResponse =
@@ -27,34 +26,23 @@ export type MatchWorkerResponse =
 
 const renderFrameIntervalSeconds = 0.2
 const renderDetailsIntervalSeconds = 2
-// Loading usa lotes de ~15s para reduzir timers e mensagens. Quando o replay
-// começa, lotes de ~5s mantêm a entrega incremental e o cancelamento responsivo.
-const loadingSimulationChunkSteps = 450
-const playbackSimulationChunkSteps = 150
+// A partida inteira é calculada antes do playback. Lotes de ~30s reduzem timers
+// e mensagens sem deixar o cancelamento lento demais nas máquinas de referência.
+const simulationChunkSteps = 900
 
 let activeRunId = 0
-let playbackRunId = 0
 self.onmessage = (event: MessageEvent<MatchWorkerRequest>) => {
   const message = event.data
   if (message.type === 'cursor') {
     return
   }
 
-  if (message.type === 'playbackStarted') {
-    if (message.runId === activeRunId) playbackRunId = message.runId
-    return
-  }
-
   if (message.type === 'cancel') {
-    if (message.runId === activeRunId) {
-      activeRunId = 0
-      playbackRunId = 0
-    }
+    if (message.runId === activeRunId) activeRunId = 0
     return
   }
 
   activeRunId = message.runId
-  playbackRunId = 0
   void runMatch(message.seed, message.runId)
 }
 
@@ -99,9 +87,6 @@ async function runMatch(seed: string, runId: number) {
     const runChunk = () => {
       if (runId !== activeRunId) return
 
-      const simulationChunkSteps = playbackRunId === runId
-        ? playbackSimulationChunkSteps
-        : loadingSimulationChunkSteps
       for (let step = 0; step < simulationChunkSteps && !state.winner; step += 1) {
         decisionAccumulator += simulationFrameSeconds
         const shouldDecide = decisionAccumulator >= decisionGateSeconds

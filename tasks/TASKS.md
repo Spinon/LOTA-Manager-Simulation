@@ -639,19 +639,19 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [x] T24 - Carregamento adaptativo sem buffering
+### [ ] T24 - Pré-carregamento integral otimizado
 
-**Objetivo**: reduzir a espera percebida em máquinas fracas sem permitir que o playback alcance o Worker.
+**Objetivo**: calcular e armazenar a partida inteira antes de abrir a arena, reduzindo ao máximo essa espera sem simplificar a simulação.
 
 **Escopo**:
-- Medir taxa de produção do Worker e calcular buffer seguro para 1x-16x.
-- Liberar a partida após espera curta e margem suficiente; continuar o pré-cálculo em segundo plano.
-- Ajustar temporariamente velocidades indisponíveis quando a máquina não sustentar a taxa escolhida.
-- Aumentar lotes durante loading e reduzir mensagens sem bloquear cancelamento ou progresso.
+- Liberar o playback somente com `workerDone`; nenhuma simulação concorrente durante a partida assistida.
+- Manter todas as velocidades de 1x a 32x disponíveis após o carregamento.
+- Reduzir custo interno do `tick`, preservando cadências, regras e digest determinístico.
+- Usar lotes maiores durante o pré-cálculo para reduzir mensagens sem comprometer restart/cancelamento.
 
-**Critérios**: primeira imagem em até 10-12s na máquina de referência; nenhuma parada por buffer em 16x quando a velocidade estiver liberada; loading e restart confiáveis.
+**Critérios**: arena nunca aparece antes do replay completo; nenhuma parada por buffer em qualquer velocidade; digest preservado; loading e restart confiáveis; benchmark completo, testes, lint e build verdes.
 
-**Implementado (2026-07-13)**: taxa do Worker medida por amostras suavizadas e margem de segurança de 25%; liberação após 10s e 5min de buffer; velocidades acima da capacidade ficam temporariamente indisponíveis; playback reduz automaticamente a velocidade se a taxa cair; retomada exige reserva proporcional; Worker usa lotes de 15s durante loading e 5s durante playback. Playwright: primeira arena em 10,7s, restart em 10,2s e 16x avançou 128,8s em 8s sem buffering.
+**Reajuste em andamento (2026-07-13)**: removida a liberação adaptativa a pedido; Worker voltou ao pré-carregamento integral e passou a lotes de 30s. Primeira rodada do hot path reutiliza caches por tick e buffers de colisão, evita varreduras administrativas sem trabalho e preservou o digest nos benchmarks curtos. Validação final do carregador e benchmark completo ficaram pendentes para a próxima estação.
 
 ---
 

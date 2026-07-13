@@ -100,6 +100,7 @@ import { ReplayFrameStore } from './sim/replayStore'
 import './App.css'
 
 type PlaybackStatus = 'loading' | 'ready' | 'buffering' | 'ended' | 'error'
+const softMatchDurationSeconds = 60 * 60
 
 // Partida standby: enquanto o jogador assiste a atual, um segundo worker
 // pré-simula a próxima seed até o teto de buffer. No restart, o worker e os
@@ -114,13 +115,10 @@ type StandbyMatch = {
   staticData?: MatchStaticData
 }
 
-// O espectador entra depois de uma espera curta, com cinco minutos de buffer e
-// apenas nas velocidades que a taxa medida do Worker consegue sustentar.
-const startupBufferSeconds = 5 * 60
-const minimumStartupWaitMs = 10_000
-const workerRateSafetyMargin = 1.25
-const playbackSpeeds = [1, 2, 4, 8, 16, 32] as const
-const maximumPlaybackSpeed = playbackSpeeds[playbackSpeeds.length - 1]
+// A arena só é liberada depois que o Worker fecha o replay inteiro. O playback
+// não concorre com a simulação e nenhuma velocidade pode alcançar o buffer.
+const startupBufferSeconds = Number.POSITIVE_INFINITY
+const minimumStartupWaitMs = 0
 // Começa a pré-simular a próxima partida quando o buffer da atual está quase
 // no teto (worker ativo já ocioso) ou quando a partida atual terminou de simular.
 const prefetchBufferAheadSeconds = 150
@@ -226,8 +224,6 @@ function App() {
   const [uiDataReady, setUiDataReady] = useState(false)
   const [startupWaitDone, setStartupWaitDone] = useState(false)
   const [startupWaitProgress, setStartupWaitProgress] = useState(0)
-  const [workerSimulationRate, setWorkerSimulationRate] = useState(0)
-  const [maxSafeSpeed, setMaxSafeSpeed] = useState(1)
   const [bufferInfo, setBufferInfo] = useState({ simTime: matchPreparationStartSeconds, frameCount: 0, bufferAhead: 0 })
   const [selected, setSelected] = useState<Selected>({ kind: 'arcane', id: 'd-quasar' })
   const [dataPanelOpen, setDataPanelOpen] = useState(false)
@@ -262,8 +258,6 @@ function App() {
       playbackStatus,
       startupWaitDone,
       startupWaitProgress,
-      workerSimulationRate,
-      maxSafeSpeed,
       frameCount: frameBufferRef.current.length,
       replayBytes: frameBufferRef.current.estimatedByteLength,
       cursor: playbackCursorRef.current,
@@ -327,8 +321,6 @@ function App() {
     setMatchWinner(undefined)
     setWinnerRevealed(false)
     setPrecomputeDone(adopting?.workerDone ?? false)
-    setWorkerSimulationRate(adopting?.workerDone ? maximumPlaybackSpeed * workerRateSafetyMargin : 0)
-    setMaxSafeSpeed(adopting?.workerDone ? maximumPlaybackSpeed : 1)
     setLoadingError(undefined)
 
     // Standby com buffer de largada completo: entra direto no playback,
@@ -361,66 +353,7 @@ function App() {
       })
     }
     const startupStartedAt = performance.now()
-    let latestSimulationTime = adopting?.simTime ?? matchPreparationStartSeconds
-    let rateSampleTime = startupStartedAt
-    let rateSampleSimulationTime = latestSimulationTime
-    let smoothedSimulationRate = 0
-    let lastRatePaint = 0
-    let currentMaxSafeSpeed: number = adopting?.workerDone ? maximumPlaybackSpeed : 1
-    let adaptiveStartupReleased = adoptedReady
-
-    const getSafePlaybackSpeed = (simulationRate: number, done: boolean) => {
-      if (done) return maximumPlaybackSpeed
-      const sustainableRate = simulationRate / workerRateSafetyMargin
-      let safeSpeed = 0
-      for (const candidate of playbackSpeeds) {
-        if (candidate > sustainableRate) break
-        safeSpeed = candidate
-      }
-      return safeSpeed
-    }
-
-    const releaseAdaptiveStartup = () => {
-      if (adaptiveStartupReleased || !stateRef.current) return
-      const waitedLongEnough = performance.now() - startupStartedAt >= minimumStartupWaitMs
-      const bufferAhead = latestSimulationTime - playbackCursorRef.current
-      const hasSafeBuffer = bufferAhead >= startupBufferSeconds && currentMaxSafeSpeed >= 1
-      if (!waitedLongEnough || (!workerDoneRef.current && !hasSafeBuffer)) return
-
-      adaptiveStartupReleased = true
-      setStartupWaitDone(true)
-      setStartupWaitProgress(1)
-      setPlaybackStatus('ready')
-      worker.postMessage({ type: 'playbackStarted', runId })
-    }
-
-    const updateWorkerRate = (simTime: number, done: boolean) => {
-      const now = performance.now()
-      latestSimulationTime = Math.max(latestSimulationTime, simTime)
-      const elapsedSeconds = (now - rateSampleTime) / 1000
-      const simulatedSeconds = Math.max(0, simTime - rateSampleSimulationTime)
-      if (elapsedSeconds > 0 && simulatedSeconds > 0) {
-        const sampleRate = simulatedSeconds / elapsedSeconds
-        smoothedSimulationRate = smoothedSimulationRate === 0
-          ? sampleRate
-          : smoothedSimulationRate * 0.7 + sampleRate * 0.3
-        rateSampleTime = now
-        rateSampleSimulationTime = simTime
-      }
-
-      const nextMaxSafeSpeed = getSafePlaybackSpeed(smoothedSimulationRate, done)
-      if (nextMaxSafeSpeed !== currentMaxSafeSpeed) {
-        currentMaxSafeSpeed = nextMaxSafeSpeed
-        setMaxSafeSpeed(Math.max(1, nextMaxSafeSpeed))
-      }
-      if (done || now - lastRatePaint >= 500) {
-        lastRatePaint = now
-        setWorkerSimulationRate(smoothedSimulationRate)
-      }
-      releaseAdaptiveStartup()
-    }
-
-    const startupTimer = adoptedReady ? undefined : window.setTimeout(releaseAdaptiveStartup, minimumStartupWaitMs)
+    const startupTimer = adoptedReady ? undefined : window.setTimeout(() => setStartupWaitDone(true), minimumStartupWaitMs)
     const startupProgressTimer = adoptedReady
       ? undefined
       : window.setInterval(() => {
@@ -519,7 +452,6 @@ function App() {
       if (message.type === 'progress') {
         workerDoneRef.current = message.done
         if (message.done) setPrecomputeDone(true)
-        updateWorkerRate(message.simTime, message.done)
         const bufferAhead = Math.max(0, message.simTime - playbackCursorRef.current)
         paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
           simTime: message.simTime,
@@ -537,7 +469,6 @@ function App() {
 
       workerDoneRef.current = true
       setPrecomputeDone(true)
-      updateWorkerRate(message.simTime, true)
       setMatchWinner(message.winner)
       const bufferAhead = Math.max(0, message.simTime - playbackCursorRef.current)
       paintBufferInfoThrottled(lastBufferInfoPaintRef, setBufferInfo, {
@@ -566,7 +497,6 @@ function App() {
     if (!adopting) {
       worker.postMessage({ type: 'start', seed: matchSeed, runId })
     } else if (adoptedReady) {
-      worker.postMessage({ type: 'playbackStarted', runId })
       // O worker standby terminou de simular? Então não haverá mais mensagens
       // de progresso; dispara a pré-simulação da próxima já na adoção.
       if (workerDoneRef.current) startStandbyPrefetch()
@@ -601,15 +531,11 @@ function App() {
       stateRef.current &&
       startupWaitDone &&
       playbackStatus === 'buffering' &&
-      (workerDoneRef.current || bufferInfo.bufferAhead >= Math.max(5, speed * 2))
+      workerDoneRef.current
     ) {
       setPlaybackStatus('ready')
     }
-  }, [bufferInfo.bufferAhead, playbackStatus, speed, startupWaitDone])
-
-  useEffect(() => {
-    if (!workerDoneRef.current && speed > maxSafeSpeed) setSpeed(maxSafeSpeed)
-  }, [maxSafeSpeed, speed])
+  }, [bufferInfo.bufferAhead, playbackStatus, startupWaitDone])
 
   const playbackStatusRef = useRef(playbackStatus)
   playbackStatusRef.current = playbackStatus
@@ -703,10 +629,7 @@ function App() {
   const isInitialBuffering = playbackCursorRef.current <= matchPreparationStartSeconds + 0.001 && playbackStatus === 'buffering'
   const precomputeProgress = precomputeDone
     ? 1
-    : Math.min(0.99, (
-        Math.min(1, startupWaitProgress) +
-        Math.min(1, bufferInfo.bufferAhead / startupBufferSeconds)
-      ) / 2)
+    : Math.min(0.99, Math.max(0, (bufferInfo.simTime - matchPreparationStartSeconds) / (softMatchDurationSeconds - matchPreparationStartSeconds)))
   const replayDuration = Math.max(1, bufferInfo.simTime)
   const displayedWinner = winnerRevealed ? (matchWinner ?? state?.winner) : undefined
   const seekPlayback = (requestedTime: number) => {
@@ -819,16 +742,13 @@ function App() {
           </div>
           <label className="speed-control">
             <span>Vel.</span>
-            <select
-              value={speed}
-              onChange={(event) => setSpeed(Number(event.target.value))}
-              title={`Worker ${workerSimulationRate.toFixed(1)}x / seguro ate ${maxSafeSpeed}x`}
-            >
-              {playbackSpeeds.map((candidate) => (
-                <option key={candidate} value={candidate} disabled={!workerDoneRef.current && candidate > maxSafeSpeed}>
-                  {candidate}x
-                </option>
-              ))}
+            <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))}>
+              <option value={1}>1x</option>
+              <option value={2}>2x</option>
+              <option value={4}>4x</option>
+              <option value={8}>8x</option>
+              <option value={16}>16x</option>
+              <option value={32}>32x</option>
             </select>
           </label>
           <label className="replay-progress" title={`Seed ${matchSeed} / ${bufferInfo.frameCount} frames`}>

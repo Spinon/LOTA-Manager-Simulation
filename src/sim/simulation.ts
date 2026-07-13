@@ -293,6 +293,8 @@ export type TickFrameContext = {
   arcaneNearRouteCache: Map<Point[], Map<string, boolean>>
   attackableTowersCache: Partial<Record<TeamId, Tower[]>>
   attackableStructuresCache: Partial<Record<TeamId, Structure[]>>
+  visibleEnemiesCache?: Map<TeamId, Arcane[]>
+  baseThreatCache?: Map<TeamId, ReturnType<typeof getBaseThreat>>
 }
 export type SpatialGrid<T extends { pos: Point }> = {
   cellSize: number
@@ -1632,6 +1634,23 @@ export function spawnWave(state: SimulationState): Creep[] {
   )
 }
 
+export function hasExpiredArcaneSkillState(arcane: Arcane, time: number) {
+  for (const key in arcane.skillStates) {
+    if (arcane.skillStates[key].activeUntil <= time) return true
+  }
+  return false
+}
+
+export function pruneExpiredArcaneSkillStates(arcane: Arcane, time: number) {
+  if (!hasExpiredArcaneSkillState(arcane, time)) return arcane
+  const skillStates: Arcane['skillStates'] = {}
+  for (const key in arcane.skillStates) {
+    const skillState = arcane.skillStates[key]
+    if (skillState.activeUntil > time) skillStates[key] = skillState
+  }
+  return { ...arcane, skillStates }
+}
+
 export function tick(state: SimulationState, delta: number, shouldDecide: boolean): SimulationState {
   if (state.winner) return state
 
@@ -1646,6 +1665,8 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
     arcaneNearRouteCache: new Map(),
     attackableTowersCache: {},
     attackableStructuresCache: {},
+    visibleEnemiesCache: new Map(),
+    baseThreatCache: new Map(),
   }
   const previousDayCycle = getDayCycle(next.time)
   const previousTime = next.time
@@ -1662,11 +1683,9 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
     next.timedEffects = next.timedEffects.filter((effect) => effect.expiresAt > next.time)
   }
   next = processTimedEffects(next)
-  next.arcanes = next.arcanes.map((arcane) => {
-    const entries = Object.entries(arcane.skillStates)
-    if (entries.length === 0 || entries.every(([, skillState]) => skillState.activeUntil > next.time)) return arcane
-    return { ...arcane, skillStates: Object.fromEntries(entries.filter(([, skillState]) => skillState.activeUntil > next.time)) }
-  })
+  if (next.arcanes.some((arcane) => hasExpiredArcaneSkillState(arcane, next.time))) {
+    next.arcanes = next.arcanes.map((arcane) => pruneExpiredArcaneSkillStates(arcane, next.time))
+  }
   if (shouldDecide) {
     next.effects = next.effects.filter((effect) => next.time - effect.createdAt < effect.duration)
     next.deathMarkers = next.deathMarkers.filter((marker) => marker.expiresAt > next.time)
@@ -1687,15 +1706,21 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
     applyItemAuraEffects(next)
     applySkillAuraEffects(next, decisionGateSeconds)
   }
-  next.arcanes = next.arcanes.map((arcane, index) => {
-    const current = dayCycle !== previousDayCycle
-      ? {
-          ...arcane,
-          visionRange: getArcaneDefinitionVisionRange(arcane.heroDefinitionId, dayCycle),
-        }
-      : arcane
-    return respawnArcaneIfReady(current, next.time, index)
-  })
+  const dayCycleChanged = dayCycle !== previousDayCycle
+  const hasReadyRespawn = next.arcanes.some((arcane) => (
+    arcane.respawn > matchPreparationStartSeconds && arcane.respawn <= next.time
+  ))
+  if (dayCycleChanged || hasReadyRespawn) {
+    next.arcanes = next.arcanes.map((arcane, index) => {
+      const current = dayCycleChanged
+        ? {
+            ...arcane,
+            visionRange: getArcaneDefinitionVisionRange(arcane.heroDefinitionId, dayCycle),
+          }
+        : arcane
+      return respawnArcaneIfReady(current, next.time, index)
+    })
+  }
 
   if (shouldDecide) next.camps = resetDisengagedNeutralCamps(next.camps, next.time).map((camp) => {
     if (camp.hp > 0) {
@@ -1725,7 +1750,7 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
     next.nextTeamDecisionAt = next.time + teamDecisionIntervalSeconds
   }
 
-  next.arcanes = next.arcanes.map((arcane) => updateArcaneMovement(arcane, next, delta, shouldDecide))
+  next.arcanes = next.arcanes.map((arcane) => updateArcaneMovement(arcane, next, delta, shouldDecide, frameContext))
   if (next.time >= 0) next = collectRunes(next)
   if (passiveGold > 0) {
     next.arcanes = next.arcanes.map((arcane) => (
@@ -3743,6 +3768,14 @@ export function getBaseThreat(state: SimulationState, team: TeamId) {
   }
 }
 
+export function getCachedBaseThreat(state: SimulationState, team: TeamId, frameContext?: TickFrameContext) {
+  if (!frameContext?.baseThreatCache) return getBaseThreat(state, team)
+  if (frameContext.baseThreatCache.has(team)) return frameContext.baseThreatCache.get(team)
+  const threat = getBaseThreat(state, team)
+  frameContext.baseThreatCache.set(team, threat)
+  return threat
+}
+
 export function getLocalNumbers(state: SimulationState, team: TeamId, point: Point, radius: number, visibleEnemies?: Arcane[]) {
   const allies = state.arcanes.filter((arcane) => arcane.team === team && arcane.stats.hp > 0 && arcane.respawn <= state.time && distance(arcane.pos, point) <= radius)
   const enemies = (visibleEnemies ?? state.arcanes.filter((arcane) => (
@@ -4855,6 +4888,7 @@ export function getActivePullCampForCreep(state: SimulationState, creep: Creep) 
     const active = state.camps.find((camp) => camp.id === creep.pullCampId && camp.hp > 0 && camp.respawn <= state.time)
     if (active) return active
   }
+  if (state.time < 60 || state.time > 11 * 60) return undefined
   const camp = getLanePullCamp(state, creep.team)
   if (!camp || distance(creep.pos, camp.pos) > 15) return undefined
   const puller = state.arcanes.find((arcane) => (
@@ -4869,9 +4903,16 @@ export function getActivePullCampForCreep(state: SimulationState, creep: Creep) 
   return puller ? camp : undefined
 }
 
-export function updateArcaneMovement(arcane: Arcane, state: SimulationState, delta: number, shouldDecide: boolean): Arcane {
+export function updateArcaneMovement(
+  arcane: Arcane,
+  state: SimulationState,
+  delta: number,
+  shouldDecide: boolean,
+  frameContext?: TickFrameContext,
+): Arcane {
   if (arcane.respawn > state.time) {
     const microDecision = `Respawn em ${Math.ceil(arcane.respawn - state.time)}s`
+    if (arcane.macroDecision === 'Fora de combate' && arcane.microDecision === microDecision) return arcane
     return {
       ...arcane,
       macroDecision: 'Fora de combate',
@@ -4905,13 +4946,8 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       }
     }
     const runePlan = getPregameBountyRunePlan(state, arcane)
-    const enemies = state.arcanes.filter((candidate) => (
-      candidate.team !== arcane.team &&
-      candidate.stats.hp > 0 &&
-      candidate.respawn <= state.time &&
-      isPointVisibleToTeam(state, arcane.team, candidate.pos) &&
-      distance(candidate.pos, runePlan.point) <= 12
-    ))
+    const enemies = getVisibleEnemyArcanes(state, arcane.team, frameContext)
+      .filter((candidate) => distance(candidate.pos, runePlan.point) <= 12)
     const contestedEnemy = nearest(arcane.pos, enemies, 10)
     const contest = getPregameRuneContestAssessment(state, arcane, runePlan, enemies)
     const retreating = contest.mustRetreat
@@ -4996,12 +5032,7 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
   }
 
   if (shouldRunDecision) {
-    const visibleEnemies = state.arcanes.filter((other) => (
-      other.team !== arcane.team &&
-      other.stats.hp > 0 &&
-      other.respawn <= state.time &&
-      isPointVisibleToTeam(state, arcane.team, other.pos)
-    ))
+    const visibleEnemies = getVisibleEnemyArcanes(state, arcane.team, frameContext)
     const dangerScore = getDangerScore(state, arcane, visibleEnemies)
     const actionDanger = getEnemyActionThreatScore(state, arcane, arcane.pos, visibleEnemies)
     const memoryDanger = getTeamMemoryDanger(state, arcane.team, arcane.pos)
@@ -5144,7 +5175,7 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     const teamCallPoint = teamCall ? getTeamCallPoint(state, teamCall) : undefined
     const teamCallObjectivePoint = teamCall ? getTeamCallObjectivePoint(state, teamCall) : undefined
     const callerArcane = teamCall ? state.arcanes.find((ally) => ally.id === teamCall.callerId && ally.stats.hp > 0 && ally.respawn <= state.time) : undefined
-    const baseThreat = phase !== 'early' ? getBaseThreat(state, arcane.team) : undefined
+    const baseThreat = phase !== 'early' ? getCachedBaseThreat(state, arcane.team, frameContext) : undefined
     const plannedObjective = teamPlan?.targetId ? getPlannedMapObjective(state, arcane.team, teamPlan.targetId) : undefined
     const preparingHighGround = phase === 'late' && (
       teamPlan?.type === 'end_game' ||
@@ -5425,12 +5456,14 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     target = getLaneAdvancePoint(arcane, path, pathIndex)
   }
 
-  const baseThreatNow = getBaseThreat(state, arcane.team)
   const recoveredAtBase = atBase &&
     arcane.stats.hp >= arcane.stats.maxHp * 0.94 &&
     arcane.stats.mana >= arcane.stats.maxMana * 0.82
   const stillPointingAtBase = distance(target, ownBase) < baseServiceRange
   const advancingWithBaseTarget = macroDecision.startsWith('Avancar') && stillPointingAtBase
+  const baseThreatNow = recoveredAtBase || advancingWithBaseTarget
+    ? getCachedBaseThreat(state, arcane.team, frameContext)
+    : undefined
   if (((recoveredAtBase && !canBuyAtBase) || advancingWithBaseTarget) && stillPointingAtBase && !baseThreatNow?.urgent) {
     pathIndex = Math.max(1, pathIndex)
     target = getLaneAdvancePoint(arcane, path, pathIndex)
@@ -6740,15 +6773,28 @@ export function hasTimedEffect(state: SimulationState, targetId: string, kind: T
 }
 
 export function isArcaneStunned(state: SimulationState, arcane: Arcane) {
-  return hasTimedEffect(state, arcane.id, 'stun') ||
-    hasTimedEffect(state, arcane.id, 'hex') ||
-    hasTimedEffect(state, arcane.id, 'sleep') ||
-    hasTimedEffect(state, arcane.id, 'fear') ||
-    hasTimedEffect(state, arcane.id, 'taunt')
+  return getTimedEffectsForTarget(state, arcane.id).some((effect) => (
+    effect.expiresAt > state.time && (
+      effect.kind === 'stun' ||
+      effect.kind === 'hex' ||
+      effect.kind === 'sleep' ||
+      effect.kind === 'fear' ||
+      effect.kind === 'taunt'
+    )
+  ))
 }
 
 export function isArcaneMovementDisabled(state: SimulationState, arcane: Arcane) {
-  return isArcaneStunned(state, arcane) || hasTimedEffect(state, arcane.id, 'root')
+  return getTimedEffectsForTarget(state, arcane.id).some((effect) => (
+    effect.expiresAt > state.time && (
+      effect.kind === 'stun' ||
+      effect.kind === 'hex' ||
+      effect.kind === 'sleep' ||
+      effect.kind === 'fear' ||
+      effect.kind === 'taunt' ||
+      effect.kind === 'root'
+    )
+  ))
 }
 
 export function isArcaneAttackDisabled(state: SimulationState, arcane: Arcane) {
@@ -7186,6 +7232,33 @@ export const unitHitboxGridSize = 4
 export const proximityGridCellSize = 10
 export const maxHitboxResolutionPasses = 2
 export const unitHitboxBodyBuffer: UnitHitboxBody[] = []
+const unitHitboxBodyPool: UnitHitboxBody[] = []
+const unitHitboxGridBuffer = new Map<number, UnitHitboxBody[]>()
+const unitHitboxGridCellPool: UnitHitboxBody[][] = []
+
+function appendUnitHitboxBody(
+  bodies: UnitHitboxBody[],
+  id: string,
+  pos: Point,
+  radius: number,
+  movable: boolean,
+  mass: number,
+) {
+  const index = bodies.length
+  let body = unitHitboxBodyPool[index]
+  if (body) {
+    body.id = id
+    body.index = index
+    body.pos = pos
+    body.radius = radius
+    body.movable = movable
+    body.mass = mass
+  } else {
+    body = { id, index, pos, radius, movable, mass }
+    unitHitboxBodyPool.push(body)
+  }
+  bodies.push(body)
+}
 
 export function resolveUnitHitboxes(state: SimulationState) {
   const bodies = unitHitboxBodyBuffer
@@ -7193,55 +7266,27 @@ export function resolveUnitHitboxes(state: SimulationState) {
 
   for (const arcane of state.arcanes) {
     if (arcane.stats.hp <= 0 || arcane.respawn > state.time) continue
-    bodies.push({
-      id: arcane.id,
-      index: bodies.length,
-      pos: arcane.pos,
-      radius: getUnitHitboxRadius(arcane),
-      movable: true,
-      mass: 1.25,
-    })
+    appendUnitHitboxBody(bodies, arcane.id, arcane.pos, getUnitHitboxRadius(arcane), true, 1.25)
   }
 
   for (const creep of state.creeps) {
     if (creep.hp <= 0) continue
-    bodies.push({
-      id: creep.id,
-      index: bodies.length,
-      pos: creep.pos,
-      radius: getUnitHitboxRadius(creep),
-      movable: true,
-      mass: creep.type === 'siege' ? 1.1 : 0.72,
-    })
+    appendUnitHitboxBody(bodies, creep.id, creep.pos, getUnitHitboxRadius(creep), true, creep.type === 'siege' ? 1.1 : 0.72)
   }
 
   if (state.boss.hp > 0 && state.boss.respawn <= state.time) {
-    bodies.push({
-      id: state.boss.id,
-      index: bodies.length,
-      pos: state.boss.pos,
-      radius: getUnitHitboxRadius(state.boss),
-      movable: true,
-      mass: 2.5,
-    })
+    appendUnitHitboxBody(bodies, state.boss.id, state.boss.pos, getUnitHitboxRadius(state.boss), true, 2.5)
   }
 
   for (const camp of state.camps) {
     if (camp.hp <= 0) continue
-    bodies.push({
-      id: camp.id,
-      index: bodies.length,
-      pos: camp.pos,
-      radius: getUnitHitboxRadius(camp),
-      movable: false,
-      mass: 99,
-    })
+    appendUnitHitboxBody(bodies, camp.id, camp.pos, getUnitHitboxRadius(camp), false, 99)
   }
 
   if (bodies.length < 2) return
 
   for (let pass = 0; pass < maxHitboxResolutionPasses; pass += 1) {
-    const grid = buildUnitHitboxGrid(bodies)
+    const grid = buildBufferedUnitHitboxGrid(bodies)
 
     for (const body of bodies) {
       const gridX = Math.floor(body.pos.x / unitHitboxGridSize)
@@ -7268,6 +7313,32 @@ export function resolveUnitHitboxes(state: SimulationState) {
     body.pos.x = bounded.x
     body.pos.y = bounded.y
   }
+}
+
+function buildBufferedUnitHitboxGrid(bodies: UnitHitboxBody[]) {
+  unitHitboxGridBuffer.clear()
+  let usedCells = 0
+  for (const body of bodies) {
+    const key = getUnitHitboxGridKey(
+      Math.floor(body.pos.x / unitHitboxGridSize),
+      Math.floor(body.pos.y / unitHitboxGridSize),
+    )
+    const existing = unitHitboxGridBuffer.get(key)
+    if (existing) {
+      existing.push(body)
+      continue
+    }
+    let cell = unitHitboxGridCellPool[usedCells]
+    if (cell) cell.length = 0
+    else {
+      cell = []
+      unitHitboxGridCellPool.push(cell)
+    }
+    usedCells += 1
+    cell.push(body)
+    unitHitboxGridBuffer.set(key, cell)
+  }
+  return unitHitboxGridBuffer
 }
 
 export function buildUnitHitboxGrid(bodies: UnitHitboxBody[]) {
@@ -10865,6 +10936,19 @@ export function isPointVisibleToTeam(state: SimulationState, team: TeamId, point
   return querySpatialGrid(providers.grids[team], point, providers.maxRanges[team]).some((provider) => (
     distance(provider.pos, point) <= provider.range
   ))
+}
+
+export function getVisibleEnemyArcanes(state: SimulationState, team: TeamId, frameContext?: TickFrameContext) {
+  const cached = frameContext?.visibleEnemiesCache?.get(team)
+  if (cached) return cached
+  const visible = state.arcanes.filter((arcane) => (
+    arcane.team !== team &&
+    arcane.stats.hp > 0 &&
+    arcane.respawn <= state.time &&
+    isPointVisibleToTeam(state, team, arcane.pos)
+  ))
+  frameContext?.visibleEnemiesCache?.set(team, visible)
+  return visible
 }
 
 export function getTeamVisionProviders(state: SimulationState) {
