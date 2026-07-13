@@ -177,6 +177,72 @@ await loadGameData()
   )
 }
 
+{
+  const contextualState = createInitialState('contextual-skill-runtime-test')
+  contextualState.time = 10 * 60
+  const invoker = contextualState.arcanes[0]
+  const enemy = contextualState.arcanes.find((candidate) => candidate.team !== invoker.team)!
+  invoker.heroDefinitionId = 'h066_complex_mage'
+  invoker.stats.level = 12
+  invoker.stats.mana = 1_000
+  invoker.stats.maxMana = 1_000
+  invoker.skillLevels = { Q: 4, W: 4, E: 5 }
+  invoker.aiMode = 'join_fight'
+  invoker.macroDecision = 'Lutar em equipe'
+  invoker.pos = { x: 50, y: 50 }
+  enemy.pos = { x: 52, y: 50 }
+  contextualState.arcanes.forEach((candidate) => {
+    if (candidate.team !== invoker.team && candidate.id !== enemy.id) candidate.stats.hp = 0
+  })
+
+  const teamfightKit = getArcaneRuntimeSkills(invoker)
+  const invokedSkills = teamfightKit.filter((skill) => skill.key.startsWith('S'))
+  assert.equal(invokedSkills.length, 2, 'the complex mage should expose at most two invoked spells')
+  assert.ok(teamfightKit.filter((skill) => ['Q', 'W', 'E'].includes(skill.key)).every((skill) => skill.kind === 'passive'), 'orbs should not be cast as generic attacks')
+  assert.ok(invokedSkills.every((skill) => getSimpleSkillLevel(invoker, skill) >= 4), 'invoked spells should scale from learned orb levels')
+  const manaBeforeInvoke = invoker.stats.mana
+  assert.equal(tryCastSimpleSkill(contextualState, invoker, enemy), true, 'the AI should cast a selected invoked spell')
+  assert.ok(invoker.stats.mana < manaBeforeInvoke, 'invoked spells should spend their official mana cost')
+  assert.ok(invokedSkills.some((skill) => (invoker.itemCooldowns[skill.id] ?? 0) > contextualState.time), 'the invoked spell should enter its own official cooldown')
+
+  invoker.aiMode = 'retreat'
+  invoker.macroDecision = 'Recuar para seguranca'
+  const retreatIds = getArcaneRuntimeSkills(invoker).filter((skill) => skill.key.startsWith('S')).map((skill) => skill.id)
+  assert.notDeepEqual(retreatIds.sort(), invokedSkills.map((skill) => skill.id).sort(), 'retreat should prepare a different invoked loadout')
+
+  const singer = contextualState.arcanes.find((candidate) => candidate.team === invoker.team && candidate.id !== invoker.id)!
+  singer.heroDefinitionId = 'h120_heavy_artillery_commander'
+  singer.stats.level = 12
+  singer.stats.maxHp = 2_000
+  singer.stats.hp = 700
+  singer.stats.maxMana = 1_000
+  singer.stats.mana = 1_000
+  singer.skillLevels = { R: 2 }
+  singer.aiMode = 'join_fight'
+  singer.macroDecision = 'Lutar em equipe'
+  singer.pos = { x: 50, y: 51 }
+  const song = getArcaneRuntimeSkills(singer).find((skill) => skill.sourceAbilityId === 1665)!
+  assert.ok(song, 'low health should select the healing song')
+  assert.equal(getSimpleSkillLevel(singer, song), 2, 'song level should mirror the learned ultimate')
+  const hpBeforeSong = singer.stats.hp
+  const manaBeforeSong = singer.stats.mana
+  assert.equal(tryCastSimpleSkill(contextualState, singer, enemy), true, 'the selected song should be usable by the AI')
+  assert.ok(singer.stats.hp > hpBeforeSong, 'the healing song should apply its imported heal value')
+  assert.equal(singer.stats.mana, manaBeforeSong - 35, 'the level-two song should spend its official mana cost')
+
+  const trickster = contextualState.arcanes.find((candidate) => candidate.team === invoker.team && candidate.id !== invoker.id && candidate.id !== singer.id)!
+  trickster.heroDefinitionId = 'h106_monkey_warrior'
+  trickster.skillLevels = { Q: 1 }
+  trickster.aiMode = 'farm_lane'
+  trickster.macroDecision = 'Farmar rota'
+  assert.equal(getArcaneRuntimeSkills(trickster).some((skill) => skill.sourceAbilityId === 1627), false)
+  trickster.aiMode = 'retreat'
+  trickster.macroDecision = 'Recuar'
+  const disguise = getArcaneRuntimeSkills(trickster).find((skill) => skill.sourceAbilityId === 1627)!
+  assert.ok(disguise, 'the disguise utility should become available while retreating')
+  assert.equal(getSimpleSkillLevel(trickster, disguise), 1)
+}
+
 assert.equal(getRoleGpmTarget('Safe Lane', 40 * 60), 760)
 assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
 {

@@ -473,6 +473,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Auditoria atual: 3 completas, 612 parciais, 13 aproximações intencionais e 106 ausentes. Próxima rodada: modelar subskills contextuais/invocadas; depois resolver channeling no término do canal e summons como entidades reais.
 - Testes, lint e build verdes. Benchmark determinístico mediano: 56,1x wall / 52,6x CPU, digest `9ebd3080f5fadc7e` estável nas três rodadas.
 
+**Progresso das skills contextuais/invocadas (2026-07-13)**:
+- As 27 subskills restantes foram classificadas pelo gatilho real. A ativação agora separa loadout invocado, canção escolhida, utilidade situacional, recurso de souvenir, stance alternativa e estado da habilidade-pai; a auditoria deixou de tratar todo o grupo como um único bloqueio genérico.
+- O mago complexo prepara no máximo dois dos dez feitiços cujas receitas de orbes foram aprendidas. O par muda conforme lane, farm, gank, teamfight, recuo, push, save ou objetivo; nível, mana e cooldown usam os dados importados. Os três orbes passaram a ser componentes passivos no runtime e não podem mais ser disparados como ataques genéricos.
+- Estalo Glacial, Passo Espectral, Ciclone, Pulso de Mana, Alacridade, Meteoro Caótico, Golpe Solar, Espírito Forjado, Muralha de Gelo e Onda Ensurdecedora receberam nomes e normalizações runtime para controle, mana burn, buff, summon, mobilidade e deslocamento. As aproximações continuam declaradas na matriz, sem fingir geometria ou invocação manual completa.
+- As três canções entram uma por vez depois de aprender a ultimate: dano para combate/objetivo, velocidade para recuo e cura para vida baixa/save. O nível acompanha a ultimate e os efeitos, mana e cooldown chegam ao mesmo seletor usado pela IA e pelo painel. O disfarce contextual do guerreiro macaco também entra apenas durante recuo.
+- Ativação atual: 707 completas, 14 aproximadas e 13 ausentes. Permanecem bloqueadas quatro souvenirs que precisam de aquisição/charges, quatro skills da stance alternativa e cinco subskills que dependem de Spirit Form, Spirits, remnant colocado ou árvore carregada.
+- Auditoria atual: 3 completas, 628 parciais, 13 aproximações intencionais e 90 ausentes. Testes cobrem receitas, limite de dois feitiços, troca por contexto, orbes não-castáveis, escala, mana, cooldown, cura e utilidade de recuo.
+- O kit runtime passou a ter cache por Arcane, invalidado por herói, inventário, níveis, situação e faixa de vida. Benchmark A/B sob a mesma carga: `HEAD` em 37,4x wall e esta rodada em 50,7x wall / 47,1x CPU; digest `9ebd3080f5fadc7e` permaneceu estável.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

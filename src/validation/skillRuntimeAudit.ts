@@ -1,7 +1,7 @@
 import { HERO_SKILL_RUNTIME_OFFICIAL } from '../data/heroSkillRuntimeOfficial.ts'
 import type { HeroSkillDefinition } from '../game-systems/heroAttributes.ts'
 import { getOfficialSkillsForHero } from '../game-systems/officialHeroSkillsAdapter.ts'
-import { getSkillRuntimeUnlockRule, type RuntimeSkillSet } from '../game-systems/skillUnlocks.ts'
+import { getRuntimeNormalizedSkill, getSkillRuntimeUnlockRule, type RuntimeSkillSet } from '../game-systems/skillUnlocks.ts'
 
 export type SkillSupportStatus = 'complete' | 'partial' | 'approximate' | 'missing'
 
@@ -125,7 +125,8 @@ export function getOfficialSkillCatalog(): CatalogSkill[] {
 }
 
 function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
-  const { heroId, runtimeSet, skill } = entry
+  const { heroId, runtimeSet } = entry
+  const skill = getRuntimeNormalizedSkill(entry.skill)
   const families: SkillSupportFamily[] = []
   const tags = [...new Set([skill.sourceTag, ...(skill.mechanics ?? []), ...skill.tags].filter((tag): tag is string => Boolean(tag)))].sort()
   const valueKeys = Object.keys(skill.values).sort()
@@ -135,7 +136,7 @@ function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
 
   add(
     'activation',
-    unlockRule === 'unsupported_contextual' ? 'missing' : 'complete',
+    getActivationStatus(unlockRule),
     getUnlockEvidence(unlockRule),
   )
 
@@ -320,5 +321,17 @@ function getUnlockEvidence(rule: ReturnType<typeof getSkillRuntimeUnlockRule>) {
   if (rule === 'primary') return 'available to the runtime skill selector'
   if (rule === 'scepter_item') return 'unlocked by an inventory item with upgradeSlot=scepter'
   if (rule === 'shard_item') return 'unlocked by an inventory item with upgradeSlot=shard'
+  if (rule === 'invoked_loadout') return 'up to two invoked spells are selected from learned orb recipes and the current AI situation'
+  if (rule === 'song_loadout') return 'one song is selected from ultimate level, health, and the current AI situation'
+  if (rule === 'situational_utility') return 'utility action becomes available in its matching AI situation'
+  if (rule === 'souvenir_resource') return 'souvenir requires a dedicated acquisition and charge resource'
+  if (rule === 'alternate_stance') return 'alternate weapon skills require a persistent stance state'
+  if (rule === 'parent_state') return 'subskill requires its parent ability state to be active'
   return 'imported contextual/subskill action without a dedicated activation state machine'
+}
+
+function getActivationStatus(rule: ReturnType<typeof getSkillRuntimeUnlockRule>): SkillSupportStatus {
+  if (rule === 'invoked_loadout' || rule === 'song_loadout' || rule === 'situational_utility') return 'approximate'
+  if (rule === 'souvenir_resource' || rule === 'alternate_stance' || rule === 'parent_state' || rule === 'unsupported_contextual') return 'missing'
+  return 'complete'
 }

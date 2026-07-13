@@ -45,7 +45,16 @@ import {
 } from '../game-systems/nonCombatFormulas.ts'
 import { expectedTimeToKillStructure, isBackdoorProtected, structureDamageTaken } from '../game-systems/structureFormulas.ts'
 import { getPrimarySkillUsageSituation, getSkillAiUsageScore, getSkillEffectProfile, hasSkillTag, isConfirmedGlobalSkill } from '../game-systems/skillRuntime.ts'
-import { abilityUpgradeItemIds, getGrantedSkillLevel, getRuntimeHeroSkills, type AbilityUpgradeSlot } from '../game-systems/skillUnlocks.ts'
+import {
+  abilityUpgradeItemIds,
+  getContextualSkillIds,
+  getContextualSkillLevel,
+  getGrantedSkillLevel,
+  hasAutomaticContextualSkillSelection,
+  getRuntimeHeroSkills,
+  getSkillRuntimeUnlockRule,
+  type AbilityUpgradeSlot,
+} from '../game-systems/skillUnlocks.ts'
 import {
   getLaneCreepReward,
   getLaneCreepStats,
@@ -934,6 +943,14 @@ let shopItemById = new Map<string, ShopItem>()
 let shopItemByName = new Map<string, ShopItem>()
 let shopItemsByInventory = new WeakMap<string[], ShopItem[]>()
 let abilityUpgradeSlotsByInventory = new WeakMap<string[], Set<AbilityUpgradeSlot>>()
+let runtimeSkillsByArcane = new WeakMap<object, {
+  heroDefinitionId: string
+  items: string[]
+  skillLevels?: SkillLevels
+  situation?: ReturnType<typeof getPrimarySkillUsageSituation>
+  lowHealthSong?: boolean
+  skills: HeroSkillDefinition[]
+}>()
 let itemPurchasePlanByInventory = new WeakMap<string[], { plan?: ItemPurchasePlan }>()
 let shopCandidatePoolByHero = new Map<string, ShopItem[]>()
 export let getRecommendedBuildItemIdsForHero = (_heroDefinitionId: string): string[] => []
@@ -955,6 +972,7 @@ export async function loadGameData() {
   shopItemByName = new Map(shopCatalog.map((item) => [item.name, item]))
   shopItemsByInventory = new WeakMap()
   abilityUpgradeSlotsByInventory = new WeakMap()
+  runtimeSkillsByArcane = new WeakMap()
   itemPurchasePlanByInventory = new WeakMap()
   shopCandidatePoolByHero = new Map()
   consumableCatalog = itemModule.consumableCatalog
@@ -1253,8 +1271,61 @@ export function getArcaneAbilityUpgradeSlots(arcane: Pick<Arcane, 'items'>) {
   return slots
 }
 
-export function getArcaneRuntimeSkills(arcane: Pick<Arcane, 'heroDefinitionId' | 'items'>) {
-  return getRuntimeHeroSkills(getHeroDefinition(arcane.heroDefinitionId), getArcaneAbilityUpgradeSlots(arcane))
+export function getArcaneRuntimeSkills(
+  arcane: Pick<Arcane, 'heroDefinitionId' | 'items' | 'skillLevels' | 'stats' | 'aiMode' | 'macroDecision'>,
+) {
+  const definition = getHeroDefinition(arcane.heroDefinitionId)
+  const usesContextualSelection = hasAutomaticContextualSkillSelection(definition)
+  const cached = runtimeSkillsByArcane.get(arcane)
+  if (
+    !usesContextualSelection &&
+    cached?.heroDefinitionId === arcane.heroDefinitionId &&
+    cached.items === arcane.items
+  ) {
+    return cached.skills
+  }
+  const upgradeSlots = getArcaneAbilityUpgradeSlots(arcane)
+  if (!usesContextualSelection) {
+    const skills = getRuntimeHeroSkills(definition, upgradeSlots)
+    runtimeSkillsByArcane.set(arcane, {
+      heroDefinitionId: arcane.heroDefinitionId,
+      items: arcane.items,
+      skills,
+    })
+    return skills
+  }
+  const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
+  const situation = getPrimarySkillUsageSituation({
+    phase: arcane.stats.level <= 8 ? 'early' : arcane.stats.level <= 18 ? 'mid' : 'late',
+    aiMode: arcane.aiMode,
+    macroDecision: arcane.macroDecision,
+    hpRatio,
+  })
+  const lowHealthSong = hpRatio < 0.58
+  if (
+    cached?.heroDefinitionId === arcane.heroDefinitionId &&
+    cached.items === arcane.items &&
+    cached.skillLevels === arcane.skillLevels &&
+    cached.situation === situation &&
+    cached.lowHealthSong === lowHealthSong
+  ) {
+    return cached.skills
+  }
+  const contextualSkillIds = getContextualSkillIds(definition, {
+    skillLevels: arcane.skillLevels,
+    situation,
+    hpRatio,
+  })
+  const skills = getRuntimeHeroSkills(definition, upgradeSlots, contextualSkillIds)
+  runtimeSkillsByArcane.set(arcane, {
+    heroDefinitionId: arcane.heroDefinitionId,
+    items: arcane.items,
+    skillLevels: arcane.skillLevels,
+    situation,
+    lowHealthSong,
+    skills,
+  })
+  return skills
 }
 
 export function createBoss(): Boss {
@@ -7301,6 +7372,13 @@ export function getSimpleSkillLevel(arcane: Arcane, skill: HeroSkillDefinition) 
     const unlocked = getArcaneRuntimeSkills(arcane).some((candidate) => candidate.id === skill.id)
     return unlocked ? getGrantedSkillLevel(skill, arcane.stats.level) : 0
   }
+  if (skill.category === 'standard' && skill.learnable === false) {
+    const rule = getSkillRuntimeUnlockRule(skill, 'supplemental')
+    if (rule !== 'unsupported_contextual') {
+      const unlocked = getArcaneRuntimeSkills(arcane).some((candidate) => candidate.id === skill.id)
+      return unlocked ? getContextualSkillLevel(skill, arcane.skillLevels) : 0
+    }
+  }
   return arcane.skillLevels[skill.key] ?? 0
 }
 
@@ -8155,6 +8233,9 @@ export function applySimplePositiveSkill(
   }
 
   const selfTransformation = skill.target === 'self' && profile.damage > 0
+  const damageBuffPct = hasAnySimpleSkillTag(skill, ['damage_buff'])
+    ? Math.min(0.3, Math.max(0.08, profile.damage / 600))
+    : 0
   const teamMobility = hasAnySimpleSkillTag(skill, ['stampede', 'global_stealth', 'global_recall'])
   const defensiveState = hasAnySimpleSkillTag(skill, ['untargetable', 'spell_immunity', 'damage_reduction', 'borrowed_life', 'phase_shift', 'global_stealth'])
   if (profile.armorDelta > 0 || profile.attackSpeedPct > 0 || profile.summonCount > 0 || selfTransformation || defensiveState || teamMobility || hasAnySimpleSkillTag(skill, ['armor', 'durable', 'damage_buff'])) {
@@ -8169,7 +8250,7 @@ export function applySimplePositiveSkill(
         armorFlat: profile.armorDelta || (hasAnySimpleSkillTag(skill, ['armor', 'durable']) ? 2 + level : 0),
         moveSpeedPct: teamMobility ? 0.2 : 0,
         attackSpeedPct: profile.attackSpeedPct + Math.min(0.24, profile.summonCount * 0.03),
-        damagePct: Math.min(0.3, profile.summonCount * 0.035 + (selfTransformation ? profile.damage / 1000 : 0)),
+        damagePct: Math.min(0.3, damageBuffPct + profile.summonCount * 0.035 + (selfTransformation ? profile.damage / 1000 : 0)),
         incomingDamagePct: defensiveState ? 0.3 : 0,
       },
       duration: profile.summonDuration || profile.duration,
