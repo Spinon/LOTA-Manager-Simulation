@@ -10,7 +10,9 @@ import {
   buyItemAtBase,
   canTargetWithSimpleDamageSkill,
   castSimpleSkill,
+  collectTacticalCreepActivations,
   createInitialState,
+  creepTacticalActivationMargin,
   createMatchRenderFrame,
   createMatchStaticData,
   damageEntity,
@@ -38,6 +40,7 @@ import {
   getJungleStackChance,
   getHigherPriorityFarmAlly,
   getCreepXpShare,
+  getCreepSpatialGrid,
   getDenyTarget,
   getDenyCandidateFromCreeps,
   getEffectiveArcaneAttackCooldown,
@@ -74,6 +77,7 @@ import {
   isCreepRouteTargetValid,
   isUltimateSkill,
   isPointVisibleToTeam,
+  isPersistentSpatialGrid,
   loadGameData,
   materializeMatchRenderFrame,
   matchPreparationStartSeconds,
@@ -81,6 +85,7 @@ import {
   respawnArcaneIfReady,
   runeSpawnPoints,
   processJungleStacks,
+  queryCreepSpatialGrid,
   resolveDeaths,
   resolveCombat,
   simulationFrameSeconds,
@@ -101,7 +106,7 @@ import {
   type SimulationState,
   type TickFrameContext,
 } from './simulation.ts'
-import { sampleCreepMotionPlan } from './creepMotionPlans.ts'
+import { createCreepMotionPlan, sampleCreepMotionPlan } from './creepMotionPlans.ts'
 import { getSkillEffectProfile } from '../game-systems/skillRuntime.ts'
 import { parentSkillStateKey, ringmasterSouvenirAbilityIds, ringmasterSouvenirStateKey } from '../game-systems/skillUnlocks.ts'
 import type { HeroSkillDefinition } from '../game-systems/heroAttributes.ts'
@@ -121,6 +126,8 @@ function assertFiniteHealth(entity: { id: string; hp: number; maxHp: number }) {
 function createTickFrameContext(): TickFrameContext {
   return {
     routeCreepTargetCache: { attack: new Map(), vision: new Map() },
+    creepSpatialQueryBuffer: [],
+    creepSpatialIdBuffer: [],
     arcaneNearRouteCache: new Map(),
     attackableTowersCache: {},
     attackableStructuresCache: {},
@@ -1003,6 +1010,46 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   }
   assert.ok(minimumSeparation < 4, 'opposing creeps should close the initial gap before holding attack range')
   assert.ok(contactState.creeps.every((creep) => creep.motionPlan?.kind === 'hold'), 'creeps in attack range should sleep on a hold plan')
+}
+
+{
+  const activationState = createInitialState('creep-tactical-activation-test', {
+    creepMotionMode: 'planned',
+    creepSpatialMode: 'persistent',
+  })
+  activationState.time = 120
+  activationState.arcanes.forEach((arcane) => { arcane.stats.hp = 0 })
+  const wave = spawnWave(activationState)
+  const dawnCreep = wave.find((candidate) => candidate.team === 'dawn' && candidate.lane === 'mid')!
+  const duskCreep = wave.find((candidate) => candidate.team === 'dusk' && candidate.lane === 'mid')!
+  dawnCreep.pos = { x: 40, y: 50 }
+  duskCreep.pos = { x: 40 + dawnCreep.visionRange + 0.75, y: 50 }
+  dawnCreep.motionPlan = createCreepMotionPlan('route', dawnCreep.pos, { x: 60, y: 50 }, 4.2, activationState.time, activationState.time + 1.5)
+  duskCreep.motionPlan = createCreepMotionPlan('route', duskCreep.pos, { x: 20, y: 50 }, 4.2, activationState.time, activationState.time + 1.5)
+  activationState.creeps = [dawnCreep, duskCreep]
+  activationState.creepSpatialRevision += 1
+
+  const context = createTickFrameContext()
+  collectTacticalCreepActivations(activationState, context)
+  assert.equal(context.tacticalActivationCreepIds?.has(dawnCreep.id), true, 'a route plan should wake before an enemy enters exact vision')
+
+  const grid = getCreepSpatialGrid(activationState)
+  assert.ok(isPersistentSpatialGrid(grid), 'persistent mode should retain a mutable spatial index')
+  const syncCount = grid.stats.syncs
+  activationState.time += simulationFrameSeconds
+  getCreepSpatialGrid(activationState)
+  assert.equal(grid.stats.syncs, syncCount, 'the persistent index should not resync without a tactical revision')
+
+  duskCreep.pos.x = 40 + dawnCreep.visionRange + creepTacticalActivationMargin + 0.5
+  activationState.creepSpatialRevision += 1
+  const distantContext = createTickFrameContext()
+  collectTacticalCreepActivations(activationState, distantContext)
+  assert.equal(distantContext.tacticalActivationCreepIds?.has(dawnCreep.id), false, 'distant targets should leave route plans asleep')
+  assert.equal(grid.stats.syncs, syncCount + 1, 'crossing a tactical revision should synchronize the retained index once')
+
+  duskCreep.hp = 0
+  const nearbyAfterDeath = queryCreepSpatialGrid(activationState, duskCreep.pos, 2)
+  assert.equal(nearbyAfterDeath.some((creep) => creep.id === duskCreep.id), false, 'dead creeps should invalidate queries before the next bucket sync')
 }
 
 {

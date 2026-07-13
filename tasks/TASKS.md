@@ -678,7 +678,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T26 - Ativação tática e índice espacial persistente
+### [x] T26 - Ativação tática e índice espacial persistente
 
 **Objetivo**: acordar trajetórias antes de qualquer interação e parar de reconstruir grades espaciais completas por tick.
 
@@ -689,6 +689,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Invalidar imediatamente por morte, teleporte, deslocamento, aggro, pull ou mudança de objetivo.
 
 **Critérios**: nenhuma aquisição de alvo atrasada; digest/eventos aprovados no A/B; ganho incremental mensurável na partida completa.
+
+**Resultado (2026-07-13)**:
+- O índice de creeps agora mantém buckets por ID através de um token estável de runtime, inclusive quando decisões retornam uma nova referência de `state`. A sincronização acontece por revisão tática e só altera membership ao cruzar célula; mortes e remoções são filtradas imediatamente contra o array vivo.
+- Consultas quentes usam buffers de IDs e creeps reutilizados e resolvem a entidade atual pelo índice ID→posição, sem criar arrays por consulta nem conservar HP/posição obsoletos. Na partida completa auditada, 1.174.050 permanências reutilizaram o bucket e somente 32.565 movimentos cruzaram célula.
+- Planos livres podem dormir por até 1,5s. Uma varredura a 10Hz usa margem conservadora de 6 unidades e acorda a creep antes da visão/ataque de creeps, Arcanes e objetivos; aggro, pull, morte, waypoint e invalidação do alvo continuam acordando imediatamente.
+- O auditor `audit:spatial-activation` compara `rebuild` (T25) e `persistent` (T26), repete a candidata para validar digest e reprova atraso de primeiro contato acima de 0,3s. Duas seeds de 10 minutos ganharam 17,5% de taxa normalizada, com 26,2% menos `updateCreepMovement` e atraso máximo de 0,132s.
+- Na partida completa dourada, ambos os modos mantiveram vitória de Dusk: ganho normalizado de 4,0%, 33,3% menos atualizações e diferença máxima de primeiro contato de 0,231s. Os eventos e divergências de economia estão em `reports/spatial-activation-audit.json` e `reports/spatial-activation-audit-full.json`.
+- Na seed de performance usada antes da implementação, a taxa subiu de 102,2x para 126,1x (+23,4%); wall caiu de 26,91s para 20,56s e CPU de 36,72s para 29,98s. Testes, lint, build e replay no navegador em 1x/32x ficaram verdes, sem erros de console.
 
 ---
 

@@ -1,0 +1,820 @@
+{
+  "generatedAt": "2026-07-13T20:17:02.099Z",
+  "matches": 2,
+  "minutes": 10,
+  "baselineRate": 111.24963751159781,
+  "candidateRate": 130.69482126453966,
+  "normalizedGainPct": 17.478873808388524,
+  "movementUpdateReductionPct": 26.183065742236938,
+  "maxContactDelaySeconds": 0.13200000000000145,
+  "acquisitionTimingApproved": true,
+  "deterministic": true,
+  "results": [
+    {
+      "seed": "spatial-activation-audit-1",
+      "baseline": {
+        "wallSeconds": 5.4835427,
+        "diagnostics": {
+          "candidates": 562660,
+          "movementUpdates": 191695,
+          "sleepingSkips": 370965,
+          "materializations": 293433,
+          "activationScans": 0,
+          "tacticalActivations": 0
+        },
+        "digest": "5cb8245a4fbaf2bb",
+        "summary": {
+          "time": 600,
+          "kills": {
+            "dawn": 8,
+            "dusk": 2
+          },
+          "creepCount": 53,
+          "firstContacts": {
+            "top": 17.715,
+            "mid": 14.415,
+            "bot": 19.992
+          },
+          "teamEconomy": {
+            "dawn": {
+              "gold": 1843.671019849517,
+              "xp": 8755
+            },
+            "dusk": {
+              "gold": 4127.937249184224,
+              "xp": 11632
+            }
+          },
+          "towerHp": [
+            [
+              "dawn-top-t1",
+              1513.7187500000005
+            ],
+            [
+              "dawn-top-t2",
+              2000
+            ],
+            [
+              "dawn-mid-t1",
+              1668.4062500000005
+            ],
+            [
+              "dawn-mid-t2",
+              2000
+            ],
+            [
+              "dawn-bot-t1",
+              1753.90625
+            ],
+            [
+              "dawn-bot-t2",
+              2000
+            ],
+            [
+              "dawn-top-t3",
+              2000
+            ],
+            [
+              "dawn-mid-t3",
+              2000
+            ],
+            [
+              "dawn-bot-t3",
+              2000
+            ],
+            [
+              "dusk-top-t1",
+              1518.7125000000008
+            ],
+            [
+              "dusk-top-t2",
+              2000
+            ],
+            [
+              "dusk-mid-t1",
+              1670.3062500000003
+            ],
+            [
+              "dusk-mid-t2",
+              2000
+            ],
+            [
+              "dusk-bot-t1",
+              1772.5
+            ],
+            [
+              "dusk-bot-t2",
+              2000
+            ],
+            [
+              "dusk-top-t3",
+              2000
+            ],
+            [
+              "dusk-mid-t3",
+              2000
+            ],
+            [
+              "dusk-bot-t3",
+              2000
+            ]
+          ],
+          "structureHp": [
+            [
+              "dawn-top-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-top-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-mid-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-mid-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-bot-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-bot-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-top-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-top-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-bot-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-bot-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-base-t4-left",
+              2100
+            ],
+            [
+              "dawn-base-t4-right",
+              2100
+            ],
+            [
+              "dusk-base-t4-left",
+              2100
+            ],
+            [
+              "dusk-base-t4-right",
+              2100
+            ]
+          ],
+          "baseHp": [
+            [
+              "base-dawn",
+              4500
+            ],
+            [
+              "base-dusk",
+              4500
+            ]
+          ]
+        }
+      },
+      "candidate": {
+        "wallSeconds": 4.504881500000001,
+        "diagnostics": {
+          "candidates": 558855,
+          "movementUpdates": 141607,
+          "sleepingSkips": 417248,
+          "materializations": 239782,
+          "activationScans": 90807,
+          "tacticalActivations": 12700
+        },
+        "spatialStats": {
+          "syncs": 6688,
+          "additions": 576,
+          "removals": 531,
+          "crossings": 4948,
+          "retained": 181586,
+          "queries": 363520
+        },
+        "digest": "13cb53ca6e0c95f4",
+        "summary": {
+          "time": 600,
+          "kills": {
+            "dawn": 7,
+            "dusk": 0
+          },
+          "creepCount": 45,
+          "firstContacts": {
+            "top": 17.517,
+            "mid": 14.349,
+            "bot": 19.794
+          },
+          "teamEconomy": {
+            "dawn": {
+              "gold": 6431.516192518055,
+              "xp": 12739
+            },
+            "dusk": {
+              "gold": 3921.1716666664956,
+              "xp": 8570
+            }
+          },
+          "towerHp": [
+            [
+              "dawn-top-t1",
+              1800
+            ],
+            [
+              "dawn-top-t2",
+              2000
+            ],
+            [
+              "dawn-mid-t1",
+              1720.2375000000004
+            ],
+            [
+              "dawn-mid-t2",
+              2000
+            ],
+            [
+              "dawn-bot-t1",
+              1767.43125
+            ],
+            [
+              "dawn-bot-t2",
+              2000
+            ],
+            [
+              "dawn-top-t3",
+              2000
+            ],
+            [
+              "dawn-mid-t3",
+              2000
+            ],
+            [
+              "dawn-bot-t3",
+              2000
+            ],
+            [
+              "dusk-top-t1",
+              1272.3187500000013
+            ],
+            [
+              "dusk-top-t2",
+              2000
+            ],
+            [
+              "dusk-mid-t1",
+              1454.8312500000006
+            ],
+            [
+              "dusk-mid-t2",
+              2000
+            ],
+            [
+              "dusk-bot-t1",
+              1765.3125
+            ],
+            [
+              "dusk-bot-t2",
+              2000
+            ],
+            [
+              "dusk-top-t3",
+              2000
+            ],
+            [
+              "dusk-mid-t3",
+              2000
+            ],
+            [
+              "dusk-bot-t3",
+              2000
+            ]
+          ],
+          "structureHp": [
+            [
+              "dawn-top-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-top-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-mid-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-mid-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-bot-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-bot-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-top-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-top-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-bot-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-bot-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-base-t4-left",
+              2100
+            ],
+            [
+              "dawn-base-t4-right",
+              2100
+            ],
+            [
+              "dusk-base-t4-left",
+              2100
+            ],
+            [
+              "dusk-base-t4-right",
+              2100
+            ]
+          ],
+          "baseHp": [
+            [
+              "base-dawn",
+              4500
+            ],
+            [
+              "base-dusk",
+              4500
+            ]
+          ]
+        }
+      },
+      "candidateRepeatDigest": "13cb53ca6e0c95f4",
+      "divergence": {
+        "winnerChanged": false,
+        "killDelta": {
+          "dawn": -1,
+          "dusk": -2
+        },
+        "creepCountDelta": -8,
+        "teamGoldDelta": {
+          "dawn": 4587.845172668538,
+          "dusk": -206.7655825177285
+        },
+        "teamXpDelta": {
+          "dawn": 3984,
+          "dusk": -3062
+        },
+        "contactDelta": {
+          "top": -0.1980000000000004,
+          "mid": -0.06599999999999895,
+          "bot": -0.1980000000000004
+        }
+      }
+    },
+    {
+      "seed": "spatial-activation-audit-2",
+      "baseline": {
+        "wallSeconds": 5.303009299999998,
+        "diagnostics": {
+          "candidates": 543202,
+          "movementUpdates": 185186,
+          "sleepingSkips": 358016,
+          "materializations": 282353,
+          "activationScans": 0,
+          "tacticalActivations": 0
+        },
+        "digest": "48c8c56102ed8dc6",
+        "summary": {
+          "time": 600,
+          "kills": {
+            "dawn": 2,
+            "dusk": 5
+          },
+          "creepCount": 45,
+          "firstContacts": {
+            "top": 19.596,
+            "mid": 14.415,
+            "bot": 17.781
+          },
+          "teamEconomy": {
+            "dawn": {
+              "gold": 2846.2262233972187,
+              "xp": 9043
+            },
+            "dusk": {
+              "gold": 7053.024256167286,
+              "xp": 14475
+            }
+          },
+          "towerHp": [
+            [
+              "dawn-top-t1",
+              1386.6000000000004
+            ],
+            [
+              "dawn-top-t2",
+              2000
+            ],
+            [
+              "dawn-mid-t1",
+              1692.0250000000003
+            ],
+            [
+              "dawn-mid-t2",
+              2000
+            ],
+            [
+              "dawn-bot-t1",
+              1586.5812500000002
+            ],
+            [
+              "dawn-bot-t2",
+              2000
+            ],
+            [
+              "dawn-top-t3",
+              2000
+            ],
+            [
+              "dawn-mid-t3",
+              2000
+            ],
+            [
+              "dawn-bot-t3",
+              2000
+            ],
+            [
+              "dusk-top-t1",
+              1653.2312500000003
+            ],
+            [
+              "dusk-top-t2",
+              2000
+            ],
+            [
+              "dusk-mid-t1",
+              1687.8687500000005
+            ],
+            [
+              "dusk-mid-t2",
+              2000
+            ],
+            [
+              "dusk-bot-t1",
+              1800
+            ],
+            [
+              "dusk-bot-t2",
+              2000
+            ],
+            [
+              "dusk-top-t3",
+              2000
+            ],
+            [
+              "dusk-mid-t3",
+              2000
+            ],
+            [
+              "dusk-bot-t3",
+              2000
+            ]
+          ],
+          "structureHp": [
+            [
+              "dawn-top-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-top-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-mid-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-mid-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-bot-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-bot-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-top-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-top-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-bot-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-bot-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-base-t4-left",
+              2100
+            ],
+            [
+              "dawn-base-t4-right",
+              2100
+            ],
+            [
+              "dusk-base-t4-left",
+              2100
+            ],
+            [
+              "dusk-base-t4-right",
+              2100
+            ]
+          ],
+          "baseHp": [
+            [
+              "base-dawn",
+              4500
+            ],
+            [
+              "base-dusk",
+              4500
+            ]
+          ]
+        }
+      },
+      "candidate": {
+        "wallSeconds": 4.676813600000001,
+        "diagnostics": {
+          "candidates": 554200,
+          "movementUpdates": 136595,
+          "sleepingSkips": 417605,
+          "materializations": 239559,
+          "activationScans": 90101,
+          "tacticalActivations": 12452
+        },
+        "spatialStats": {
+          "syncs": 6688,
+          "additions": 576,
+          "removals": 527,
+          "crossings": 4919,
+          "retained": 180043,
+          "queries": 369239
+        },
+        "digest": "a3b7985bf09b31e7",
+        "summary": {
+          "time": 600,
+          "kills": {
+            "dawn": 4,
+            "dusk": 10
+          },
+          "creepCount": 49,
+          "firstContacts": {
+            "top": 18.012,
+            "mid": 14.547,
+            "bot": 17.814
+          },
+          "teamEconomy": {
+            "dawn": {
+              "gold": 2238.585268748852,
+              "xp": 7529
+            },
+            "dusk": {
+              "gold": 5203.125174484854,
+              "xp": 16665
+            }
+          },
+          "towerHp": [
+            [
+              "dawn-top-t1",
+              1699.8625000000002
+            ],
+            [
+              "dawn-top-t2",
+              2000
+            ],
+            [
+              "dawn-mid-t1",
+              1587.5375000000004
+            ],
+            [
+              "dawn-mid-t2",
+              2000
+            ],
+            [
+              "dawn-bot-t1",
+              1425.7687500000006
+            ],
+            [
+              "dawn-bot-t2",
+              2000
+            ],
+            [
+              "dawn-top-t3",
+              2000
+            ],
+            [
+              "dawn-mid-t3",
+              2000
+            ],
+            [
+              "dawn-bot-t3",
+              2000
+            ],
+            [
+              "dusk-top-t1",
+              1800
+            ],
+            [
+              "dusk-top-t2",
+              2000
+            ],
+            [
+              "dusk-mid-t1",
+              1716.2625000000005
+            ],
+            [
+              "dusk-mid-t2",
+              2000
+            ],
+            [
+              "dusk-bot-t1",
+              1800
+            ],
+            [
+              "dusk-bot-t2",
+              2000
+            ],
+            [
+              "dusk-top-t3",
+              2000
+            ],
+            [
+              "dusk-mid-t3",
+              2000
+            ],
+            [
+              "dusk-bot-t3",
+              2000
+            ]
+          ],
+          "structureHp": [
+            [
+              "dawn-top-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-top-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-mid-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-mid-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-bot-barracks_melee",
+              2200
+            ],
+            [
+              "dawn-bot-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-top-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-top-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-mid-barracks_ranged",
+              2200
+            ],
+            [
+              "dusk-bot-barracks_melee",
+              2200
+            ],
+            [
+              "dusk-bot-barracks_ranged",
+              2200
+            ],
+            [
+              "dawn-base-t4-left",
+              2100
+            ],
+            [
+              "dawn-base-t4-right",
+              2100
+            ],
+            [
+              "dusk-base-t4-left",
+              2100
+            ],
+            [
+              "dusk-base-t4-right",
+              2100
+            ]
+          ],
+          "baseHp": [
+            [
+              "base-dawn",
+              4500
+            ],
+            [
+              "base-dusk",
+              4500
+            ]
+          ]
+        }
+      },
+      "candidateRepeatDigest": "a3b7985bf09b31e7",
+      "divergence": {
+        "winnerChanged": false,
+        "killDelta": {
+          "dawn": 2,
+          "dusk": 5
+        },
+        "creepCountDelta": 4,
+        "teamGoldDelta": {
+          "dawn": -607.6409546483669,
+          "dusk": -1849.8990816824316
+        },
+        "teamXpDelta": {
+          "dawn": -1514,
+          "dusk": 2190
+        },
+        "contactDelta": {
+          "top": -1.5839999999999996,
+          "mid": 0.13200000000000145,
+          "bot": 0.03300000000000125
+        }
+      }
+    }
+  ]
+}

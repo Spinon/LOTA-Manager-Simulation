@@ -80,6 +80,13 @@ import {
   sampleCreepMotionPlan,
   type CreepMotionPlan,
 } from './creepMotionPlans.ts'
+import {
+  createPersistentSpatialGrid,
+  queryPersistentSpatialGridIdsInto,
+  queryPersistentSpatialGridInto,
+  syncPersistentSpatialGrid,
+  type PersistentSpatialGrid,
+} from './persistentSpatialGrid.ts'
 
 export type TeamId = 'dawn' | 'dusk'
 export type TeamMatchOutcome = 'winner' | 'loser' | 'draw'
@@ -95,12 +102,18 @@ export type StructureKind = 'barracks_melee' | 'barracks_ranged' | 'tower_tier_4
 export type TeamObjectiveKind = 'tower' | 'structure' | 'base' | 'boss' | 'pickoff'
 export type DecisionStatus = 'sharp' | 'steady' | 'hesitant' | 'tilted'
 export type CreepMotionMode = 'fixed' | 'planned'
-export type SimulationOptions = { creepMotionMode?: CreepMotionMode }
+export type CreepSpatialMode = 'rebuild' | 'persistent'
+export type SimulationOptions = {
+  creepMotionMode?: CreepMotionMode
+  creepSpatialMode?: CreepSpatialMode
+}
 export type CreepMotionDiagnostics = {
   candidates: number
   movementUpdates: number
   sleepingSkips: number
   materializations: number
+  activationScans: number
+  tacticalActivations: number
 }
 export type Selected = { kind: EntityKind; id: string } | undefined
 
@@ -112,6 +125,8 @@ export function beginCreepMotionDiagnostics() {
     movementUpdates: 0,
     sleepingSkips: 0,
     materializations: 0,
+    activationScans: 0,
+    tacticalActivations: 0,
   }
 }
 
@@ -324,6 +339,9 @@ export type CombatTarget = Arcane | Creep | Tower | Structure | Base | Camp | Bo
 export type RouteCreepTargetMode = 'attack' | 'vision'
 export type TickFrameContext = {
   routeCreepTargetCache: Record<RouteCreepTargetMode, Map<string, CombatTarget | null>>
+  creepSpatialQueryBuffer: Creep[]
+  creepSpatialIdBuffer: string[]
+  tacticalActivationCreepIds?: Set<string>
   // Caches válidos dentro de um único tick (mesma semântica do cache de alvo
   // acima: pequenas mutações de posição/hp no meio do tick são ignoradas).
   arcaneNearRouteCache: Map<Point[], Map<string, boolean>>
@@ -336,6 +354,8 @@ export type SpatialGrid<T extends { pos: Point }> = {
   cellSize: number
   cells: Map<number, T[]>
 }
+export const tickCreepSpatialQueryBuffer: Creep[] = []
+export const tickCreepSpatialIdBuffer: string[] = []
 export type MapRune = {
   id: string
   kind: RuneKind
@@ -368,8 +388,11 @@ export type TeamFortification = {
   targetId?: string
 }
 export type SimulationState = {
+  runtimeToken: object
   matchSeed: string
   creepMotionMode: CreepMotionMode
+  creepSpatialMode: CreepSpatialMode
+  creepSpatialRevision: number
   time: number
   nextWave: number
   kills: Record<TeamId, number>
@@ -402,7 +425,8 @@ export type SimulationState = {
 
 export const analyzedGameStateCache = new WeakMap<SimulationState, { time: number; analyzed: AnalyzedGameState }>()
 export const playerAiProfileCache = new Map<string, ReturnType<typeof buildPlayerAiProfile>>()
-export const creepSpatialGridCache = new WeakMap<SimulationState, { time: number; grid: SpatialGrid<Creep> }>()
+export type CreepSpatialGrid = SpatialGrid<Creep> | PersistentSpatialGrid<Creep>
+export const creepSpatialGridCache = new WeakMap<object, { revision: number; time: number; grid: CreepSpatialGrid }>()
 export const aliveTowersByLaneCache = new WeakMap<SimulationState, { time: number; byTeamLane: Map<string, Tower[]> }>()
 export const offensiveThreatCache = new WeakMap<Arcane, { time: number; range: number; readyDamage: number }>()
 type TeamVisionProvider = { pos: Point; range: number }
@@ -424,7 +448,7 @@ export type SimulationEntityIndexes = {
   arcaneIds: string[]
 }
 
-const simulationEntityIndexesCache = new WeakMap<SimulationState, {
+const simulationEntityIndexesCache = new WeakMap<object, {
   indexes: SimulationEntityIndexes
   creepCount: number
   firstCreepId?: string
@@ -1116,8 +1140,11 @@ export function createInitialState(seed = 'lota-default-seed', options: Simulati
   })
 
   return {
+    runtimeToken: {},
     matchSeed: seed,
     creepMotionMode: options.creepMotionMode ?? 'planned',
+    creepSpatialMode: options.creepSpatialMode ?? 'persistent',
+    creepSpatialRevision: 0,
     time: matchPreparationStartSeconds,
     nextWave: 0,
     kills: { dawn: 0, dusk: 0 },
@@ -1698,8 +1725,12 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   const previousCombatEventSignature = shouldDecide && hasActiveCombatEncounter
     ? getCombatCriticalEventSignature(next)
     : undefined
+  tickCreepSpatialQueryBuffer.length = 0
+  tickCreepSpatialIdBuffer.length = 0
   const frameContext: TickFrameContext = {
     routeCreepTargetCache: { attack: new Map(), vision: new Map() },
+    creepSpatialQueryBuffer: tickCreepSpatialQueryBuffer,
+    creepSpatialIdBuffer: tickCreepSpatialIdBuffer,
     arcaneNearRouteCache: new Map(),
     attackableTowersCache: {},
     attackableStructuresCache: {},
@@ -1712,6 +1743,7 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   if (next.time >= 0 && next.time >= next.nextWave) {
     next.creeps.push(...spawnWave(next))
     next.nextWave += NON_COMBAT_RULES.map.waveIntervalSeconds
+    next.creepSpatialRevision += 1
   }
   next.runes = spawnRunesForTick(next, previousTime)
   // Ouro passivo acumula na cadência do gate de decisão (mesma taxa por
@@ -1780,7 +1812,11 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   })
   next = processJungleStacks(next, previousTime)
   next.boss = updateBoss(next.boss, next.time, delta)
-  if (shouldDecide) materializeCreepMotionPlansForTacticalWindow(next)
+  if (shouldDecide) {
+    materializeCreepMotionPlansForTacticalWindow(next)
+    next.creepSpatialRevision += 1
+    collectTacticalCreepActivations(next, frameContext)
+  }
 
   const needsInitialTeamPlan = next.teamPlans.dawn === undefined || next.teamPlans.dusk === undefined
   if ((shouldDecide || needsInitialTeamPlan) && (needsInitialTeamPlan || next.time >= next.nextTeamDecisionAt)) {
@@ -2156,8 +2192,11 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
   })
 
   return {
+    runtimeToken: {},
     matchSeed: frame.matchSeed,
     creepMotionMode: 'planned',
+    creepSpatialMode: 'persistent',
+    creepSpatialRevision: 0,
     time: frame.time,
     nextWave: 0,
     kills: { dawn: frame.kills[0], dusk: frame.kills[1] },
@@ -3802,7 +3841,7 @@ export function getBaseThreat(state: SimulationState, team: TeamId) {
     arcane.stats.hp > 0 &&
     arcane.respawn <= state.time
   )), 18)
-  const nearBaseEnemyCreeps = querySpatialGrid(getCreepSpatialGrid(state), base.pos, 12)
+  const nearBaseEnemyCreeps = queryCreepSpatialGrid(state, base.pos, 12)
     .filter((creep) => creep.team !== team)
   const enemyCreep = nearest(base.pos, nearBaseEnemyCreeps, 12)
   const pressure = state.arcanes.filter((arcane) => arcane.team !== team && arcane.stats.hp > 0 && arcane.respawn <= state.time && distance(arcane.pos, base.pos) <= 20).length * 2 +
@@ -7063,11 +7102,12 @@ export function rebaseCreepMotionPlansAfterHitboxes(state: SimulationState) {
   }
 }
 
-export function shouldWakeCreepMotionPlan(creep: Creep, state: SimulationState) {
+export function shouldWakeCreepMotionPlan(creep: Creep, state: SimulationState, frameContext?: TickFrameContext) {
   const plan = creep.motionPlan
   if (!plan) return true
   if (state.time + 0.0001 >= plan.endsAt || creep.pullCampId || creep.pullUntil) return true
   if (creep.aggroTargetId && (creep.aggroUntil ?? 0) > state.time) return true
+  if (frameContext?.tacticalActivationCreepIds?.has(creep.id)) return true
   if (!creep.routeTargetId) return false
 
   const target = getCombatTargetById(state, creep.routeTargetId)
@@ -7089,7 +7129,7 @@ export function updateCreepsForTick(state: SimulationState, delta: number, frame
       if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.movementUpdates += 1
       return updateCreepMovement(creep, state, delta, frameContext)
     }
-    if (!shouldWakeCreepMotionPlan(creep, state)) {
+    if (!shouldWakeCreepMotionPlan(creep, state, frameContext)) {
       if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.sleepingSkips += 1
       return creep
     }
@@ -7103,7 +7143,13 @@ export function canHoldCreepMotionTarget(target: CombatTarget) {
   return !('player' in target) && !('strength' in target) && !isBoss(target)
 }
 
-export function getCreepMotionWakeAt(creep: Creep, time: number) {
+export function getCreepMotionWakeAt(
+  creep: Creep,
+  time: number,
+  kind: CreepMotionPlan['kind'],
+  spatialMode: CreepSpatialMode,
+) {
+  if (kind === 'route' && spatialMode === 'persistent') return time + 1.5
   const scheduledEvaluation = creep.nextRouteTargetEvaluationAt ?? time + creepTargetEvaluationIntervalSeconds
   return scheduledEvaluation > time + 0.0001
     ? Math.min(scheduledEvaluation, time + creepTargetEvaluationIntervalSeconds)
@@ -7170,7 +7216,7 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
           creep.pos,
           0,
           state.time,
-          getCreepMotionWakeAt(creep, state.time),
+          getCreepMotionWakeAt(creep, state.time, 'hold', state.creepSpatialMode),
         ),
       }
     }
@@ -7205,7 +7251,7 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
         destination,
         4.2,
         state.time,
-        getCreepMotionWakeAt(creep, state.time),
+        getCreepMotionWakeAt(creep, state.time, 'route', state.creepSpatialMode),
       ),
     }
   }
@@ -7253,11 +7299,17 @@ export function isArcaneNearRouteCached(arcane: Arcane, path: Point[], frameCont
   return result
 }
 
-export function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: RouteCreepTargetMode = 'attack', frameContext?: TickFrameContext) {
+export function getRouteCreepTarget(
+  creep: Creep,
+  state: SimulationState,
+  mode: RouteCreepTargetMode = 'attack',
+  frameContext?: TickFrameContext,
+  activationMargin = 0,
+) {
   const structureRange = isMeleeCreep(creep) ? 3.2 : creep.range
   const visionRange = getCreepVisionRange(creep)
-  const unitRange = mode === 'attack' ? creep.range : visionRange
-  const objectiveRange = mode === 'attack' ? structureRange : visionRange
+  const unitRange = (mode === 'attack' ? creep.range : visionRange) + activationMargin
+  const objectiveRange = (mode === 'attack' ? structureRange : visionRange) + activationMargin
   const lanePath = lanePaths[creep.team][creep.lane]
   const isArcaneNearLane = (arcane: Arcane) => (
     frameContext
@@ -7269,8 +7321,13 @@ export function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: 
       ? nearestReachableByCreep(creep, entities, range)
       : nearest(creep.pos, entities, range)
   )
-  const creepGrid = getCreepSpatialGrid(state)
-  const nearbyCreeps = querySpatialGrid(creepGrid, creep.pos, unitRange + 2.5)
+  const nearbyCreeps = queryCreepSpatialGridInto(
+    state,
+    creep.pos,
+    unitRange + 2.5,
+    frameContext?.creepSpatialQueryBuffer ?? [],
+    frameContext?.creepSpatialIdBuffer ?? [],
+  )
   const pullCamp = getActivePullCampForCreep(state, creep)
   if (pullCamp) {
     const pullTarget = selectTarget([pullCamp], unitRange)
@@ -7286,10 +7343,7 @@ export function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: 
     : undefined
   if (aggroTarget) return aggroTarget
 
-  const enemyCreep = selectTarget(
-    nearbyCreeps.filter((other) => other.team !== creep.team && other.lane === creep.lane),
-    unitRange,
-  )
+  const enemyCreep = nearestRouteEnemyCreep(creep, nearbyCreeps, unitRange, mode)
   if (enemyCreep) return enemyCreep
 
   const attackableTowers = frameContext
@@ -10420,7 +10474,7 @@ export function getPointCentroid(points: Point[]): Point {
 }
 
 export function getSimulationEntityIndexes(state: SimulationState) {
-  const cached = simulationEntityIndexesCache.get(state)
+  const cached = simulationEntityIndexesCache.get(state.runtimeToken)
   const firstCreepId = state.creeps[0]?.id
   const lastCreepId = state.creeps.at(-1)?.id
   if (cached) {
@@ -10447,7 +10501,7 @@ export function getSimulationEntityIndexes(state: SimulationState) {
     arcaneIds: state.arcanes.map((arcane) => arcane.id),
   }
   rebuildCreepIndexes(indexes, state.creeps)
-  simulationEntityIndexesCache.set(state, {
+  simulationEntityIndexesCache.set(state.runtimeToken, {
     indexes,
     creepCount: state.creeps.length,
     firstCreepId,
@@ -10965,6 +11019,43 @@ export function nearestCreepAtIndices(point: Point, creeps: Creep[], indices: nu
   return closest
 }
 
+export const creepTacticalActivationMargin = 6
+
+export function collectTacticalCreepActivations(state: SimulationState, frameContext: TickFrameContext) {
+  if (state.creepMotionMode !== 'planned' || state.creepSpatialMode !== 'persistent') return
+  const activations = frameContext.tacticalActivationCreepIds ?? new Set<string>()
+  activations.clear()
+  frameContext.tacticalActivationCreepIds = activations
+
+  for (const creep of state.creeps) {
+    if (creep.hp <= 0 || creep.motionPlan?.kind !== 'route') continue
+    if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.activationScans += 1
+    const target = getRouteCreepTarget(creep, state, 'vision', frameContext, creepTacticalActivationMargin)
+    if (!target) continue
+    activations.add(creep.id)
+    if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.tacticalActivations += 1
+  }
+}
+
+export function nearestRouteEnemyCreep(
+  creep: Creep,
+  candidates: Creep[],
+  range: number,
+  mode: RouteCreepTargetMode,
+) {
+  let closest: Creep | undefined
+  let closestDistanceSquared = Number.POSITIVE_INFINITY
+  for (const candidate of candidates) {
+    if (candidate.team === creep.team || candidate.lane !== creep.lane || candidate.hp <= 0) continue
+    const candidateDistanceSquared = distanceSquared(creep.pos, candidate.pos)
+    const reach = mode === 'attack' ? getCreepAttackCenterRange(creep, candidate, range) : range
+    if (candidateDistanceSquared > closestDistanceSquared || candidateDistanceSquared > reach * reach) continue
+    closest = candidate
+    closestDistanceSquared = candidateDistanceSquared
+  }
+  return closest
+}
+
 export function nearestAliveArcane(point: Point, arcanes: Arcane[], time: number, range: number) {
   let closest: Arcane | undefined
   let closestDistanceSquared = range * range
@@ -11026,12 +11117,54 @@ export function nearestReachableByArcane<T extends { pos: Point }>(arcane: Arcan
 }
 
 export function getCreepSpatialGrid(state: SimulationState) {
-  const cached = creepSpatialGridCache.get(state)
-  if (cached && cached.time === state.time) return cached.grid
+  const cached = creepSpatialGridCache.get(state.runtimeToken)
+  if (state.creepSpatialMode === 'persistent' && cached?.revision === state.creepSpatialRevision && isPersistentSpatialGrid(cached.grid)) {
+    return cached.grid
+  }
+  if (state.creepSpatialMode === 'rebuild' && cached?.time === state.time && !isPersistentSpatialGrid(cached.grid)) return cached.grid
 
-  const grid = buildSpatialGrid(state.creeps.filter((creep) => creep.hp > 0), proximityGridCellSize)
-  creepSpatialGridCache.set(state, { time: state.time, grid })
-  return grid
+  if (state.creepSpatialMode === 'persistent') {
+    const grid = cached?.grid && isPersistentSpatialGrid(cached.grid)
+      ? cached.grid
+      : createPersistentSpatialGrid<Creep>(proximityGridCellSize)
+    syncPersistentSpatialGrid(grid, state.creeps, (creep) => creep.hp > 0)
+    creepSpatialGridCache.set(state.runtimeToken, { revision: state.creepSpatialRevision, time: state.time, grid })
+    return grid
+  }
+
+  const rebuilt = buildSpatialGrid(state.creeps.filter((creep) => creep.hp > 0), proximityGridCellSize)
+  creepSpatialGridCache.set(state.runtimeToken, { revision: state.creepSpatialRevision, time: state.time, grid: rebuilt })
+  return rebuilt
+}
+
+export function queryCreepSpatialGrid(
+  state: SimulationState,
+  point: Point,
+  radius: number,
+) {
+  return queryCreepSpatialGridInto(state, point, radius, [], [])
+}
+
+export function queryCreepSpatialGridInto(
+  state: SimulationState,
+  point: Point,
+  radius: number,
+  results: Creep[],
+  idBuffer: string[],
+) {
+  const grid = getCreepSpatialGrid(state)
+  if (!isPersistentSpatialGrid(grid)) return querySpatialGridInto(grid, point, radius, results)
+
+  queryPersistentSpatialGridIdsInto(grid, point, radius, idBuffer)
+  results.length = 0
+  const creepIndexes = getSimulationEntityIndexes(state).creep
+  for (const id of idBuffer) {
+    const index = creepIndexes.get(id)
+    if (index === undefined) continue
+    const creep = state.creeps[index]
+    if (creep?.hp > 0) results.push(creep)
+  }
+  return results
 }
 
 export function buildSpatialGrid<T extends { pos: Point }>(entities: T[], cellSize: number): SpatialGrid<T> {
@@ -11048,12 +11181,24 @@ export function buildSpatialGrid<T extends { pos: Point }>(entities: T[], cellSi
   return { cellSize, cells }
 }
 
-export function querySpatialGrid<T extends { pos: Point }>(grid: SpatialGrid<T>, point: Point, radius: number): T[] {
+export function querySpatialGrid<T extends { id?: string; pos: Point }>(grid: SpatialGrid<T> | PersistentSpatialGrid<T & { id: string }>, point: Point, radius: number): T[] {
+  return querySpatialGridInto(grid, point, radius, [])
+}
+
+export function querySpatialGridInto<T extends { id?: string; pos: Point }>(
+  grid: SpatialGrid<T> | PersistentSpatialGrid<T & { id: string }>,
+  point: Point,
+  radius: number,
+  results: T[],
+) {
+  if (isPersistentSpatialGrid(grid)) {
+    return queryPersistentSpatialGridInto(grid, point, radius, results as Array<T & { id: string }>)
+  }
   const minX = Math.floor((point.x - radius) / grid.cellSize)
   const maxX = Math.floor((point.x + radius) / grid.cellSize)
   const minY = Math.floor((point.y - radius) / grid.cellSize)
   const maxY = Math.floor((point.y + radius) / grid.cellSize)
-  const results: T[] = []
+  results.length = 0
 
   for (let y = minY; y <= maxY; y += 1) {
     for (let x = minX; x <= maxX; x += 1) {
@@ -11063,6 +11208,12 @@ export function querySpatialGrid<T extends { pos: Point }>(grid: SpatialGrid<T>,
   }
 
   return results
+}
+
+export function isPersistentSpatialGrid<T extends { id?: string; pos: Point }>(
+  grid: SpatialGrid<T> | PersistentSpatialGrid<T & { id: string }>,
+): grid is PersistentSpatialGrid<T & { id: string }> {
+  return 'entityById' in grid
 }
 
 export function getSpatialGridKey(point: Point, cellSize: number) {
@@ -11194,7 +11345,7 @@ export function getDangerScore(state: SimulationState, arcane: Arcane, visibleEn
   enemy.respawn <= state.time &&
   isPointVisibleToTeam(state, arcane.team, enemy.pos)
 ))) {
-  const nearbyEnemyCreeps = querySpatialGrid(getCreepSpatialGrid(state), arcane.pos, 8)
+  const nearbyEnemyCreeps = queryCreepSpatialGrid(state, arcane.pos, 8)
   const enemyHeroPressure = visibleEnemies.reduce((score, enemy) => {
     const range = 16
     const proximity = Math.max(0, 1 - distance(arcane.pos, enemy.pos) / range)
@@ -11246,7 +11397,7 @@ export function getEnemyActionThreatScore(
     isPointVisibleToTeam(state, arcane.team, enemy.pos)
   )),
 ) {
-  const nearbyEnemyCreeps = querySpatialGrid(getCreepSpatialGrid(state), point, 20)
+  const nearbyEnemyCreeps = queryCreepSpatialGrid(state, point, 20)
   const towerThreat = state.towers
     .filter((tower) => tower.team !== arcane.team && tower.hp > 0)
     .reduce((score, tower) => {
@@ -11343,7 +11494,7 @@ export function isUnsafeUnderEnemyTower(state: SimulationState, team: TeamId, po
   const enemyTower = nearest(point, getAliveTowersInLane(state, enemyTeam, lane), 9.8)
   if (!enemyTower) return false
 
-  const nearbyCreeps = querySpatialGrid(getCreepSpatialGrid(state), enemyTower.pos, 8)
+  const nearbyCreeps = queryCreepSpatialGrid(state, enemyTower.pos, 8)
   const alliedWave = nearest(enemyTower.pos, nearbyCreeps.filter((creep) => creep.team === team && creep.lane === lane), 8)
   return !alliedWave
 }
@@ -11361,7 +11512,7 @@ export function isTooDeepForAggression(state: SimulationState, arcane: Arcane, p
 
   if (targetProgress <= towerProgress + allowedAfterTower) return false
 
-  const nearbyCreeps = querySpatialGrid(getCreepSpatialGrid(state), point, 9)
+  const nearbyCreeps = queryCreepSpatialGrid(state, point, 9)
   const alliedWave = nearest(point, nearbyCreeps.filter((creep) => creep.team === arcane.team && creep.lane === lane), 9)
   return !alliedWave
 }
