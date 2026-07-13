@@ -2201,6 +2201,8 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
     const auraMultiplier = getAuraMultiplier(state, entity.team)
     const damageRange = getArcaneDamageRangeLabel(state, entity, auraMultiplier)
     const teamPlan = state.teamPlans[entity.team]
+    const combatBoard = state.combatBlackboards[entity.team]
+      .find((board) => board.alliedHeroIds.includes(entity.id) || board.enemyHeroIds.includes(entity.id))
     const activeEffects = getActiveEffectLabels(state, entity)
     const hpPercent = Math.round((entity.stats.hp / Math.max(1, entity.stats.maxHp * auraMultiplier)) * 100)
     const manaPercent = Math.round((entity.stats.mana / Math.max(1, entity.stats.maxMana * auraMultiplier)) * 100)
@@ -2272,6 +2274,9 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
               ['Modo', getPlayerModeLabel(entity.aiMode)],
               ['Exec.', `${entity.aiExecutionChance}% / ${entity.aiExecutionDelay.toFixed(1)}s`],
               ['Falha', entity.aiFailure ? getExecutionFailureLabel(entity.aiFailure) : 'Nao'],
+              ['Encontro', combatBoard ? getCombatEncounterLabel(combatBoard.encounterType) : 'Fora de luta'],
+              ['Fase', combatBoard ? getCombatPhaseLabel(combatBoard.phase) : '-'],
+              ['Local', combatBoard ? `${combatBoard.alliedHeroIds.length}v${combatBoard.enemyHeroIds.length}` : '-'],
               ['Razao', entity.aiReason],
             ]}
           />
@@ -2777,6 +2782,41 @@ function DecisionSummary({ macroDecision, microDecision }: { macroDecision: stri
       </div>
     </div>
   )
+}
+
+function getCombatEncounterLabel(type: string) {
+  const labels: Record<string, string> = {
+    lane_trade: 'Trade de lane',
+    lane_all_in: 'All-in de lane',
+    tower_dive: 'Dive',
+    counter_dive: 'Counter-dive',
+    river_skirmish: 'Skirmish',
+    rune_skirmish: 'Disputa de runa',
+    jungle_skirmish: 'Luta na jungle',
+    camp_contest: 'Disputa de campo',
+    objective_skirmish: 'Disputa de objetivo',
+    full_teamfight: 'Teamfight',
+    high_ground_fight: 'Highground',
+    base_defense: 'Defesa da base',
+    chase: 'Perseguicao',
+    disengage: 'Disengage',
+  }
+  return labels[type] ?? type
+}
+
+function getCombatPhaseLabel(phase: string) {
+  const labels: Record<string, string> = {
+    pre_contact: 'Pre-contato',
+    poke: 'Poke',
+    opening: 'Abertura',
+    commit: 'Commit',
+    sustain: 'Sustentacao',
+    collapse: 'Colapso',
+    chase: 'Perseguicao',
+    disengage: 'Recuo',
+    reset: 'Reset',
+  }
+  return labels[phase] ?? phase
 }
 
 function getItemEffectKindLabel(kind: string) {

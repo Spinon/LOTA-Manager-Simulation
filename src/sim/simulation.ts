@@ -6,6 +6,10 @@ import { addAiMemoryEvent, areaDangerFromMemory, pruneAiMemory } from '../ai/mem
 import { selectPlayerMode } from '../ai/player/playerAgent.ts'
 import { selectTeamPlan } from '../ai/team/teamBrain.ts'
 import type { AiMemoryEvent, AnalyzedGameState, ExecutionFailureType, PlayerModeType, RawAiGameSnapshot, TeamPlan } from '../ai/types/aiTypes.ts'
+import { detectCombatEncounters } from '../ai/combat/analysis/combatContextAnalyzer.ts'
+import { COMBAT_AI_RULES } from '../ai/combat/config/combatAiConstants.ts'
+import { createEmptyCombatBlackboards, updateCombatBlackboards } from '../ai/combat/teamfight/combatBlackboard.ts'
+import type { CombatBlackboard, CombatBlackboardState, CombatDetectionInput } from '../ai/combat/types/combatAiTypes.ts'
 import { resolveDamage, type CombatDamageType } from '../game-systems/combatFormulas.ts'
 import { applyBarrier, applyFlatAndPercentModifiers, canDispelEffect, finalDebuffDuration, finalSlowValue, type DispelPower, type DispelType } from '../game-systems/effectFormulas.ts'
 import { calculateHeroStats, type AttackType, type HeroDefinition, type HeroRole, type HeroSkillDefinition, type PrimaryAttribute, type StatModifier } from '../game-systems/heroAttributes.ts'
@@ -294,7 +298,9 @@ export type SimulationState = {
   kills: Record<TeamId, number>
   winner?: TeamId
   nextTeamDecisionAt: number
+  nextCombatAiAt: number
   teamPlans: Partial<Record<TeamId, TeamPlan>>
+  combatBlackboards: CombatBlackboardState
   teamMemory: Record<TeamId, AiMemoryEvent[]>
   teamCalls: Partial<Record<TeamId, TeamCall>>
   teamAuras: Partial<Record<TeamId, TeamAura>>
@@ -982,7 +988,9 @@ export function createInitialState(seed = 'lota-default-seed'): SimulationState 
     nextWave: 0,
     kills: { dawn: 0, dusk: 0 },
     nextTeamDecisionAt: 0,
+    nextCombatAiAt: matchPreparationStartSeconds,
     teamPlans: {},
+    combatBlackboards: createEmptyCombatBlackboards(),
     teamMemory: { dawn: [], dusk: [] },
     teamCalls: {},
     teamAuras: {},
@@ -1458,6 +1466,11 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   if (state.winner) return state
 
   let next: SimulationState = state
+  const hasActiveCombatEncounter = state.combatBlackboards.dawn.some((board) => board.phase !== 'disengage' && board.phase !== 'reset') ||
+    state.combatBlackboards.dusk.some((board) => board.phase !== 'disengage' && board.phase !== 'reset')
+  const previousCombatEventSignature = shouldDecide && hasActiveCombatEncounter
+    ? getCombatCriticalEventSignature(next)
+    : undefined
   const frameContext: TickFrameContext = {
     routeCreepTargetCache: { attack: new Map(), vision: new Map() },
     arcaneNearRouteCache: new Map(),
@@ -1544,9 +1557,17 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   // Separação de hitbox é cosmética (evita unidades empilhadas); rodar só nos
   // ticks de decisão (10Hz) é indistinguível no playback de 5Hz e poupa CPU.
   if (shouldDecide) resolveUnitHitboxes(next)
+  if (shouldDecide && next.time >= next.nextCombatAiAt) {
+    next = updateCombatAiFoundation(next)
+    next.nextCombatAiAt = next.time + COMBAT_AI_RULES.updateIntervalSeconds
+  }
   next = updateTeamFortifications(next)
   next = resolveCombat(next, frameContext)
   next = resolveDeaths(next)
+  if (previousCombatEventSignature !== undefined && getCombatCriticalEventSignature(next) !== previousCombatEventSignature) {
+    next = updateCombatAiFoundation(next)
+    next.nextCombatAiAt = next.time + COMBAT_AI_RULES.updateIntervalSeconds
+  }
   next.winner = next.bases.find((base) => base.hp <= 0)?.team === 'dawn' ? 'dusk' : next.bases.find((base) => base.hp <= 0)?.team === 'dusk' ? 'dawn' : undefined
   return next
 }
@@ -1571,6 +1592,7 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
     ...state,
     kills: { ...state.kills },
     teamPlans: { ...state.teamPlans },
+    combatBlackboards: cloneCombatBlackboardState(state.combatBlackboards),
     teamMemory: {
       dawn: [...state.teamMemory.dawn],
       dusk: [...state.teamMemory.dusk],
@@ -1680,6 +1702,7 @@ export type MatchRenderFrame = {
 
 export type MatchRenderDetails = {
   teamPlans: Partial<Record<TeamId, TeamPlan>>
+  combatBlackboards: CombatBlackboardState
   teamMemory: Record<TeamId, AiMemoryEvent[]>
   teamAuras: Partial<Record<TeamId, TeamAura>>
   teamFortifications: [TeamFortification, TeamFortification]
@@ -1723,6 +1746,7 @@ function createMatchRenderDetails(state: SimulationState): MatchRenderDetails {
       team,
       plan ? { ...plan, targetPosition: plan.targetPosition ? { ...plan.targetPosition } : undefined, reasonTags: [...plan.reasonTags] } : undefined,
     ])) as Partial<Record<TeamId, TeamPlan>>,
+    combatBlackboards: cloneCombatBlackboardState(state.combatBlackboards),
     teamMemory: {
       dawn: state.teamMemory.dawn.map((event) => ({ ...event, position: { ...event.position }, tags: [...event.tags] })),
       dusk: state.teamMemory.dusk.map((event) => ({ ...event, position: { ...event.position }, tags: [...event.tags] })),
@@ -1869,7 +1893,9 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
     kills: { dawn: frame.kills[0], dusk: frame.kills[1] },
     winner: frame.winner,
     nextTeamDecisionAt: 0,
+    nextCombatAiAt: frame.time + COMBAT_AI_RULES.updateIntervalSeconds,
     teamPlans: details.teamPlans,
+    combatBlackboards: cloneCombatBlackboardState(details.combatBlackboards),
     teamMemory: details.teamMemory,
     teamCalls: {},
     teamAuras: details.teamAuras,
@@ -2465,6 +2491,139 @@ export function respawnArcaneIfReady(arcane: Arcane, time: number, index: number
       hp: arcane.stats.maxHp,
       mana: arcane.stats.maxMana,
     },
+  }
+}
+
+export function updateCombatAiFoundation(state: SimulationState): SimulationState {
+  const encounters = detectCombatEncounters(createCombatDetectionInput(state))
+  return {
+    ...state,
+    combatBlackboards: updateCombatBlackboards({
+      gameTime: state.time,
+      previous: state.combatBlackboards,
+      encounters,
+    }),
+  }
+}
+
+const criticalCombatEffectKinds = new Set<TimedEffect['kind']>(['stun', 'root', 'hex', 'fear', 'taunt', 'sleep'])
+
+export function getCombatCriticalEventSignature(state: SimulationState) {
+  let hash = 2166136261
+  const mix = (value: number) => {
+    hash ^= value
+    hash = Math.imul(hash, 16777619)
+  }
+  const mixText = (value: string | undefined) => {
+    if (!value) {
+      mix(0)
+      return
+    }
+    for (let index = 0; index < value.length; index += 1) mix(value.charCodeAt(index))
+  }
+
+  state.arcanes.forEach((arcane) => {
+    const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
+    const healthBand = arcane.stats.hp <= 0 || arcane.respawn > state.time
+      ? 0
+      : hpRatio <= 0.3
+        ? 1
+        : hpRatio <= 0.5
+          ? 2
+          : 3
+    mix(healthBand)
+    mixText(arcane.channeling?.kind)
+  })
+  state.timedEffects.forEach((effect) => {
+    if (!criticalCombatEffectKinds.has(effect.kind)) return
+    mixText(effect.targetId)
+    mixText(effect.kind)
+    mixText(effect.sourceId)
+  })
+  state.towers.forEach((tower) => mixText(tower.aggroTargetId))
+  state.structures.forEach((structure) => {
+    if (structure.kind === 'tower_tier_4') mixText(structure.aggroTargetId)
+  })
+  return hash >>> 0
+}
+
+export function createCombatDetectionInput(state: SimulationState): CombatDetectionInput {
+  const runeObjects = state.time < 0
+    ? runeSpawnPoints.bounty.map((pos, index) => ({
+        id: `pregame-bounty-${index}`,
+        kind: 'rune' as const,
+        pos: { ...pos },
+        active: true,
+      }))
+    : state.runes.map((rune) => ({
+        id: rune.id,
+        kind: 'rune' as const,
+        pos: { ...rune.pos },
+        active: rune.expiresAt === undefined || rune.expiresAt > state.time,
+        team: rune.side,
+      }))
+
+  return {
+    matchSeed: state.matchSeed,
+    gameTime: state.time,
+    heroes: state.arcanes.map((arcane) => ({
+      id: arcane.id,
+      team: arcane.team,
+      lane: arcane.lane,
+      pos: { ...arcane.pos },
+      alive: arcane.stats.hp > 0 && arcane.respawn <= state.time,
+      healthPct: arcane.stats.hp / Math.max(1, arcane.stats.maxHp),
+      manaPct: arcane.stats.maxMana > 0 ? arcane.stats.mana / arcane.stats.maxMana : 1,
+      level: arcane.stats.level,
+      attackRange: arcane.stats.range,
+      currentMode: arcane.aiMode,
+    })),
+    mapObjects: [
+      ...state.towers.map((tower) => ({
+        id: tower.id,
+        kind: 'tower' as const,
+        pos: { ...tower.pos },
+        active: tower.hp > 0,
+        team: tower.team,
+        range: tower.range,
+      })),
+      ...state.bases.map((base) => ({
+        id: base.id,
+        kind: 'base' as const,
+        pos: { ...base.pos },
+        active: base.hp > 0,
+        team: base.team,
+      })),
+      ...state.camps.map((camp) => ({
+        id: camp.id,
+        kind: 'camp' as const,
+        pos: { ...camp.pos },
+        active: camp.hp > 0 && camp.respawn <= state.time,
+        range: camp.range,
+      })),
+      {
+        id: state.boss.id,
+        kind: 'boss' as const,
+        pos: { ...state.boss.pos },
+        active: state.boss.hp > 0 && state.boss.respawn <= state.time,
+        range: state.boss.range,
+      },
+      ...runeObjects,
+    ],
+  }
+}
+
+export function cloneCombatBlackboardState(state: CombatBlackboardState): CombatBlackboardState {
+  const cloneBoard = (board: CombatBlackboard): CombatBlackboard => ({
+    ...board,
+    center: { ...board.center },
+    alliedHeroIds: [...board.alliedHeroIds],
+    enemyHeroIds: [...board.enemyHeroIds],
+    reasonTags: [...board.reasonTags],
+  })
+  return {
+    dawn: state.dawn.map(cloneBoard),
+    dusk: state.dusk.map(cloneBoard),
   }
 }
 

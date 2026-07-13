@@ -1,0 +1,23 @@
+export const COMBAT_AI_RULES = {
+  updateIntervalSeconds: 0.35,
+  detection: {
+    enemyLinkRange: 13,
+    allyLinkRange: 8,
+    matchCenterRange: 10,
+    participantMatchThreshold: 0.45,
+    runeInfluenceRange: 8,
+    campInfluenceRange: 7,
+    bossInfluenceRange: 11,
+    highGroundInfluenceRange: 15,
+    lanePhaseEndSeconds: 12 * 60,
+  },
+  phases: {
+    openingDistance: 6.5,
+    openingSeconds: 0.9,
+    commitSeconds: 2.2,
+    chaseHealthThreshold: 0.28,
+    disengageHealthThreshold: 0.3,
+    resetRetentionSeconds: 2.4,
+  },
+  maxActiveEncountersPerTeam: 3,
+} as const

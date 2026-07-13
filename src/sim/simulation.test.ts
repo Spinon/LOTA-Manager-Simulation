@@ -17,6 +17,7 @@ import {
   enrichTeamPlanWithMapTarget,
   formatMatchTime,
   getGamePhase,
+  getCombatCriticalEventSignature,
   getBountyRuneSide,
   getArcanePassiveCombatModifiers,
   getCampClearAssessment,
@@ -55,6 +56,7 @@ import {
   shopCatalog,
   tryCastSimpleSkill,
   tick,
+  updateCombatAiFoundation,
   updateBoss,
   type Arcane,
   type Camp,
@@ -235,6 +237,27 @@ await loadGameData()
       `${heroId} basic cadence fixture should not conflate skills/items with attacks`,
     )
   })
+}
+
+{
+  const combatState = createInitialState('combat-foundation-integration')
+  combatState.time = 200
+  combatState.arcanes = combatState.arcanes.map((arcane, index) => ({
+    ...arcane,
+    lane: 'mid',
+    pos: index === 0 ? { x: 48, y: 50 } : index === 5 ? { x: 53, y: 50 } : arcane.pos,
+    stats: index === 0 || index === 5 ? arcane.stats : { ...arcane.stats, hp: 0 },
+  }))
+  const combatUpdated = updateCombatAiFoundation(combatState)
+  assert.equal(combatUpdated.combatBlackboards.dawn.length, 1, 'simulation should materialize a dawn combat blackboard')
+  assert.equal(combatUpdated.combatBlackboards.dusk.length, 1, 'simulation should materialize a dusk combat blackboard')
+  assert.equal(combatUpdated.combatBlackboards.dawn[0].encounterId, combatUpdated.combatBlackboards.dusk[0].encounterId)
+  const stableSignature = getCombatCriticalEventSignature(combatUpdated)
+  combatUpdated.arcanes[0].stats.hp = combatUpdated.arcanes[0].stats.maxHp * 0.25
+  assert.notEqual(getCombatCriticalEventSignature(combatUpdated), stableSignature, 'critical health crossings should invalidate combat context')
+  const combatFrame = createMatchRenderFrame(combatUpdated)
+  const hydratedCombat = materializeMatchRenderFrame(combatFrame, createMatchStaticData(combatUpdated), combatFrame.details)
+  assert.deepEqual(hydratedCombat.combatBlackboards, combatUpdated.combatBlackboards, 'detailed replay frames should preserve combat blackboards')
 }
 
 {

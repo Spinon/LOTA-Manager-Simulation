@@ -359,11 +359,18 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Manter o blackboard no worker e serializar ao replay apenas os dados necessários para inspeção, sem aumentar todos os frames com estado diagnóstico completo.
 
 **Fases de implementação**:
-1. **Fundação**: tipos runtime, detector/classificador de encontros, contexto espacial, eventos de invalidação e ciclo de vida determinístico do blackboard.
-2. **Cérebro básico**: máquina de fases `pre_contact -> opening -> commit/sustain -> chase/disengage`, score de alvo, foco compartilhado, stickiness e troca de alvo.
-3. **Coordenação**: papéis dinâmicos, formação, reservas de CC/dano/save/interrupt, anti-overkill e uso contextual de ultimates.
-4. **Cenários**: skirmishes/reforços, trades de lane, level timings, influência da wave, runas/camps/pulls, dive, counter-dive e transferência de aggro.
-5. **Humanização e tuning**: integrar mechanics, laning, map awareness, teamfight, positioning, communication, discipline, clutch, mastery, fatigue e tilt ao modelo de execução.
+- [x] **Fundação**: tipos runtime, detector/classificador de encontros, contexto espacial, eventos de invalidação e ciclo de vida determinístico do blackboard.
+- [ ] **Cérebro básico**: máquina de fases `pre_contact -> opening -> commit/sustain -> chase/disengage`, score de alvo, foco compartilhado, stickiness e troca de alvo.
+- [ ] **Coordenação**: papéis dinâmicos, formação, reservas de CC/dano/save/interrupt, anti-overkill e uso contextual de ultimates.
+- [ ] **Cenários**: skirmishes/reforços, trades de lane, level timings, influência da wave, runas/camps/pulls, dive, counter-dive e transferência de aggro.
+- [ ] **Humanização e tuning**: integrar mechanics, laning, map awareness, teamfight, positioning, communication, discipline, clutch, mastery, fatigue e tilt ao modelo de execução.
+
+**Progresso da fundação (2026-07-12)**:
+- Detector espacial agrupa participantes e classifica trade/all-in de lane, runa, campo, boss, dive, teamfight e highground.
+- Blackboard por encontro/time mantém ID, participantes, centro, tipo e fases `pre_contact`, `opening`, `commit`, `sustain`, `chase` e `disengage`, expirando contato perdido em 2,4s.
+- Atualização limitada a 350ms no worker; frames compactos não carregam diagnóstico e frames detalhados preservam o estado no replay.
+- Inspetor do Arcane exibe encontro, fase e números locais sem ainda dar autoridade de alvo ao novo sistema.
+- Auditoria de 10min encontrou 77 encontros, máximo de três simultâneos e nenhuma retenção permanente; benchmark determinístico mediano de 46,7x nesta estação após incluir a reavaliação por evento crítico.
 
 **Restrições**:
 - O arquivo-fonte é especificação/pseudocódigo; funções simbólicas devem ser adaptadas aos tipos, fórmulas, skills, itens e status já existentes, sem criar uma segunda resolução de combate.
