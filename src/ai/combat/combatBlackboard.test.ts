@@ -2,6 +2,13 @@ import assert from 'node:assert/strict'
 
 import { detectCombatEncounters } from './analysis/combatContextAnalyzer.ts'
 import { scoreCombatTarget, selectCombatFocus } from './analysis/targetPriorityAnalyzer.ts'
+import {
+  assignDynamicCombatRoles,
+  canReserveControl,
+  canReserveDamage,
+  canReserveSave,
+  createCombatFormationPlan,
+} from './coordination/combatCoordination.ts'
 import { createEmptyCombatBlackboards, updateCombatBlackboards } from './teamfight/combatBlackboard.ts'
 import type { CombatDetectionInput, CombatHeroSnapshot } from './types/combatAiTypes.ts'
 
@@ -144,5 +151,59 @@ const marginalAlternative = { ...safeTarget, targetId: 'marginal', finalScore: c
 assert.equal(selectCombatFocus([currentTarget, marginalAlternative], currentTarget.targetId).primary?.targetId, 'current', 'small score gains should not cause target thrashing')
 const decisiveAlternative = { ...safeTarget, targetId: 'decisive', finalScore: currentTarget.finalScore + 25 }
 assert.equal(selectCombatFocus([currentTarget, decisiveAlternative], currentTarget.targetId).primary?.targetId, 'decisive', 'large gains should switch focus')
+
+const combatRoles = assignDynamicCombatRoles([
+  { id: 'hc', role: 'Safe Lane', attackRange: 5.5, hasControl: false, hasSave: false, hasInterrupt: false, hasBurst: false },
+  { id: 'mid', role: 'Mid', attackRange: 3.2, hasControl: true, hasSave: false, hasInterrupt: true, hasBurst: true },
+  { id: 'off', role: 'Offlane', attackRange: 2.5, hasControl: true, hasSave: false, hasInterrupt: true, hasBurst: false },
+  { id: 'sup4', role: 'Greedy Support', attackRange: 5, hasControl: true, hasSave: false, hasInterrupt: true, hasBurst: false },
+  { id: 'sup5', role: 'Dedicated Support', attackRange: 5, hasControl: false, hasSave: true, hasInterrupt: false, hasBurst: false },
+])
+assert.equal(combatRoles.find((role) => role.heroId === 'off')?.primaryRole, 'primary_initiator')
+assert.equal(combatRoles.find((role) => role.heroId === 'off')?.positioningBand, 'frontline')
+assert.equal(combatRoles.find((role) => role.heroId === 'sup5')?.primaryRole, 'save')
+assert.equal(combatRoles.find((role) => role.heroId === 'sup5')?.positioningBand, 'backline')
+const formation = createCombatFormationPlan({ x: 50, y: 50 }, combatRoles, 'hc')
+assert.deepEqual(formation.frontlineHeroIds, ['off'])
+assert.ok(formation.backlineHeroIds.includes('hc'))
+assert.equal(formation.protectHeroId, 'hc')
+
+const activeControl = [{
+  targetId: 'enemy-core',
+  sourceHeroId: 'off',
+  sourceId: 'off-stun',
+  controlType: 'stun' as const,
+  expectedStart: 100,
+  expectedEnd: 102,
+  priority: 70,
+  reliability: 0.9,
+}]
+assert.equal(canReserveControl(activeControl, 'enemy-core', 100.5, false), false, 'follow-up control should wait for active control')
+assert.equal(canReserveControl(activeControl, 'enemy-core', 100.5, true), true, 'an urgent interrupt may overlap control')
+
+const lethalDamage = [{
+  targetId: 'enemy-core',
+  sourceHeroId: 'mid',
+  sourceId: 'mid-nuke',
+  expectedImpactTime: 100.3,
+  expectedDamage: 600,
+  reliability: 0.9,
+  isUltimate: false,
+}]
+assert.equal(canReserveDamage(lethalDamage, 'enemy-core', 500, 100, true), false, 'ultimates should not overkill a covered target')
+assert.equal(canReserveDamage(lethalDamage, 'enemy-core', 500, 100, false), true, 'ordinary damage remains available')
+
+const activeSave = [{
+  targetAllyId: 'hc',
+  sourceHeroId: 'sup5',
+  sourceId: 'sup5-save',
+  expectedImpactTime: 100.2,
+  expectedPreventedDamage: 300,
+  reliability: 0.9,
+  saveType: 'barrier' as const,
+  isPrimarySave: true,
+}]
+assert.equal(canReserveSave(activeSave, 'hc', 100, 0.55), false, 'primary saves should not overlap')
+assert.equal(canReserveSave(activeSave, 'hc', 100, 0.2), true, 'critical allies may receive overlapping saves')
 
 console.log('combatBlackboard tests passed')

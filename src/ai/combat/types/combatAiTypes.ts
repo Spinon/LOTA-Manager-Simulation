@@ -30,6 +30,71 @@ export type CombatPhase =
 
 export type CombatPoint = { x: number; y: number }
 
+export type DynamicCombatRole =
+  | 'primary_initiator'
+  | 'follow_up_controller'
+  | 'burst_damage'
+  | 'sustained_damage'
+  | 'frontline'
+  | 'peel'
+  | 'save'
+  | 'interrupt'
+  | 'finisher'
+
+export type CombatPositioningBand = 'frontline' | 'midline' | 'backline' | 'flank'
+export type CombatControlType = 'stun' | 'root' | 'silence' | 'disable' | 'interrupt'
+
+export interface CombatRoleAssignment {
+  heroId: string
+  primaryRole: DynamicCombatRole
+  secondaryRoles: DynamicCombatRole[]
+  positioningBand: CombatPositioningBand
+  confidence: number
+}
+
+export interface CombatControlReservation {
+  targetId: string
+  sourceHeroId: string
+  sourceId: string
+  controlType: CombatControlType
+  expectedStart: number
+  expectedEnd: number
+  priority: number
+  reliability: number
+}
+
+export interface CombatDamageReservation {
+  targetId: string
+  sourceHeroId: string
+  sourceId: string
+  expectedImpactTime: number
+  expectedDamage: number
+  reliability: number
+  isUltimate: boolean
+}
+
+export interface CombatSaveReservation {
+  targetAllyId: string
+  sourceHeroId: string
+  sourceId: string
+  expectedImpactTime: number
+  expectedPreventedDamage: number
+  reliability: number
+  saveType: 'heal' | 'barrier' | 'dispel' | 'mobility' | 'defensive_buff'
+  isPrimarySave: boolean
+}
+
+export interface CombatFormationPlan {
+  anchorPosition: CombatPoint
+  minimumSpacing: number
+  maximumSupportDistance: number
+  frontlineHeroIds: string[]
+  midlineHeroIds: string[]
+  backlineHeroIds: string[]
+  flankHeroIds: string[]
+  protectHeroId?: string
+}
+
 export interface CombatHeroSnapshot {
   id: string
   team: CombatTeamId
@@ -117,6 +182,11 @@ export interface CombatBlackboard {
   targetFocusConfidence: number
   targetReasons: string[]
   protectedAllyId?: string
+  roleAssignments: CombatRoleAssignment[]
+  controlReservations: CombatControlReservation[]
+  damageReservations: CombatDamageReservation[]
+  saveReservations: CombatSaveReservation[]
+  formationPlan?: CombatFormationPlan
   closestEnemyDistance: number
   alliedAverageHealthPct: number
   enemyAverageHealthPct: number

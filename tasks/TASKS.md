@@ -361,7 +361,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 **Fases de implementação**:
 - [x] **Fundação**: tipos runtime, detector/classificador de encontros, contexto espacial, eventos de invalidação e ciclo de vida determinístico do blackboard.
 - [x] **Cérebro básico**: máquina de fases `pre_contact -> opening -> commit/sustain -> chase/disengage`, score de alvo, foco compartilhado, stickiness e troca de alvo.
-- [ ] **Coordenação**: papéis dinâmicos, formação, reservas de CC/dano/save/interrupt, anti-overkill e uso contextual de ultimates.
+- [x] **Coordenação**: papéis dinâmicos, formação, reservas de CC/dano/save/interrupt, anti-overkill e uso contextual de ultimates.
 - [ ] **Cenários**: skirmishes/reforços, trades de lane, level timings, influência da wave, runas/camps/pulls, dive, counter-dive e transferência de aggro.
 - [ ] **Humanização e tuning**: integrar mechanics, laning, map awareness, teamfight, positioning, communication, discipline, clutch, mastery, fatigue e tilt ao modelo de execução.
 
@@ -380,6 +380,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Cada Arcane compara perigo do alvo com HP, agressividade, fase e números locais; risco novo invalida a aproximação entre decisões e produz hold/recuo em vez de rush.
 - Auditoria final de 5min: 18 focos ficaram inseguros entre decisões; todos viraram hold/recuo no tick seguinte e nenhuma ordem de avanço permaneceu ativa. A seed de controle passou de 2-9 para 2-3 após reduzir perseguições suicidas.
 - Benchmark determinístico: 40,2x wall / 44,2x CPU nesta execução, com digest estável entre três rodadas.
+
+**Progresso da coordenação (2026-07-12)**:
+- Cada encontro atribui iniciador, controle de follow-up, burst, dano sustentado, peel/save e finisher a partir da role, alcance e kit carregado; frontline, midline, backline e flank recebem pontos de espera distintos.
+- Skills ofensivas priorizam o foco compartilhado quando ele está alcançável. Reservas temporais impedem overlap de controle e saves, salvo interrupt urgente ou aliado crítico; controles reais também cancelam channeling.
+- Dano confirmado entra no blackboard e bloqueia ultimate redundante quando o alvo já possui dano letal reservado. Skills comuns permanecem disponíveis para não congelar a execução por estimativa imperfeita.
+- Removida a barreira genérica concedida pela movimentação de suporte: proteção agora exige uma skill real. O estado de coordenação é clonado nos frames detalhados e reservas vencidas são podadas a cada atualização.
+- Testes cobrem atribuição de papéis/formação, fila de CC, interrupt urgente, anti-overkill de ultimate e overlap emergencial de saves; regressão de staging sob torre também permanece coberta.
+- Benchmark determinístico após a integração: 57,7x wall / 53,0x CPU, digest `810ed3fb5e8af9b1` estável nas três rodadas; testes, lint e build verdes.
 
 **Restrições**:
 - O arquivo-fonte é especificação/pseudocódigo; funções simbólicas devem ser adaptadas aos tipos, fórmulas, skills, itens e status já existentes, sem criar uma segunda resolução de combate.

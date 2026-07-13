@@ -9,8 +9,15 @@ import type { AiMemoryEvent, AnalyzedGameState, ExecutionFailureType, PlayerMode
 import { detectCombatEncounters } from '../ai/combat/analysis/combatContextAnalyzer.ts'
 import { scoreCombatTarget, selectCombatFocus } from '../ai/combat/analysis/targetPriorityAnalyzer.ts'
 import { COMBAT_AI_RULES } from '../ai/combat/config/combatAiConstants.ts'
+import {
+  assignDynamicCombatRoles,
+  canReserveControl,
+  canReserveDamage,
+  canReserveSave,
+  createCombatFormationPlan,
+} from '../ai/combat/coordination/combatCoordination.ts'
 import { createEmptyCombatBlackboards, updateCombatBlackboards } from '../ai/combat/teamfight/combatBlackboard.ts'
-import type { CombatBlackboard, CombatBlackboardState, CombatDetectionInput } from '../ai/combat/types/combatAiTypes.ts'
+import type { CombatBlackboard, CombatBlackboardState, CombatControlType, CombatDetectionInput } from '../ai/combat/types/combatAiTypes.ts'
 import { resolveDamage, type CombatDamageType } from '../game-systems/combatFormulas.ts'
 import { applyBarrier, applyFlatAndPercentModifiers, canDispelEffect, finalDebuffDuration, finalSlowValue, type DispelPower, type DispelType } from '../game-systems/effectFormulas.ts'
 import { calculateHeroStats, type AttackType, type HeroDefinition, type HeroRole, type HeroSkillDefinition, type PrimaryAttribute, type StatModifier } from '../game-systems/heroAttributes.ts'
@@ -2502,10 +2509,43 @@ export function updateCombatAiFoundation(state: SimulationState): SimulationStat
     previous: state.combatBlackboards,
     encounters,
   })
+  const focusedBlackboards = assignCombatFocusTargets(state, detectedBlackboards)
   return {
     ...state,
-    combatBlackboards: assignCombatFocusTargets(state, detectedBlackboards),
+    combatBlackboards: coordinateCombatBlackboards(state, focusedBlackboards),
   }
+}
+
+export function coordinateCombatBlackboards(state: SimulationState, blackboards: CombatBlackboardState): CombatBlackboardState {
+  const coordinateTeam = (team: TeamId) => blackboards[team].map((board) => {
+    const allies = board.alliedHeroIds
+      .map((id) => state.arcanes.find((arcane) => arcane.id === id))
+      .filter((arcane): arcane is Arcane => arcane !== undefined && arcane.stats.hp > 0 && arcane.respawn <= state.time)
+    const roleAssignments = assignDynamicCombatRoles(allies.map((arcane) => {
+      const skills = getHeroDefinition(arcane.heroDefinitionId).skills ?? []
+      return {
+        id: arcane.id,
+        role: arcane.role,
+        attackRange: arcane.stats.range,
+        hasControl: skills.some((skill) => hasSimpleStatusTag(skill)),
+        hasSave: skills.some((skill) => isPositiveSimpleSkill(skill) && (isSimpleHealingSkill(skill) || hasAnySimpleSkillTag(skill, ['save', 'shield', 'barrier', 'cleanse', 'dispel']))),
+        hasInterrupt: skills.some((skill) => hasAnySimpleSkillTag(skill, ['stun', 'disable', 'silence', 'hex', 'taunt'])),
+        hasBurst: skills.some((skill) => skill.damageType !== 'none' && (isUltimateSkill(skill) || hasAnySimpleSkillTag(skill, ['nuke', 'burst', 'execute']))),
+      }
+    }))
+    const protectedAlly = [...allies].sort((left, right) => {
+      const leftPriority = getCombatRoleStrategicValue(left.role) * (1 - left.stats.hp / Math.max(1, left.stats.maxHp))
+      const rightPriority = getCombatRoleStrategicValue(right.role) * (1 - right.stats.hp / Math.max(1, right.stats.maxHp))
+      return rightPriority - leftPriority
+    })[0]
+    return {
+      ...board,
+      protectedAllyId: protectedAlly?.id,
+      roleAssignments,
+      formationPlan: createCombatFormationPlan(board.center, roleAssignments, protectedAlly?.id),
+    }
+  })
+  return { dawn: coordinateTeam('dawn'), dusk: coordinateTeam('dusk') }
 }
 
 export function assignCombatFocusTargets(state: SimulationState, blackboards: CombatBlackboardState): CombatBlackboardState {
@@ -2761,6 +2801,21 @@ export function cloneCombatBlackboardState(state: CombatBlackboardState): Combat
     enemyHeroIds: [...board.enemyHeroIds],
     reasonTags: [...board.reasonTags],
     targetReasons: [...board.targetReasons],
+    roleAssignments: (board.roleAssignments ?? []).map((assignment) => ({
+      ...assignment,
+      secondaryRoles: [...assignment.secondaryRoles],
+    })),
+    controlReservations: (board.controlReservations ?? []).map((reservation) => ({ ...reservation })),
+    damageReservations: (board.damageReservations ?? []).map((reservation) => ({ ...reservation })),
+    saveReservations: (board.saveReservations ?? []).map((reservation) => ({ ...reservation })),
+    formationPlan: board.formationPlan ? {
+      ...board.formationPlan,
+      anchorPosition: { ...board.formationPlan.anchorPosition },
+      frontlineHeroIds: [...board.formationPlan.frontlineHeroIds],
+      midlineHeroIds: [...board.formationPlan.midlineHeroIds],
+      backlineHeroIds: [...board.formationPlan.backlineHeroIds],
+      flankHeroIds: [...board.formationPlan.flankHeroIds],
+    } : undefined,
   })
   return {
     dawn: state.dawn.map(cloneBoard),
@@ -4615,15 +4670,6 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       target = allyToDefend.pos
       macroDecision = 'Defender aliado'
       microDecision = `Defendendo ${allyToDefend.player}`
-      addTimedEffect(state, allyToDefend, {
-        sourceId: `${arcane.id}-save-barrier`,
-        sourceName: `${arcane.player} save`,
-        sourceTeam: arcane.team,
-        kind: 'barrier',
-        polarity: 'positive',
-        value: 130 + arcane.stats.level * 10,
-        duration: 3.5,
-      })
     } else if (wantsCombatFocus && combatFocusTarget && combatFocusAssessment && !combatFocusAssessment.canApproach) {
       target = getCombatStagingPoint(state, arcane, combatFocusTarget, combatBoard, combatFocusAssessment)
       macroDecision = combatFocusAssessment.mustDisengage ? 'Recuar da luta' : 'Manter formacao'
@@ -5632,7 +5678,7 @@ export function getCombatStagingPoint(
     ...state.towers.filter((tower) => tower.team === defendingTeam && tower.hp > 0),
     ...state.structures.filter((structure) => structure.kind === 'tower_tier_4' && structure.team === defendingTeam && structure.hp > 0),
   ].find((structure) => distance(structure.pos, target.pos) <= structure.range + 1.5)
-  if (threateningStructure && distance(arcane.pos, threateningStructure.pos) <= threateningStructure.range + 2.5) {
+  if (threateningStructure) {
     return getPointOutsideThreatRadius(
       arcane.pos,
       threateningStructure.pos,
@@ -5641,9 +5687,23 @@ export function getCombatStagingPoint(
     )
   }
   if (assessment && (assessment.danger > assessment.dangerTolerance + 8 || assessment.localNumbers.advantage < -0.5)) {
-    return getPointAwayFromThreat(arcane.pos, target.pos, 5, teamInfo[arcane.team].base)
+    return getCombatFormationStagingPoint(arcane, target, board)
   }
   return arcane.pos
+}
+
+export function getCombatFormationStagingPoint(arcane: Arcane, target: Arcane, board: CombatBlackboard) {
+  const assignment = (board.roleAssignments ?? []).find((candidate) => candidate.heroId === arcane.id)
+  const band = assignment?.positioningBand ?? 'midline'
+  const away = getNormalizedDirection(target.pos, teamInfo[arcane.team].base)
+  const perpendicular = { x: -away.y, y: away.x }
+  const depth = band === 'frontline' ? 4.2 : band === 'midline' ? 6 : band === 'flank' ? 5.4 : 7.5
+  const flankSide = seededRandomUnit(arcane.id, board.encounterId) >= 0.5 ? 1 : -1
+  const lateral = band === 'flank' ? 3.4 * flankSide : (seededRandomUnit(board.encounterId, arcane.id) - 0.5) * 2.4
+  return clampToMapBounds({
+    x: target.pos.x + away.x * depth + perpendicular.x * lateral,
+    y: target.pos.y + away.y * depth + perpendicular.y * lateral,
+  })
 }
 
 export function getPointOutsideThreatRadius(point: Point, threat: Point, radius: number, fallback: Point) {
@@ -6751,6 +6811,7 @@ export function castSimpleSkill(
   const manaCost = getSimpleSkillManaCost(arcane, skill, level)
   if (arcane.stats.mana < manaCost) return false
   const profile = getSkillEffectProfile(skill, level)
+  if (!canCommitCoordinatedSkill(state, arcane, skill, level, target, profile)) return false
   const affectedTargets = getSimpleSkillAffectedTargets(state, arcane, skill, profile, target)
 
   const source: CombatSource = {
@@ -6767,6 +6828,7 @@ export function castSimpleSkill(
     applySimpleSkillMobility(state, arcane, target, skill, profile)
     addSimpleSkillEffect(state, arcane, target)
     finishSimpleSkillCast(state, arcane, skill, manaCost, target)
+    registerCombatSkillReservation(state, arcane, skill, level, target, profile)
     return true
   }
 
@@ -6827,8 +6889,136 @@ export function castSimpleSkill(
 
   addSimpleSkillEffect(state, arcane, target)
   const casted = damage > 0 || affectedTargets.some((candidate) => 'player' in candidate && hasSimpleStatusTag(skill)) || profile.manaDelta !== 0 || profile.isMobility || profile.summonCount > 0 || hasAnySimpleSkillTag(skill, ['purge', 'dispel'])
-  if (casted) finishSimpleSkillCast(state, arcane, skill, manaCost, target)
+  if (casted) {
+    finishSimpleSkillCast(state, arcane, skill, manaCost, target)
+    registerCombatSkillReservation(state, arcane, skill, level, target, profile)
+  }
   return casted
+}
+
+export function canCommitCoordinatedSkill(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+  target: CombatTarget,
+  profile = getSkillEffectProfile(skill, level),
+) {
+  if (!('player' in target)) return true
+  const board = getArcaneCombatBlackboard(state, arcane)
+  if (!board) return true
+  const sourceId = `${arcane.id}-${skill.id}`
+  if (target.team === arcane.team) {
+    const isSave = isSimpleHealingSkill(skill) || profile.isSave || profile.barrier > 0 || hasAnySimpleSkillTag(skill, ['save', 'shield', 'barrier', 'cleanse', 'dispel'])
+    return !isSave || canReserveSave(
+      (board.saveReservations ?? []).filter((reservation) => reservation.sourceId !== sourceId),
+      target.id,
+      state.time,
+      target.stats.hp / Math.max(1, target.stats.maxHp),
+    )
+  }
+
+  const controlDuration = getSimpleSkillControlDuration(skill, profile)
+  if (controlDuration > 0 && !canReserveControl(
+    (board.controlReservations ?? []).filter((reservation) => reservation.sourceId !== sourceId),
+    target.id,
+    state.time,
+    Boolean(target.channeling),
+  )) return false
+
+  const damage = getSimpleSkillDamage(arcane, skill, level)
+  return damage <= 0 || canReserveDamage(
+    (board.damageReservations ?? []).filter((reservation) => reservation.sourceId !== sourceId),
+    target.id,
+    target.stats.hp,
+    state.time,
+    isUltimateSkill(skill),
+  )
+}
+
+export function registerCombatSkillReservation(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+  target: CombatTarget,
+  profile = getSkillEffectProfile(skill, level),
+) {
+  if (!('player' in target)) return
+  const board = getArcaneCombatBlackboard(state, arcane)
+  if (!board) return
+  const sourceId = `${arcane.id}-${skill.id}`
+  if (target.team === arcane.team) {
+    const expectedSave = Math.max(profile.heal, profile.barrier, isSimpleHealingSkill(skill) ? 75 + level * 35 : 0)
+    if (expectedSave <= 0 && !profile.isSave && !hasAnySimpleSkillTag(skill, ['save', 'cleanse', 'dispel'])) return
+    board.saveReservations = [
+      ...(board.saveReservations ?? []).filter((reservation) => reservation.sourceId !== sourceId),
+      {
+        targetAllyId: target.id,
+        sourceHeroId: arcane.id,
+        sourceId,
+        expectedImpactTime: state.time + 0.1,
+        expectedPreventedDamage: Math.max(80, expectedSave),
+        reliability: 0.9,
+        saveType: profile.heal > 0 || isSimpleHealingSkill(skill)
+          ? 'heal'
+          : profile.barrier > 0 || hasAnySimpleSkillTag(skill, ['shield', 'barrier'])
+            ? 'barrier'
+            : hasAnySimpleSkillTag(skill, ['cleanse', 'dispel'])
+              ? 'dispel'
+              : profile.isMobility
+                ? 'mobility'
+                : 'defensive_buff',
+        isPrimarySave: true,
+      },
+    ]
+    return
+  }
+
+  const controlDuration = getSimpleSkillControlDuration(skill, profile)
+  if (controlDuration > 0) {
+    board.controlReservations = [
+      ...(board.controlReservations ?? []).filter((reservation) => reservation.sourceId !== sourceId),
+      {
+        targetId: target.id,
+        sourceHeroId: arcane.id,
+        sourceId,
+        controlType: getSimpleSkillControlType(skill, target),
+        expectedStart: state.time + 0.1,
+        expectedEnd: state.time + 0.1 + controlDuration,
+        priority: target.channeling ? 100 : 65,
+        reliability: 0.9,
+      },
+    ]
+  }
+  const expectedDamage = getSimpleSkillDamage(arcane, skill, level)
+  if (expectedDamage > 0) {
+    board.damageReservations = [
+      ...(board.damageReservations ?? []).filter((reservation) => reservation.sourceId !== sourceId),
+      {
+        targetId: target.id,
+        sourceHeroId: arcane.id,
+        sourceId,
+        expectedImpactTime: state.time + 0.15,
+        expectedDamage,
+        reliability: profile.isArea ? 0.76 : 0.9,
+        isUltimate: isUltimateSkill(skill),
+      },
+    ]
+  }
+}
+
+export function getSimpleSkillControlDuration(skill: HeroSkillDefinition, profile: ReturnType<typeof getSkillEffectProfile>) {
+  const explicit = Math.max(profile.stunDuration, profile.rootDuration, profile.silenceDuration)
+  return explicit > 0 ? explicit : hasSimpleStatusTag(skill) ? Math.max(0.8, profile.duration) : 0
+}
+
+export function getSimpleSkillControlType(skill: HeroSkillDefinition, target: Arcane): CombatControlType {
+  if (target.channeling) return 'interrupt'
+  if (hasAnySimpleSkillTag(skill, ['stun', 'hex', 'sleep', 'fear', 'taunt'])) return 'stun'
+  if (hasAnySimpleSkillTag(skill, ['root', 'net', 'leash'])) return 'root'
+  if (hasAnySimpleSkillTag(skill, ['silence', 'mute'])) return 'silence'
+  return 'disable'
 }
 
 export function applySkillAuraEffects(state: SimulationState) {
@@ -7114,6 +7304,15 @@ export function getSimpleSkillTarget(
   }
 
   const range = getSimpleSkillRange(arcane, skill, level)
+  const focusTarget = getCombatFocusTarget(state, arcane)
+  if (
+    focusTarget &&
+    canTargetWithSimpleDamageSkill(arcane, skill, focusTarget) &&
+    isPointVisibleToTeam(state, arcane.team, focusTarget.pos) &&
+    distance(arcane.pos, focusTarget.pos) <= range + getEntityCollisionRadius(focusTarget)
+  ) {
+    return focusTarget
+  }
   const enemyArcane = nearest(arcane.pos, state.arcanes.filter((target) => (
     target.team !== arcane.team &&
     target.stats.hp > 0 &&
@@ -7153,6 +7352,12 @@ export function getSimplePositiveSkillTarget(
   ))
 
   if (isSimpleHealingSkill(skill) || hasAnySimpleSkillTag(skill, ['regen', 'shield', 'barrier', 'spell_parry'])) {
+    const protectedAllyId = getArcaneCombatBlackboard(state, arcane)?.protectedAllyId
+    const protectedAlly = allies.find((ally) => (
+      ally.id === protectedAllyId &&
+      ally.stats.hp / Math.max(1, ally.stats.maxHp) < 0.72
+    ))
+    if (protectedAlly) return protectedAlly
     return allies
       .filter((ally) => ally.stats.hp / Math.max(1, ally.stats.maxHp) < (ally.id === arcane.id ? 0.78 : 0.66))
       .sort((a, b) => (a.stats.hp / Math.max(1, a.stats.maxHp)) - (b.stats.hp / Math.max(1, b.stats.maxHp)))[0]
@@ -7341,6 +7546,9 @@ export function applySimpleNegativeSkillEffects(
   }
 
   applySimpleNamedControl(state, caster, skill, target, profile.duration)
+  if (target.channeling && getSimpleSkillControlDuration(skill, profile) > 0) {
+    target.channeling = undefined
+  }
 
   if (profile.armorDelta < 0) {
     addTimedEffect(state, target, {
