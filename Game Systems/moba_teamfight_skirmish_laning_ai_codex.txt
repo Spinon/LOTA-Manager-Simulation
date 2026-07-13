@@ -1,0 +1,1449 @@
+// moba_teamfight_skirmish_laning_ai_codex.txt
+//
+// DOCUMENTO DE ARQUITETURA DE IA PARA LUTAS ENTRE ARCANES
+//
+// Objetivo:
+// Criar uma IA de combate coletivo para um manager de MOBA que trate:
+//
+// - teamfights completas;
+// - skirmishes de 2v2, 3v3 e 4v4;
+// - lutas de laning phase;
+// - dives e counter-dives;
+// - rotações e reforços;
+// - contestação de runas, camps e pulls;
+// - defesa e ataque de torres;
+// - uso coordenado de CC;
+// - prioridade de alvo;
+// - proteção de aliados;
+// - mudança dinâmica de alvo;
+// - perseguição e disengage;
+// - execução imperfeita baseada nos atributos dos jogadores.
+//
+// Este documento complementa:
+// - fórmulas de dano;
+// - fórmulas de efeitos;
+// - dados dos heróis;
+// - dados oficiais de habilidades;
+// - lógica macro geral.
+//
+// Princípio central:
+//
+// A IA não deve resolver toda luta com uma fórmula agregada.
+// Ela deve decidir:
+//
+// 1. se entra;
+// 2. em quem entra;
+// 3. com quais recursos;
+// 4. em qual ordem;
+// 5. quanto tempo sustenta a luta;
+// 6. quando troca de alvo;
+// 7. quando salva;
+// 8. quando recua;
+// 9. quando transforma vantagem local em objetivo.
+//
+// ============================================================================
+// 1. ORGANIZAÇÃO DE ARQUIVOS
+// ============================================================================
+//
+// src/ai/combat/types/combatAiTypes.ts
+// src/ai/combat/config/combatAiConstants.ts
+//
+// src/ai/combat/analysis/combatContextAnalyzer.ts
+// src/ai/combat/analysis/targetPriorityAnalyzer.ts
+// src/ai/combat/analysis/formationAnalyzer.ts
+// src/ai/combat/analysis/controlWindowAnalyzer.ts
+// src/ai/combat/analysis/damageCommitmentAnalyzer.ts
+// src/ai/combat/analysis/saveThreatAnalyzer.ts
+//
+// src/ai/combat/teamfight/teamfightBrain.ts
+// src/ai/combat/teamfight/teamfightPhaseMachine.ts
+// src/ai/combat/teamfight/teamfightBlackboard.ts
+//
+// src/ai/combat/skirmish/skirmishBrain.ts
+// src/ai/combat/skirmish/skirmishEscalationSystem.ts
+// src/ai/combat/skirmish/localNumbersAnalyzer.ts
+//
+// src/ai/combat/laning/laningFightBrain.ts
+// src/ai/combat/laning/laneTradeAnalyzer.ts
+// src/ai/combat/laning/diveAnalyzer.ts
+// src/ai/combat/laning/runeContestAnalyzer.ts
+// src/ai/combat/laning/rotationResponseSystem.ts
+//
+// src/ai/combat/coordination/controlReservationSystem.ts
+// src/ai/combat/coordination/damageReservationSystem.ts
+// src/ai/combat/coordination/saveReservationSystem.ts
+// src/ai/combat/coordination/focusTargetCoordinator.ts
+//
+// src/ai/combat/execution/combatActionSelector.ts
+// src/ai/combat/execution/combatExecutionModel.ts
+// src/ai/combat/execution/combatErrorModel.ts
+//
+// src/ai/combat/tests/
+//
+// ============================================================================
+// 2. TIPOS PRINCIPAIS
+// ============================================================================
+
+export type CombatEncounterType =
+  | "lane_trade"
+  | "lane_all_in"
+  | "tower_dive"
+  | "counter_dive"
+  | "river_skirmish"
+  | "rune_skirmish"
+  | "jungle_skirmish"
+  | "camp_contest"
+  | "smoke_pickoff"
+  | "objective_skirmish"
+  | "full_teamfight"
+  | "high_ground_fight"
+  | "base_defense"
+  | "chase"
+  | "disengage";
+
+export type CombatPhase =
+  | "pre_contact"
+  | "poke"
+  | "opening"
+  | "commit"
+  | "sustain"
+  | "collapse"
+  | "chase"
+  | "disengage"
+  | "reset";
+
+export type CombatRole =
+  | "primary_initiator"
+  | "secondary_initiator"
+  | "follow_up_controller"
+  | "burst_damage"
+  | "sustained_damage"
+  | "zone_controller"
+  | "backline_diver"
+  | "frontline"
+  | "peel"
+  | "save"
+  | "bodyguard"
+  | "interrupt"
+  | "finisher"
+  | "flank"
+  | "siege"
+  | "anti_siege";
+
+export type CombatActionType =
+  | "hold_position"
+  | "reposition"
+  | "approach_target"
+  | "retreat"
+  | "attack_target"
+  | "cast_control"
+  | "cast_damage"
+  | "cast_save"
+  | "cast_dispel"
+  | "cast_zone"
+  | "cast_mobility"
+  | "use_defensive_item"
+  | "use_offensive_item"
+  | "teleport_in"
+  | "teleport_out"
+  | "body_block"
+  | "tank_tower"
+  | "drop_tower_aggro"
+  | "secure_last_hit"
+  | "deny_creep"
+  | "wait_for_follow_up"
+  | "switch_target"
+  | "chase"
+  | "stop_chase";
+
+// ============================================================================
+// 3. BLACKBOARD COMPARTILHADO
+// ============================================================================
+
+export interface TeamfightBlackboard {
+  encounterId: string;
+  encounterType: CombatEncounterType;
+  phase: CombatPhase;
+
+  startedAt: number;
+  lastUpdatedAt: number;
+
+  primaryTargetId?: string;
+  secondaryTargetId?: string;
+  protectedAllyId?: string;
+  highestThreatEnemyId?: string;
+
+  engageArea?: AreaRef;
+  retreatArea?: AreaRef;
+  chaseLimitArea?: AreaRef;
+
+  committedHeroIds: string[];
+  arrivingHeroIds: string[];
+  retreatingHeroIds: string[];
+
+  controlReservations: ControlReservation[];
+  damageReservations: DamageReservation[];
+  saveReservations: SaveReservation[];
+  interruptReservations: InterruptReservation[];
+
+  formationPlan: FormationPlan;
+  targetFocusConfidence: number;
+  callClarity: number;
+  coordinationQuality: number;
+
+  burstWindow?: CombatTimeWindow;
+  disengageRequested: boolean;
+  chaseAllowed: boolean;
+
+  enemyCooldownMemory: EnemyCooldownMemory[];
+  recentCombatEvents: CombatEvent[];
+}
+
+export interface AreaRef {
+  id: string;
+  center: { x: number; y: number };
+  radius: number;
+}
+
+export interface CombatTimeWindow {
+  startTime: number;
+  endTime: number;
+  purpose:
+    | "burst"
+    | "control_chain"
+    | "save"
+    | "disengage"
+    | "objective_damage";
+}
+
+export interface CombatEvent {
+  gameTime: number;
+  type: string;
+  sourceHeroId?: string;
+  targetHeroId?: string;
+  abilityId?: string;
+  value?: number;
+  tags: string[];
+}
+
+export interface EnemyCooldownMemory {
+  enemyHeroId: string;
+  resourceId: string;
+  estimatedReadyAt: number;
+  confidence: number;
+  tags: string[];
+}
+
+// ============================================================================
+// 4. RESERVAS DE CONTROLE, DANO E SAVE
+// ============================================================================
+
+export interface ControlReservation {
+  targetId: string;
+  sourceHeroId: string;
+  abilityId: string;
+
+  controlType:
+    | "stun"
+    | "root"
+    | "silence"
+    | "hex"
+    | "fear"
+    | "taunt"
+    | "disarm"
+    | "leash"
+    | "slow"
+    | "displacement";
+
+  expectedCastStart: number;
+  expectedImpactTime: number;
+  expectedControlEnd: number;
+
+  reliability: number;
+  priority: number;
+  hardControl: boolean;
+  canBeDispelled: boolean;
+  piercesDebuffImmunity: boolean;
+}
+
+export interface DamageReservation {
+  targetId: string;
+  sourceHeroId: string;
+  sourceId: string;
+
+  expectedImpactTime: number;
+  expectedDamage: number;
+  reliability: number;
+
+  damageType: "physical" | "magical" | "pure";
+  isUltimate: boolean;
+  isExecutionDamage: boolean;
+}
+
+export interface SaveReservation {
+  targetAllyId: string;
+  sourceHeroId: string;
+  sourceId: string;
+
+  expectedImpactTime: number;
+  expectedPreventedDamage: number;
+  reliability: number;
+
+  saveType:
+    | "heal"
+    | "barrier"
+    | "dispel"
+    | "invulnerability"
+    | "reposition"
+    | "damage_reduction"
+    | "death_prevention";
+
+  isPrimarySave: boolean;
+}
+
+export interface InterruptReservation {
+  targetEnemyId: string;
+  sourceHeroId: string;
+  sourceId: string;
+  channelId: string;
+
+  expectedImpactTime: number;
+  reliability: number;
+  interruptPriority: number;
+}
+
+// ============================================================================
+// 5. PAPÉIS DINÂMICOS EM COMBATE
+// ============================================================================
+
+export interface DynamicCombatAssignment {
+  heroId: string;
+  primaryRole: CombatRole;
+  secondaryRoles: CombatRole[];
+
+  assignmentConfidence: number;
+  preferredPositioningBand:
+    | "frontline"
+    | "midline"
+    | "backline"
+    | "flank"
+    | "offscreen";
+
+  mustPreserveCooldownIds: string[];
+  expendableCooldownIds: string[];
+}
+
+assignmentScore =
+  kitFit
+  + itemFit
+  + playerSkillFit
+  + currentCooldownAvailability
+  + teamNeed
+  - redundancyPenalty
+  - executionDifficultyPenalty;
+
+// ============================================================================
+// 6. FASES DA LUTA
+// ============================================================================
+
+preContactScore =
+  formationQuality
+  + visionAdvantage
+  + initiationAngle
+  + enemyInformationConfidence
+  - flankRisk
+  - chokeDisadvantage;
+
+pokeValue =
+  expectedDamage
+  + resourceBurn
+  + forcedCooldownValue
+  + positioningDisruption
+  - manaCost
+  - retaliationRisk;
+
+openingQuality =
+  targetPriority
+  + allyFollowUp
+  + targetAccessibility
+  + expectedControlReliability
+  + formationAdvantage
+  - baitRisk
+  - counterInitiationRisk;
+
+commitScore =
+  killConversionProbability
+  + fightSwing
+  + targetStrategicValue
+  + objectiveFollowUp
+  - cooldownOpportunityCost
+  - overcommitRisk
+  - buybackPunishRisk;
+
+collapseScore =
+  enemyFormationBroken
+  + enemyHeroesLow
+  + enemyEscapeResourcesSpent
+  + alliedNumbersAdvantage
+  - alliedLowHealthRisk
+  - buybackCounterRisk;
+
+// ============================================================================
+// 7. ESCOLHA DE ALVO
+// ============================================================================
+
+export interface TargetScoreBreakdown {
+  targetId: string;
+
+  strategicValue: number;
+  currentThreat: number;
+  killProbability: number;
+  accessibility: number;
+  allyFollowUp: number;
+  positioningError: number;
+  cooldownPunishValue: number;
+  interruptValue: number;
+  objectiveConversionValue: number;
+
+  defensiveResources: number;
+  enemySaveCoverage: number;
+  overextensionRisk: number;
+  baitRisk: number;
+  expectedOverkill: number;
+  targetSwitchCost: number;
+
+  finalScore: number;
+  reasons: string[];
+}
+
+targetScore =
+  strategicValue
+  + currentThreat
+  + killProbability
+  + accessibility
+  + allyFollowUp
+  + positioningError
+  + cooldownPunishValue
+  + interruptValue
+  + objectiveConversionValue
+  - defensiveResources
+  - enemySaveCoverage
+  - overextensionRisk
+  - baitRisk
+  - expectedOverkill
+  - targetSwitchCost;
+
+// Regras:
+//
+// - carry não é sempre prioridade;
+// - channeling importante pode virar prioridade máxima;
+// - alvo já controlado e com dano suficiente recebe penalidade de overkill;
+// - alvo sem escape e fora de posição recebe bônus;
+// - backline só é alvo válido se acessibilidade for suficiente;
+// - suporte com save disponível pode ser prioridade antes do core;
+// - iniciador sem recursos pode ser ignorado.
+
+// ============================================================================
+// 8. COORDENAÇÃO DE CC
+// ============================================================================
+
+followUpCastTime =
+  currentControlEnd
+  - ownCastPoint
+  - projectileTravelTime
+  - reactionMargin;
+
+reactionMargin =
+  baseReactionMargin
+  + communicationDelay
+  + playerExecutionDelay;
+
+controlOverlapPenalty =
+  overlapDuration
+  * controlValuePerSecond
+  * coordinationPenaltyMultiplier;
+
+controlChainScore =
+  totalControlDuration
+  + controlReliability
+  + burstFollowUp
+  + escapeDenial
+  - overlapPenalty
+  - dispelRisk
+  - immunityRisk;
+
+// Ignorar overlap penalty quando:
+//
+// - precisa interromper channeling;
+// - alvo vai escapar;
+// - controle atual pode ser removido;
+// - novo controle pega múltiplos alvos;
+// - morte imediata abre objetivo;
+// - aliado precisa ser salvo agora.
+//
+// Ordem sugerida:
+//
+// 1. displacement/setup;
+// 2. hard CC;
+// 3. follow-up hard CC;
+// 4. silence/leash/root;
+// 5. slow;
+// 6. finisher.
+
+// ============================================================================
+// 9. RESERVA DE DANO E ANTI-OVERKILL
+// ============================================================================
+
+expectedCommittedDamage =
+  sum(
+    reservation.expectedDamage
+    * reservation.reliability
+  );
+
+remainingRequiredDamage =
+  targetEffectiveHealth
+  - expectedCommittedDamage;
+
+overkillPenalty =
+  max(0, expectedCommittedDamage - targetEffectiveHealth)
+  * ultimateCostWeight;
+
+// Exceções:
+//
+// - target possui death prevention;
+// - target tem heal/sustain alto;
+// - target recebe save externo;
+// - dano reservado é pouco confiável;
+// - morte instantânea abre objetivo decisivo.
+
+// ============================================================================
+// 10. SAVES E PEEL
+// ============================================================================
+
+saveValue =
+  preventedDeathProbability
+  * protectedHeroStrategicValue
+  * postSaveFightContribution
+  - saveCooldownOpportunityCost
+  - casterDeathRisk
+  - saveOverlapPenalty;
+
+protectedHeroStrategicValue =
+  currentDpsContribution
+  + remainingCooldownImpact
+  + buybackStateValue
+  + objectiveConversionValue;
+
+peelValue =
+  enemyThreatToBackline
+  + protectedAllyValue
+  + damageInterrupted
+  + repositionValue
+  - peelResourceCost
+  - frontlineCollapseRisk;
+
+// Reservar:
+// - 1 save principal;
+// - 1 save backup;
+// - 1 peel primário;
+// - 1 interrupt de channeling.
+
+// ============================================================================
+// 11. FORMAÇÃO
+// ============================================================================
+
+export interface FormationPlan {
+  frontlineHeroIds: string[];
+  midlineHeroIds: string[];
+  backlineHeroIds: string[];
+  flankHeroIds: string[];
+
+  anchorPosition: { x: number; y: number };
+  minimumSpacing: number;
+  maximumSupportDistance: number;
+
+  protectHeroId?: string;
+  avoidAreaIds: string[];
+}
+
+formationScore =
+  damageUptime
+  + allyProtectionCoverage
+  + escapeRouteQuality
+  + auraCoverage
+  + initiationAngle
+  - enemyReachability
+  - aoeExposure
+  - flankThreat
+  - isolationRisk;
+
+carryPositionScore =
+  attackUptime
+  + peelCoverage
+  + safeTargetAvailability
+  + escapeRoute
+  - enemyGapClose
+  - enemyControlCoverage
+  - flankThreat;
+
+// ============================================================================
+// 12. USO DE ULTIMATES
+// ============================================================================
+
+ultimateUseScore =
+  immediateFightSwing
+  + targetStrategicValue
+  + targetsAffected
+  + killConversion
+  + allySaveValue
+  + objectiveFollowUp
+  + interruptValue
+  - cooldownOpportunityCost
+  - overkill
+  - enemyDisengageProbability
+  - missedUltimateRisk;
+
+// Não usar regra fixa de "só ultar 3 alvos".
+// Ultimate em 1 alvo pode ser correta se:
+// - alvo é core sem buyback;
+// - morte abre Roshan/high ground;
+// - alvo está channeling;
+// - alvo possui recurso estratégico decisivo.
+
+// ============================================================================
+// 13. TROCA DE ALVO
+// ============================================================================
+
+targetSwitchTrigger =
+  originalTargetBecomesInvalid
+  || originalTargetUsesImmunity
+  || newHighThreatTargetAppears
+  || channelMustBeInterrupted
+  || originalTargetReceivesMultipleSaves
+  || newTargetLosesEscape
+  || committedDamageAlreadyEnough;
+
+targetSwitchPenalty =
+  lostTravelTime
+  + lostAttackUptime
+  + abandonedComboValue
+  + communicationDelay;
+
+Trocar apenas se:
+
+newTargetScore >
+  currentTargetScore
+  + targetSwitchPenalty
+  + switchThreshold;
+
+// ============================================================================
+// 14. SKIRMISHES
+// ============================================================================
+
+export interface SkirmishContext {
+  locationId: string;
+  encounterType:
+    | "river_skirmish"
+    | "rune_skirmish"
+    | "jungle_skirmish"
+    | "camp_contest"
+    | "rotation_response";
+
+  localAllies: string[];
+  localEnemies: string[];
+
+  alliedArrivalTimes: Record<string, number>;
+  enemyArrivalEstimates: Record<string, number>;
+
+  localVisionAdvantage: number;
+  escapeRouteQuality: number;
+  chokeValue: number;
+  nearbyTowerInfluence: number;
+  nearbyCreepInfluence: number;
+  objectiveValue: number;
+}
+
+localNumbersAdvantage =
+  weightedAlliedPresence
+  - weightedEnemyPresence;
+
+weightedPresence =
+  currentHeroPower
+  * readiness
+  * arrivalProbability;
+
+skirmishEngageScore =
+  localNumbersAdvantage
+  + firstControlAdvantage
+  + burstAdvantage
+  + visionAdvantage
+  + chokeAdvantage
+  + escapeAdvantage
+  + objectiveValue
+  - reinforcementRisk
+  - nearbyTowerRisk
+  - lowResourcePenalty;
+
+// ============================================================================
+// 15. ESCALAÇÃO DE SKIRMISH
+// ============================================================================
+
+export type SkirmishEscalationDecision =
+  | "ignore"
+  | "send_one"
+  | "send_support"
+  | "teleport_core"
+  | "full_commit"
+  | "disengage";
+
+reinforcementValue =
+  fightSwingFromArrival
+  + allySavePotential
+  + targetKillConversion
+  + objectiveValue
+  - travelTimeCost
+  - laneFarmLost
+  - towerPressureConceded
+  - arrivalDeathRisk;
+
+supportRotationValue =
+  controlContribution
+  + saveContribution
+  + visionContribution
+  + numbersSwing
+  - carryLaneProtectionLoss
+  - travelTime;
+
+skirmishTargetScore =
+  killProbability * 1.4
+  + accessibility * 1.3
+  + currentThreat * 1.2
+  + allyFollowUp
+  + escapeSpentValue
+  - reinforcementRisk
+  - saveCoverage
+  - chaseDistance;
+
+// ============================================================================
+// 16. LUTA DE LANING PHASE
+// ============================================================================
+
+export type LaneFightIntent =
+  | "poke"
+  | "short_trade"
+  | "extended_trade"
+  | "all_in"
+  | "force_regen"
+  | "force_spell"
+  | "deny_ranged_creep"
+  | "secure_ranged_creep"
+  | "protect_pull"
+  | "contest_pull"
+  | "prepare_dive"
+  | "counter_dive"
+  | "rune_control"
+  | "force_rotation";
+
+export interface LaneFightContext {
+  lane: "top" | "mid" | "bottom";
+  alliedHeroIds: string[];
+  enemyHeroIds: string[];
+
+  alliedWaveStrength: number;
+  enemyWaveStrength: number;
+
+  alliedCreepAggroRisk: number;
+  enemyCreepAggroRisk: number;
+
+  alliedTowerDistance: number;
+  enemyTowerDistance: number;
+
+  lanePosition: number;
+  levelAdvantage: number;
+  experienceTimingAdvantage: number;
+
+  alliedRegenResources: number;
+  enemyRegenResources: number;
+
+  alliedManaResources: number;
+  enemyManaResources: number;
+
+  rangedCreepValue: number;
+  pullCampState: string;
+  nearbyRotationThreat: number;
+}
+
+shortTradeScore =
+  expectedDamageDealt
+  + creepSecureValue
+  + regenForcedValue
+  + positioningGain
+  - expectedDamageReceived
+  - creepAggroDamage
+  - manaCost
+  - enemySupportResponse;
+
+extendedTradeScore =
+  sustainedDamageAdvantage
+  + regenAdvantage
+  + attackSpeedAdvantage
+  + chaseAdvantage
+  + waveStrengthAdvantage
+  - enemyEscape
+  - towerRisk
+  - incomingRotationRisk;
+
+allInScore =
+  killProbability
+  + levelTimingAdvantage
+  + cooldownAdvantage
+  + waveAdvantage
+  + supportFollowUp
+  + enemyLowRegen
+  - towerRisk
+  - escapeRisk
+  - enemyRotationRisk
+  - deathTradeRisk;
+
+// ============================================================================
+// 17. LEVEL TIMINGS
+// ============================================================================
+
+levelTimingPower =
+  newAbilityAccess
+  + additionalSkillLevelValue
+  + ultimateAccess
+  + statGain
+  + surpriseFactor;
+
+if levelUpExpectedWithinSeconds < 3:
+  delayCommitUntilLevelUp = true;
+
+if heroReachesLevelBeforeEnemy:
+  allInScore += levelTimingPower;
+
+// ============================================================================
+// 18. WAVE INFLUENCE
+// ============================================================================
+
+waveCombatValue =
+  alliedCreepDamage
+  + rangedCreepDamage
+  + siegeCreepDamage
+  + bodyBlockValue
+  - enemyWaveClearThreat;
+
+fightInsideEnemyWavePenalty =
+  enemyCreepDps
+  + creepAggroRisk
+  + pathingPenalty;
+
+// Evitar trade prolongado em wave inimiga grande sem:
+// - burst alto;
+// - escape;
+// - sustain;
+// - level advantage;
+// - support follow-up.
+
+// ============================================================================
+// 19. RANGED CREEP COMO OBJETIVO
+// ============================================================================
+
+rangedCreepContestValue =
+  goldValue
+  + xpValue
+  + levelTimingValue
+  + denyValue
+  + laneTempoValue;
+
+secureRangedCreepActionScore =
+  rangedCreepContestValue
+  + spellReliability
+  - manaCost
+  - enemyPunishRisk;
+
+denyRangedCreepScore =
+  deniedXpValue
+  + enemyLevelTimingDelay
+  - selfPositioningRisk;
+
+// ============================================================================
+// 20. PULL E STACK CONTEST
+// ============================================================================
+
+pullContestScore =
+  denyEnemyLaneReset
+  + neutralXpGoldValue
+  + supportPositioningPunish
+  + waveEquilibriumValue
+  - rotationTimeCost
+  - carryExposureRisk;
+
+protectPullScore =
+  laneEquilibriumGain
+  + deniedEnemyXp
+  + supportResourceGain
+  - enemyKillThreat
+  - carryFarmLoss;
+
+// ============================================================================
+// 21. RUNE SKIRMISH
+// ============================================================================
+
+runeContestScore =
+  runeStrategicValue
+  + midResourceSwing
+  + bottleRefillValue
+  + gankEnableValue
+  + localNumbersAdvantage
+  + arrivalTimingAdvantage
+  - laneCreepLoss
+  - deathRisk
+  - towerPressureLost;
+
+// ============================================================================
+// 22. TOWER DIVE
+// ============================================================================
+
+export interface DiveContext {
+  targetHeroIds: string[];
+  alliedTankHeroId?: string;
+
+  towerDamagePerSecond: number;
+  towerAggroTargetId?: string;
+  towerAggroSwitchAvailable: boolean;
+
+  alliedWaveUnderTower: boolean;
+  alliedCreepCount: number;
+
+  targetEffectiveHealth: number;
+  targetEscapeResources: number;
+  targetSaveCoverage: number;
+
+  alliedEscapeResources: number;
+  incomingTeleportRisk: number;
+}
+
+diveScore =
+  killProbability
+  + targetStrategicValue
+  + waveCrashValue
+  + deniedXpGoldValue
+  + towerDamageOpportunity
+  - towerDamageRisk
+  - incomingTeleportRisk
+  - targetSaveCoverage
+  - escapeFailureRisk
+  - deathTradeRisk;
+
+// Dive permitido apenas se:
+// - wave está sob torre ou há tanking controlado;
+// - alvo é acessível;
+// - existe rota de saída;
+// - TP inimigo foi avaliado;
+// - aggro pode ser transferido/resetado;
+// - kill conversion justifica o risco.
+
+// ============================================================================
+// 23. TOWER AGGRO COORDENADO
+// ============================================================================
+
+towerTankScore =
+  heroEffectiveHealth
+  + damageReduction
+  + escapeAvailability
+  + abilityToDropAggro
+  - currentHealthRisk
+  - futureLaneCost;
+
+towerTankHeroId =
+  maxBy(alliedHeroes, towerTankScore);
+
+if currentTankHealthPct < towerDropThreshold:
+  requestAggroDrop = true;
+
+if anotherHeroCanTank:
+  transferAggroCall = true;
+
+// ============================================================================
+// 24. COUNTER-DIVE
+// ============================================================================
+
+counterDiveScore =
+  enemyOverextension
+  + towerDamageOnEnemy
+  + alliedTeleportArrivals
+  + enemyEscapeSpent
+  + targetSavePotential
+  - alliedLowResources
+  - enemyNumbersAdvantage;
+
+// ============================================================================
+// 25. PUNIÇÃO DE COOLDOWN
+// ============================================================================
+
+cooldownPunishWindow =
+  enemyResourceReadyAt
+  - currentTime;
+
+punishScore =
+  enemyResourceImportance
+  + remainingCooldownTime
+  + targetAccessibility
+  + alliedResourcesReady
+  - enemySupportCoverage;
+
+// Exemplos:
+// - inimigo gastou escape;
+// - inimigo gastou dispel;
+// - inimigo gastou heal;
+// - inimigo gastou stun;
+// - inimigo gastou TP.
+
+// ============================================================================
+// 26. REFORÇOS E TELEPORTS
+// ============================================================================
+
+teleportResponseScore =
+  allySaveValue
+  + fightSwing
+  + towerDefenseValue
+  + counterKillValue
+  + objectiveValue
+  - laneLoss
+  - teleportCooldownCost
+  - arrivalDeathRisk;
+
+// Carry pode não responder se:
+// - luta já está perdida;
+// - item está muito próximo;
+// - wave grande está sob torre;
+// - arrival time é ruim;
+// - morrer destruiria timing.
+
+// ============================================================================
+// 27. CHASE E DISENGAGE
+// ============================================================================
+
+chaseScore =
+  killProbability
+  + targetNoEscape
+  + objectiveConversion
+  + bountyValue
+  - overextensionRisk
+  - enemyReinforcementRisk
+  - formationBreak
+  - objectiveOpportunityCost;
+
+// stopChase se:
+// - alvo entrou em fog perigosa;
+// - formação quebrou;
+// - cooldowns acabaram;
+// - objetivo mais valioso está disponível;
+// - enemy buyback/TP ameaça;
+// - suporte ficou isolado.
+
+// ============================================================================
+// 28. EXECUÇÃO E ERRO HUMANO
+// ============================================================================
+
+executionSuccessChance =
+  actionBaseReliability
+  + relevantPlayerSkill
+  + heroMastery
+  + communication
+  + teamfightSkill
+  + positioningSkill
+  - actionDifficulty
+  - fatiguePenalty
+  - tiltPenalty
+  - pressurePenalty
+  - informationUncertainty;
+
+failureTypes:
+  late_cast
+  missed_skillshot
+  wrong_target
+  control_overlap
+  save_overlap
+  overcommit
+  bad_position
+  premature_retreat
+  chase_too_far
+  failed_aggro_drop
+  delayed_teleport
+  no_follow_up
+  panic_item_use
+
+// ============================================================================
+// 29. ATRIBUTOS DO JOGADOR
+// ============================================================================
+//
+// mechanics:
+//   skillshots, combos, reação.
+//
+// laning:
+//   trades, creep aggro, ranged creep, dive.
+//
+// mapAwareness:
+//   rotações, TP, fog.
+//
+// teamfight:
+//   alvo, ultimate, troca de foco.
+//
+// positioning:
+//   formação e sobrevivência.
+//
+// communication:
+//   follow-up e menor overlap.
+//
+// discipline:
+//   reduz chase ruim, dive ruim e overcommit.
+//
+// clutch:
+//   execução sob pressão.
+//
+// heroMastery:
+//   uso específico do kit.
+
+// ============================================================================
+// 30. TICKS E EVENTOS
+// ============================================================================
+//
+// Atualização base:
+// - teamfight detalhada: 250 ms;
+// - skirmish: 250-500 ms;
+// - laning fight: 250-500 ms;
+// - simulação rápida: 1 segundo.
+//
+// Recalcular imediatamente em:
+// hero_died
+// hero_below_critical_health
+// hard_control_applied
+// control_ended
+// ultimate_started
+// channel_started
+// save_used
+// escape_used
+// teleport_started
+// teleport_completed
+// tower_aggro_changed
+// new_enemy_arrived
+// primary_target_invalid
+// buyback_triggered
+// wave_reached_tower
+
+// ============================================================================
+// 31. PSEUDOCÓDIGO PRINCIPAL
+// ============================================================================
+
+export function updateCombatAi(input: {
+  gameState: RawGameState;
+  encounter: CombatEncounterState;
+  teamId: string;
+  blackboard: TeamfightBlackboard;
+  deltaTime: number;
+}): CombatAiOutput {
+  const context = analyzeCombatContext(input);
+  const encounterType = classifyEncounter(context);
+
+  const phase = updateCombatPhase({
+    previousPhase: input.blackboard.phase,
+    encounterType,
+    context,
+  });
+
+  const assignments = assignDynamicCombatRoles(context);
+
+  const targetScores = scoreAllTargets({
+    context,
+    assignments,
+    blackboard: input.blackboard,
+  });
+
+  const focusPlan = selectFocusTargets({
+    targetScores,
+    currentPrimaryTargetId: input.blackboard.primaryTargetId,
+    context,
+  });
+
+  const controlPlan = coordinateControls({
+    context,
+    focusPlan,
+    existingReservations: input.blackboard.controlReservations,
+  });
+
+  const damagePlan = coordinateDamage({
+    context,
+    focusPlan,
+    existingReservations: input.blackboard.damageReservations,
+  });
+
+  const savePlan = coordinateSaves({
+    context,
+    existingReservations: input.blackboard.saveReservations,
+  });
+
+  const formationPlan = updateFormationPlan({
+    context,
+    assignments,
+    focusPlan,
+  });
+
+  const playerActions = context.alliedHeroes.map((hero) => {
+    const candidateActions = generateCombatActions({
+      hero,
+      encounterType,
+      phase,
+      focusPlan,
+      controlPlan,
+      damagePlan,
+      savePlan,
+      formationPlan,
+      context,
+    });
+
+    const selectedAction = selectCombatAction({
+      hero,
+      candidateActions,
+      context,
+    });
+
+    return applyCombatExecutionModel({
+      hero,
+      action: selectedAction,
+      context,
+    });
+  });
+
+  return {
+    encounterType,
+    phase,
+    assignments,
+    focusPlan,
+    controlPlan,
+    damagePlan,
+    savePlan,
+    formationPlan,
+    playerActions,
+  };
+}
+
+// ============================================================================
+// 32. IA ESPECÍFICA DE LANE
+// ============================================================================
+
+export function updateLaningFightAi(input: {
+  laneContext: LaneFightContext;
+  playerId: string;
+  currentIntent?: LaneFightIntent;
+}): LaneFightDecision {
+  const candidates = [
+    { intent: "short_trade", score: scoreShortTrade(input.laneContext) },
+    { intent: "extended_trade", score: scoreExtendedTrade(input.laneContext) },
+    { intent: "all_in", score: scoreAllIn(input.laneContext) },
+    { intent: "secure_ranged_creep", score: scoreRangedCreepContest(input.laneContext) },
+    { intent: "contest_pull", score: scorePullContest(input.laneContext) },
+    { intent: "prepare_dive", score: scoreDive(input.laneContext) },
+    { intent: "force_reposition", score: scoreLaneRetreat(input.laneContext) },
+  ];
+
+  return selectLaneIntent(candidates);
+}
+
+// ============================================================================
+// 33. IA ESPECÍFICA DE SKIRMISH
+// ============================================================================
+
+export function updateSkirmishAi(input: {
+  skirmishContext: SkirmishContext;
+  teamId: string;
+}): SkirmishDecision {
+  const engageScore = scoreSkirmishEngage(input.skirmishContext);
+  const reinforceScore = scoreReinforcement(input.skirmishContext);
+  const disengageScore = scoreSkirmishDisengage(input.skirmishContext);
+
+  if (disengageScore > engageScore) {
+    return { decision: "disengage" };
+  }
+
+  if (reinforceScore > engageScore) {
+    return { decision: "send_support" };
+  }
+
+  if (engageScore > COMBAT_AI_RULES.skirmish.commitThreshold) {
+    return { decision: "full_commit" };
+  }
+
+  return { decision: "ignore" };
+}
+
+// ============================================================================
+// 34. CONSTANTES INICIAIS
+// ============================================================================
+
+export const COMBAT_AI_RULES = {
+  updateIntervals: {
+    detailedTeamfightMs: 250,
+    skirmishMs: 350,
+    laningFightMs: 350,
+    fastSimulationMs: 1000,
+  },
+
+  targetSelection: {
+    targetSwitchThreshold: 12,
+    currentTargetStickiness: 8,
+    interruptPriorityBonus: 35,
+    isolatedTargetBonus: 20,
+    noEscapeBonus: 18,
+    noBuybackBonus: 25,
+  },
+
+  controlCoordination: {
+    baseReactionMarginSeconds: 0.15,
+    maxAcceptedOverlapSeconds: 0.25,
+    overlapPenaltyPerSecond: 20,
+    lowCommunicationDelaySeconds: 0.45,
+    highCommunicationDelaySeconds: 0.10,
+  },
+
+  damageCoordination: {
+    overkillTolerancePct: 0.15,
+    ultimateOverkillPenalty: 30,
+    unreliableDamageDiscount: 0.35,
+  },
+
+  saves: {
+    primarySaveReservationWindowSeconds: 1.5,
+    backupSaveDelaySeconds: 0.35,
+    saveOverlapPenalty: 25,
+  },
+
+  chase: {
+    defaultChaseLimitSeconds: 6,
+    fogRiskMultiplier: 1.4,
+    reinforcementRiskMultiplier: 1.3,
+  },
+
+  laning: {
+    rangedCreepPriority: 25,
+    levelTwoTimingBonus: 20,
+    levelSixTimingBonus: 30,
+    enemyWavePenaltyMultiplier: 1.2,
+    towerDiveRiskMultiplier: 1.5,
+  },
+
+  skirmish: {
+    commitThreshold: 55,
+    reinforceThreshold: 45,
+    arrivalTimePenaltyPerSecond: 3,
+    localNumbersWeight: 20,
+  },
+};
+
+// ============================================================================
+// 35. TESTES UNITÁRIOS
+// ============================================================================
+//
+// TEAMFIGHT
+//
+// 1. Prioriza inimigo channeling mesmo se carry tiver mais net worth.
+// 2. Segundo stun espera o fim do primeiro.
+// 3. Overlap é permitido se alvo vai escapar.
+// 4. Dois saves fortes não são usados juntos sem necessidade.
+// 5. Ultimate não é gasta em alvo virtualmente morto.
+// 6. Troca alvo quando original ativa imunidade.
+// 7. Carry mantém distância de gap close.
+// 8. Chase para em fog perigosa.
+// 9. Inimigo sem buyback aumenta commit.
+// 10. Formação abre contra AoE forte.
+//
+// SKIRMISH
+//
+// 11. 2v2 favorável vira engage.
+// 12. 2v3 com reforço próximo pode virar send_support.
+// 13. Reinforcement não ocorre se perda de lane for maior.
+// 14. Targeting local prioriza alvo acessível sem escape.
+// 15. Choke favorece AoE/control.
+//
+// LANING
+//
+// 16. Usa spell para garantir ranged creep em timing importante.
+// 17. Evita trade prolongado em wave inimiga grande.
+// 18. Nível 2 antes do inimigo aumenta all-in score.
+// 19. Dive não ocorre sem wave ou aggro controlado.
+// 20. Counter-dive ocorre quando inimigo está preso pela torre.
+// 21. Support contesta pull quando equilibrium value é alto.
+// 22. Mid contesta runa se wave está empurrada.
+// 23. Carry não teleporta para skirmish ruim perto de item.
+// 24. Tower aggro transfere para herói mais resistente.
+// 25. Lane CC é encadeado, não sobreposto.
+//
+// EXECUÇÃO
+//
+// 26. Comunicação baixa gera mais overlap.
+// 27. Disciplina alta encerra chase cedo.
+// 28. Laning skill alta melhora trades.
+// 29. Tilt aumenta overcommit.
+// 30. Hero mastery melhora save/ultimate.
+
+// ============================================================================
+// 36. IMPLEMENTAÇÃO EM FASES
+// ============================================================================
+//
+// Fase 1:
+// - tipos;
+// - blackboard;
+// - target scoring;
+// - opening/sustain/disengage;
+// - teamfight simples.
+//
+// Fase 2:
+// - control reservation;
+// - damage reservation;
+// - save reservation;
+// - target switching;
+// - formation.
+//
+// Fase 3:
+// - skirmishes;
+// - reinforcement;
+// - local numbers;
+// - rune/camp/objective contests.
+//
+// Fase 4:
+// - laning trades;
+// - level timings;
+// - ranged creep;
+// - pull;
+// - dive;
+// - counter-dive.
+//
+// Fase 5:
+// - execution errors;
+// - personality;
+// - communication delay;
+// - tilt;
+// - fast simulation mode.
+
+// ============================================================================
+// 37. REGRA FINAL
+// ============================================================================
+//
+// A IA deve produzir:
+//
+// - lanes com trades e timings reais;
+// - skirmishes que escalam conforme reforços;
+// - teamfights com foco, peel, save e troca de alvo;
+// - CC encadeado;
+// - ultimates usadas por motivo;
+// - erros humanos coerentes;
+// - conversão de vitória em objetivo.
+//
+// A IA não deve agir como cinco bots isolados.
+// Também não deve agir como uma mente coletiva perfeita.
+//
+// Resultado ideal:
+//
+// coordenação suficiente para parecer um time;
+// imperfeição suficiente para o manager, treino e identidade importarem.

@@ -342,11 +342,45 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 **Critérios**: disputa pré-jogo causa dano entre Arcanes sem ativar entidades do mapa; nenhum atacante básico age duas vezes no mesmo tick ou antes do cooldown; efeitos distinguíveis; testes, lint e build verdes.
 
-**Medição**: a seed de auditoria produziu 35 ataques básicos e uma eliminação durante `-01:00 -> 00:00`; teste dedicado confirma que torres permanecem inativas. Três heróis escolhidos do roster carregado foram exercitados por 360 frames cada sem ataque anterior ao cooldown derivado de attack speed + BAT. A auditoria registrou em T17 os atributos ainda aproximados ou descartados. Benchmark mediano: 37,9 segundos simulados por segundo real; testes, lint e build verdes.
+**Medição**: a seed de auditoria produziu 35 ataques básicos e uma eliminação durante `-01:00 -> 00:00`; teste dedicado confirma que torres permanecem inativas. Três heróis escolhidos do roster carregado foram exercitados por 360 frames cada sem ataque anterior ao cooldown derivado de attack speed + BAT. A auditoria registrou em T18 os atributos ainda aproximados ou descartados. Benchmark mediano: 37,9 segundos simulados por segundo real; testes, lint e build verdes.
 
 ---
 
-### [ ] T15 - Auditoria e implementação integral de skills
+### [ ] T15 - Integração da IA de combate coletivo
+
+**Fonte**: `Game Systems/moba_teamfight_skirmish_laning_ai_codex.txt`.
+
+**Objetivo**: substituir o combate local e reativo por encontros coordenados, preservando a separação existente entre macro, micro e execução imperfeita. A IA deve agir como um time com comunicação limitada, não como cinco bots isolados nem como uma mente coletiva perfeita.
+
+**Arquitetura de integração**:
+- Manter `teamBrain` como dono do plano macro e `playerAgent` como dono do modo individual; inserir `CombatBlackboard` entre ambos e a seleção final de ações.
+- Detectar encontros delimitados no mapa (`lane_trade`, dive, rune/camp skirmish, teamfight, highground, chase/disengage) e manter um blackboard por encontro/time.
+- Transformar a saída do combate em intenção micro compatível com a simulação atual; `executionModel` aplica atraso, erro humano e atributos do jogador antes da ação efetiva.
+- Manter o blackboard no worker e serializar ao replay apenas os dados necessários para inspeção, sem aumentar todos os frames com estado diagnóstico completo.
+
+**Fases de implementação**:
+1. **Fundação**: tipos runtime, detector/classificador de encontros, contexto espacial, eventos de invalidação e ciclo de vida determinístico do blackboard.
+2. **Cérebro básico**: máquina de fases `pre_contact -> opening -> commit/sustain -> chase/disengage`, score de alvo, foco compartilhado, stickiness e troca de alvo.
+3. **Coordenação**: papéis dinâmicos, formação, reservas de CC/dano/save/interrupt, anti-overkill e uso contextual de ultimates.
+4. **Cenários**: skirmishes/reforços, trades de lane, level timings, influência da wave, runas/camps/pulls, dive, counter-dive e transferência de aggro.
+5. **Humanização e tuning**: integrar mechanics, laning, map awareness, teamfight, positioning, communication, discipline, clutch, mastery, fatigue e tilt ao modelo de execução.
+
+**Restrições**:
+- O arquivo-fonte é especificação/pseudocódigo; funções simbólicas devem ser adaptadas aos tipos, fórmulas, skills, itens e status já existentes, sem criar uma segunda resolução de combate.
+- Atualização normal por encontro entre 250-500ms, com reavaliação imediata somente nos eventos críticos listados; caches espaciais e de contexto devem ser reutilizados.
+- Toda aleatoriedade deve derivar de seed + janela + ator/ação para preservar replay e benchmark determinísticos.
+- Cada fase precisa entrar atrás de testes e métricas antes da próxima, evitando uma migração única de alto risco.
+
+**Critérios**:
+- Arcanes do mesmo time compartilham alvo, fase e intenção sem perder autonomia individual.
+- CC e saves evitam overlap conforme comunicação; dano reservado reduz overkill; foco troca somente quando o ganho supera o custo.
+- IA distingue lane trade, skirmish, dive e teamfight, considera reforços/ondas/torres e encerra chase inseguro.
+- Perfis diferentes produzem execução e erros coerentes; nenhum encontro fica preso após morte, fuga ou objetivo encerrado.
+- Testes unitários cobrem os 30 cenários sugeridos no documento, com testes de integração, replay determinístico, lint, build e benchmark verdes.
+
+---
+
+### [ ] T16 - Auditoria e implementação integral de skills
 
 **Objetivo**: verificar todas as skills importadas e garantir que cada uma possua execução funcional, incluindo dano, targeting, cooldown, mana, scaling, passivas, summons e todos os efeitos favoráveis/adversos e status effects descritos.
 
@@ -360,7 +394,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T16 - Auditoria e implementação integral de itens
+### [ ] T17 - Auditoria e implementação integral de itens
 
 **Objetivo**: verificar todos os itens importados, incluindo consumíveis, e garantir funcionamento completo de atributos, passivas, procs, auras, toggles, ativos, custos, cooldowns, charges, targeting e decisões de compra/uso da IA.
 
@@ -374,7 +408,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T17 - Paridade integral dos atributos importados
+### [ ] T18 - Paridade integral dos atributos importados
 
 **Objetivo**: eliminar aproximações legadas restantes e garantir que todo atributo calculado do herói tenha efeito explícito, testado e visível na simulação.
 
