@@ -1940,7 +1940,13 @@ function drawAttackFx(context: CanvasRenderingContext2D, viewport: CanvasViewpor
   context.save()
   context.globalAlpha = alpha
   context.strokeStyle = teamColor
-  context.lineWidth = effect[0] === 'tower' ? 2.4 : effect[0] === 'arcane' ? 1.8 : 1.2
+  const action = effect[9]
+  context.lineWidth = action === 'attack'
+    ? effect[0] === 'tower' ? 2.4 : effect[0] === 'arcane' ? 1.8 : 1.2
+    : action === 'skill' ? 2.2 : 1.5
+  if (action === 'skill') context.setLineDash([5, 3])
+  if (action === 'item') context.setLineDash([2, 3])
+  if (action === 'mobility') context.setLineDash([7, 4])
   context.beginPath()
   context.moveTo(from.x, from.y)
   const beamX = from.x + (to.x - from.x) * Math.min(1, progress + 0.35)

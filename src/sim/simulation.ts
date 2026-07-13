@@ -67,6 +67,7 @@ export type Stats = {
   damageMax: number
   range: number
   attackType: AttackType
+  // Seconds between basic attacks, derived from imported attack speed and BAT.
   attackSpeed: number
   armor: number
   magicResistance: number
@@ -359,6 +360,8 @@ export type MatchEvent = {
 export type AttackEffect = {
   id: string
   kind: 'creep' | 'arcane' | 'tower' | 'neutral'
+  action: 'attack' | 'skill' | 'item' | 'mobility'
+  sourceId: string
   targetKind: EntityKind
   team: TeamId
   from: Point
@@ -1542,10 +1545,8 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   // ticks de decisão (10Hz) é indistinguível no playback de 5Hz e poupa CPU.
   if (shouldDecide) resolveUnitHitboxes(next)
   next = updateTeamFortifications(next)
-  if (next.time >= 0) {
-    next = resolveCombat(next, frameContext)
-    next = resolveDeaths(next)
-  }
+  next = resolveCombat(next, frameContext)
+  next = resolveDeaths(next)
   next.winner = next.bases.find((base) => base.hp <= 0)?.team === 'dawn' ? 'dusk' : next.bases.find((base) => base.hp <= 0)?.team === 'dusk' ? 'dawn' : undefined
   return next
 }
@@ -1646,7 +1647,7 @@ type RenderArcaneFrame = [
 ]
 
 type RenderCreepFrame = [string, TeamId, LaneId, LaneCreepKind, number, number, number, number, number]
-type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number]
+type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number, AttackEffect['action'], string]
 type RenderMarkerFrame = [TeamId, number, number, number, number]
 type RenderGoldMarkerFrame = [...RenderMarkerFrame, number]
 type RenderSkillMarkerFrame = [...RenderMarkerFrame, string]
@@ -1755,7 +1756,7 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
     kills: [state.kills.dawn, state.kills.dusk],
     winner: state.winner,
     details: includeDetails ? createMatchRenderDetails(state) : undefined,
-    effects: state.effects.map((effect) => [effect.kind, effect.targetKind, effect.team, renderNumber(effect.from.x), renderNumber(effect.from.y), renderNumber(effect.to.x), renderNumber(effect.to.y), renderNumber(effect.createdAt), effect.duration]),
+    effects: state.effects.map((effect) => [effect.kind, effect.targetKind, effect.team, renderNumber(effect.from.x), renderNumber(effect.from.y), renderNumber(effect.to.x), renderNumber(effect.to.y), renderNumber(effect.createdAt), effect.duration, effect.action, effect.sourceId]),
     timedEffects: state.timedEffects.map((effect) => ({ ...effect, modifiers: effect.modifiers ? { ...effect.modifiers } : undefined })),
     deathMarkers: state.deathMarkers.map((marker) => [marker.arcane, marker.team, marker.pos.x, marker.pos.y, marker.createdAt, marker.expiresAt]),
     denyMarkers: state.denyMarkers.map((marker) => [marker.team, marker.pos.x, marker.pos.y, marker.createdAt, marker.expiresAt]),
@@ -1878,7 +1879,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       id: `fx-${frame.time}-${index}`,
       kind: effect[0], targetKind: effect[1], team: effect[2],
       from: { x: effect[3], y: effect[4] }, to: { x: effect[5], y: effect[6] },
-      createdAt: effect[7], duration: effect[8],
+      createdAt: effect[7], duration: effect[8], action: effect[9], sourceId: effect[10],
     })),
     timedEffects: frame.timedEffects,
     deathMarkers: frame.deathMarkers.map((marker, index) => ({ id: `death-${frame.time}-${index}`, arcane: marker[0], team: marker[1], pos: { x: marker[2], y: marker[3] }, createdAt: marker[4], expiresAt: marker[5] })),
@@ -3960,14 +3961,52 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
   const ownBase = teamInfo[arcane.team].base
   const path = lanePaths[arcane.team][arcane.lane]
   if (state.time < 0) {
+    if (isArcaneMovementDisabled(state, arcane)) {
+      const controlledBy = isArcaneStunned(state, arcane) ? 'Atordoado' : 'Enraizado'
+      return {
+        ...arcane,
+        macroDecision: 'Disputar runa de ouro',
+        microDecision: controlledBy,
+        aiReason: 'pre_game_rune_contest, controle',
+        decision: controlledBy,
+        nextDecisionAt: 0,
+      }
+    }
     const runePlan = getPregameBountyRunePlan(state, arcane)
-    const nextPos = moveToward(arcane.pos, runePlan.point, getEffectiveArcaneMoveSpeed(state, arcane) * delta)
+    const contestedEnemy = nearest(
+      arcane.pos,
+      state.arcanes.filter((candidate) => (
+        candidate.team !== arcane.team &&
+        candidate.stats.hp > 0 &&
+        candidate.respawn <= state.time &&
+        distance(candidate.pos, runePlan.point) <= 10
+      )),
+      9,
+    )
+    const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
+    const retreating = hpRatio < 0.28
+    const enemyInRange = contestedEnemy && distance(arcane.pos, contestedEnemy.pos) <= getArcaneAttackCenterRange(arcane, contestedEnemy)
+    const movementTarget = retreating
+      ? ownBase
+      : contestedEnemy && !enemyInRange
+        ? contestedEnemy.pos
+        : enemyInRange
+          ? arcane.pos
+          : runePlan.point
+    const nextPos = moveToward(arcane.pos, movementTarget, getEffectiveArcaneMoveSpeed(state, arcane) * delta)
+    const contesting = Boolean(contestedEnemy) && !retreating
     return {
       ...arcane,
-      target: runePlan.point,
+      target: movementTarget,
       pathIndex: Math.min(2, path.length - 1),
-      macroDecision: runePlan.kind === 'invade' ? 'Invadir runa de ouro' : 'Defender runa de ouro',
-      microDecision: runePlan.kind === 'invade'
+      macroDecision: retreating
+        ? 'Recuar da disputa'
+        : runePlan.kind === 'invade' ? 'Invadir runa de ouro' : 'Defender runa de ouro',
+      microDecision: retreating
+        ? 'Preservando vida antes das waves'
+        : contesting
+          ? `Enfrentando ${contestedEnemy!.player} na runa`
+          : runePlan.kind === 'invade'
         ? `Avancando para runa inimiga (${laneNames[arcane.lane]})`
         : runePlan.threatened
           ? 'Respondendo invasao na runa aliada'
@@ -3977,7 +4016,11 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       nextDecisionAt: 0,
       forceDecision: state.time + delta >= 0,
       lastDecisionPos: nextPos,
-      decision: runePlan.kind === 'invade' ? 'Disputando runa inimiga' : 'Protegendo runa aliada',
+      decision: retreating
+        ? 'Recuando da disputa'
+        : contesting
+          ? 'Combatendo pela runa'
+          : runePlan.kind === 'invade' ? 'Disputando runa inimiga' : 'Protegendo runa aliada',
       pos: nextPos,
     }
   }
@@ -4727,6 +4770,8 @@ export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Ar
     interruptsDecision = applied
     state.effects = addAttackEffect(state.effects, {
       kind: 'arcane',
+      action: 'mobility',
+      sourceId: arcane.id,
       targetKind: 'arcane',
       team: arcane.team,
       from: arcane.pos,
@@ -5067,6 +5112,8 @@ export function getPrimaryAttributeValue(hero: HeroDefinition, attributes: { str
 export function addSimpleItemEffect(state: SimulationState, arcane: Arcane, target: CombatTarget) {
   state.effects = addAttackEffect(state.effects, {
     kind: 'arcane',
+    action: 'item',
+    sourceId: arcane.id,
     targetKind: getCombatTargetKind(target),
     team: arcane.team,
     from: arcane.pos,
@@ -6904,6 +6951,8 @@ export function applySimpleNamedControl(
 export function addSimpleSkillEffect(state: SimulationState, arcane: Arcane, target: CombatTarget) {
   state.effects = addAttackEffect(state.effects, {
     kind: 'arcane',
+    action: 'skill',
+    sourceId: arcane.id,
     targetKind: getCombatTargetKind(target),
     team: arcane.team,
     from: arcane.pos,
@@ -6946,6 +6995,7 @@ export function hasAnySimpleSkillTag(skill: HeroSkillDefinition, tags: string[])
 
 export function resolveCombat(state: SimulationState, frameContext: TickFrameContext): SimulationState {
   const next = state
+  const pregame = next.time < 0
   const enemyCreepIndicesByTeam: Record<TeamId, number[]> = { dawn: [], dusk: [] }
   const creepIndicesByTeamLane: Record<TeamId, Record<LaneId, number[]>> = {
     dawn: { top: [], mid: [], bot: [] },
@@ -6958,6 +7008,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   }
 
   next.creeps.forEach((creep) => {
+    if (pregame) return
     if (next.time < creep.lastAttack + 1.25) return
     const target = getCachedRouteCreepTarget(creep, next, 'attack', frameContext)
     if (target) {
@@ -6965,6 +7016,8 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
       creep.lastAttack = next.time
       next.effects = addAttackEffect(next.effects, {
         kind: 'creep',
+        action: 'attack',
+        sourceId: creep.id,
         targetKind: getCombatTargetKind(target),
         team: creep.team,
         from: creep.pos,
@@ -6981,6 +7034,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   })
 
   for (const tower of next.towers) {
+    if (pregame) break
     if (tower.hp <= 0) continue
     if (next.time < tower.lastAttack + 1.2) continue
     const aggroTarget = tower.aggroUntil && tower.aggroUntil > next.time
@@ -6997,6 +7051,8 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
       }
       next.effects = addAttackEffect(next.effects, {
         kind: 'tower',
+        action: 'attack',
+        sourceId: tower.id,
         targetKind: getCombatTargetKind(target),
         team: tower.team,
         from: tower.pos,
@@ -7013,6 +7069,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   }
 
   for (const structure of next.structures) {
+    if (pregame) break
     if (structure.kind !== 'tower_tier_4' || structure.hp <= 0) continue
     if (next.time < structure.lastAttack + 1.05) continue
     const aggroTarget = structure.aggroUntil && structure.aggroUntil > next.time
@@ -7025,6 +7082,8 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
       structure.lastAttack = next.time
       next.effects = addAttackEffect(next.effects, {
         kind: 'tower',
+        action: 'attack',
+        sourceId: structure.id,
         targetKind: getCombatTargetKind(target),
         team: structure.team,
         from: structure.pos,
@@ -7041,6 +7100,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   }
 
   for (const camp of next.camps) {
+    if (pregame) break
     if (camp.hp <= 0) continue
     if (next.time < camp.lastAttack + 1.35) continue
     const leashRange = Math.max(8, camp.range + 2.5)
@@ -7062,6 +7122,8 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
       camp.aggroUntil = next.time + 8
       next.effects = addAttackEffect(next.effects, {
         kind: 'neutral',
+        action: 'attack',
+        sourceId: camp.id,
         targetKind: getCombatTargetKind(target),
         team: target.team === 'dawn' ? 'dusk' : 'dawn',
         from: camp.pos,
@@ -7087,6 +7149,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   }
 
   if (
+    !pregame &&
     next.boss.hp > 0 &&
     next.boss.aggroUntil &&
     next.boss.aggroUntil > next.time &&
@@ -7106,6 +7169,8 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
       next.boss.aggroUntil = next.time + 8
       next.effects = addAttackEffect(next.effects, {
         kind: 'neutral',
+        action: 'attack',
+        sourceId: next.boss.id,
         targetKind: getCombatTargetKind(target),
         team: target.team === 'dawn' ? 'dusk' : 'dawn',
         from: next.boss.pos,
@@ -7157,13 +7222,13 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     const attackCooldown = getEffectiveArcaneAttackCooldown(next, arcane)
     const attackReady = next.time - arcane.lastAttack >= attackCooldown
     if (!attackReady && !hasAnyCastableSkill(next, arcane)) return
-    const canAttackBoss = next.boss.hp > 0 && arcane.microDecision.startsWith('Atacar chefe')
+    const canAttackBoss = !pregame && next.boss.hp > 0 && arcane.microDecision.startsWith('Atacar chefe')
     const bossTarget = canAttackBoss && distance(arcane.pos, next.boss.pos) <= getArcaneAttackCenterRange(arcane, next.boss) ? next.boss : undefined
-    const objectiveTarget = getFocusedObjectiveTarget(next, arcane)
+    const objectiveTarget = pregame ? undefined : getFocusedObjectiveTarget(next, arcane)
     const enemyTeam = arcane.team === 'dawn' ? 'dusk' : 'dawn'
     const farmingJungle = isJungleFarmMicroDecision(arcane.microDecision)
-    const lastHitTarget = farmingJungle ? undefined : getLastHitTarget(next, arcane, creepIndicesByTeamLane[enemyTeam][arcane.lane])
-    const denyTarget = farmingJungle ? undefined : getDenyTarget(next, arcane, creepIndicesByTeamLane[arcane.team][arcane.lane])
+    const lastHitTarget = pregame || farmingJungle ? undefined : getLastHitTarget(next, arcane, creepIndicesByTeamLane[enemyTeam][arcane.lane])
+    const denyTarget = pregame || farmingJungle ? undefined : getDenyTarget(next, arcane, creepIndicesByTeamLane[arcane.team][arcane.lane])
     const laneControl = isLaningControlMicroDecision(arcane.microDecision)
     let target: CombatTarget | undefined = bossTarget ?? objectiveTarget ?? lastHitTarget ?? denyTarget
     if (!target) {
@@ -7173,7 +7238,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
         const creep = next.creeps[index]
         if (!laneControl || creep.lane !== arcane.lane) fallbackEnemyCreeps.push(creep)
       }
-      const intendedCamp = farmingJungle
+      const intendedCamp = !pregame && farmingJungle
         ? nearest(arcane.target, next.camps.filter((camp) => camp.hp > 0), 7)
         : undefined
       const campTarget = intendedCamp && distance(arcane.pos, intendedCamp.pos) <= getArcaneAttackCenterRange(arcane, intendedCamp)
@@ -7204,6 +7269,8 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     }
     next.effects = addAttackEffect(next.effects, {
       kind: 'arcane',
+      action: 'attack',
+      sourceId: arcane.id,
       targetKind: getCombatTargetKind(target),
       team: arcane.team,
       from: arcane.pos,
@@ -8253,7 +8320,7 @@ export function addAttackEffect(
     ...effects.slice(-(maxAttackEffects - 1)),
     {
       ...effect,
-      id: `${effect.kind}-${effect.team}-${effect.createdAt}-${effects.length}`,
+      id: `${effect.action}-${effect.sourceId}-${effect.createdAt}-${effects.length}`,
       duration,
     },
   ]

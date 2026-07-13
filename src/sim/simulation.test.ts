@@ -6,6 +6,7 @@ import {
   applySimpleSkillDisplacement,
   applySimpleSkillSummonPressure,
   applySimpleNegativeSkillEffects,
+  buildArcaneStats,
   buyItemAtBase,
   canTargetWithSimpleDamageSkill,
   createInitialState,
@@ -26,6 +27,7 @@ import {
   getHigherPriorityFarmAlly,
   getCreepXpShare,
   getDenyTarget,
+  getEffectiveArcaneAttackCooldown,
   getEffectiveArcaneDamage,
   getShopItemsForInventory,
   getSimulationEntityIndexes,
@@ -139,13 +141,23 @@ await loadGameData()
     .sort((a, b) => distance(a, { x: 50, y: 50 }) - distance(b, { x: 50, y: 50 }))[0]
   assert.deepEqual(dawnMid.target, dawnMidRune, 'the mid should cover the allied river bounty rune')
 
-  const noCombatState = createInitialState('opening-no-combat-test')
-  noCombatState.time = -30
-  noCombatState.arcanes[0].pos = { x: 50, y: 50 }
-  noCombatState.arcanes[5].pos = { x: 50, y: 50 }
-  const hpBeforePreparationFight = noCombatState.arcanes.map((arcane) => arcane.stats.hp)
-  const noCombatTick = tick(noCombatState, 1, true)
-  assert.deepEqual(noCombatTick.arcanes.map((arcane) => arcane.stats.hp), hpBeforePreparationFight, 'pregame positioning must not deal combat damage')
+  const pregameCombatState = createInitialState('opening-combat-test')
+  pregameCombatState.time = -30
+  pregameCombatState.arcanes = pregameCombatState.arcanes.map((arcane, index) => ({
+    ...arcane,
+    pos: index === 0 || index === 5 ? { x: 50, y: 50 } : arcane.pos,
+    lastAttack: index === 0 || index === 5 ? -100 : arcane.lastAttack,
+    skillLevels: {},
+    stats: index === 0 || index === 5 ? arcane.stats : { ...arcane.stats, hp: 0 },
+  }))
+  const pregameTower = pregameCombatState.towers[0]
+  pregameTower.pos = { x: 50, y: 50 }
+  pregameTower.lastAttack = -100
+  const hpBeforePreparationFight = pregameCombatState.arcanes[5].stats.hp
+  const pregameCombatTick = tick(pregameCombatState, 0.01, true)
+  assert.ok(pregameCombatTick.arcanes[5].stats.hp < hpBeforePreparationFight, 'Arcanes contesting a pregame rune should fight before 00:00')
+  assert.ok(pregameCombatTick.effects.some((effect) => effect.action === 'attack'), 'pregame combat should emit a basic-attack effect')
+  assert.equal(pregameCombatTick.towers[0].lastAttack, -100, 'map structures must remain inactive during pregame combat')
 
   const threatenedState = createInitialState('opening-rune-response-test')
   threatenedState.time = -30
@@ -173,6 +185,56 @@ await loadGameData()
   wisdomState.time = 419.99
   const atSevenMinutes = tick(wisdomState, 0.02, true)
   assert.equal(atSevenMinutes.runes.filter((rune) => rune.kind === 'wisdom').length, 2, 'XP runes should start at 07:00')
+}
+
+{
+  const heroIds = [...new Set(createInitialState('imported-cadence-roster').arcanes.map((arcane) => arcane.heroDefinitionId))].slice(0, 3)
+  heroIds.forEach((heroId) => {
+    const cadenceState = createInitialState(`imported-cadence-${heroId}`)
+    cadenceState.time = 100
+    const attacker = cadenceState.arcanes[0]
+    const target = cadenceState.arcanes[5]
+    attacker.heroDefinitionId = heroId
+    attacker.items = []
+    attacker.skillLevels = {}
+    attacker.stats = buildArcaneStats(heroId, 10, 0, 0, 1, 1, [])
+    attacker.pos = { x: 50, y: 50 }
+    attacker.lastAttack = 90
+    target.items = []
+    target.skillLevels = {}
+    target.pos = { x: 50.2, y: 50 }
+    target.lastAttack = Number.POSITIVE_INFINITY
+    target.stats = { ...target.stats, hp: 1_000_000, maxHp: 1_000_000 }
+    cadenceState.arcanes = [attacker, target]
+    cadenceState.creeps = []
+    cadenceState.towers = []
+    cadenceState.structures = []
+    cadenceState.camps = []
+    cadenceState.boss.hp = 0
+
+    const expectedCooldown = attacker.stats.attackSpeed
+    assert.ok(Math.abs(getEffectiveArcaneAttackCooldown(cadenceState, attacker) - expectedCooldown) < 1e-9, `${heroId} should use its imported attack interval`)
+    const attackTimes: number[] = []
+    let observedLastAttack = attacker.lastAttack
+    for (let frame = 0; frame < 360; frame += 1) {
+      cadenceState.time = 100 + frame * simulationFrameSeconds
+      resolveCombat(cadenceState, createTickFrameContext())
+      const liveAttacker = cadenceState.arcanes.find((arcane) => arcane.id === attacker.id)!
+      if (liveAttacker.lastAttack !== observedLastAttack) {
+        attackTimes.push(liveAttacker.lastAttack)
+        observedLastAttack = liveAttacker.lastAttack
+      }
+    }
+    for (let index = 1; index < attackTimes.length; index += 1) {
+      assert.ok(attackTimes[index] - attackTimes[index - 1] >= expectedCooldown - 1e-9, `${heroId} attacked before its imported cooldown`)
+    }
+    assert.ok(attackTimes.length >= 5, `${heroId} should produce enough attacks for a cadence audit`)
+    assert.equal(
+      cadenceState.effects.filter((effect) => effect.sourceId === attacker.id && effect.action !== 'attack').length,
+      0,
+      `${heroId} basic cadence fixture should not conflate skills/items with attacks`,
+    )
+  })
 }
 
 {

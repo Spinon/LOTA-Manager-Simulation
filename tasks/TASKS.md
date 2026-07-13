@@ -319,11 +319,30 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Adicionar duas runas de ouro próximas ao mid, uma de cada lado da lane e acompanhando a direção do rio.
 - Atribuir lado a cada runa e criar planos pré-jogo por role/rota: cores cobrem pontos aliados e supports buscam invasões coordenadas.
 - Detectar inimigos pressionando runas aliadas e permitir reação defensiva antes do spawn em `00:00`.
-- Preservar ausência de combate antes de `00:00`; a disputa é por posição e a coleta ocorre no spawn.
+- A coleta ocorre no spawn; o posicionamento foi posteriormente ampliado com combate em T14.5.
 
 **Critérios**: seis pontos em três pares espelhados, três por lado; IA produz defensores e invasores, reage a ameaça próxima e chega às áreas antes do spawn; testes, lint e build verdes.
 
-**Medição**: os dez Arcanes chegaram a até 2,2 unidades de um ponto de ouro antes de `00:00`; as seis runas foram coletadas no spawn e a seed de auditoria produziu divisão 4/2 entre os times, confirmando roubos. Testes cobrem simetria, três runas por lado, cobertura do mid, invasores, reação defensiva e ausência de dano pré-jogo; testes, lint e build verdes.
+**Medição**: os dez Arcanes chegaram a até 2,2 unidades de um ponto de ouro antes de `00:00`; as seis runas foram coletadas no spawn e a seed de auditoria produziu divisão 4/2 entre os times, confirmando roubos. Testes cobrem simetria, três runas por lado, cobertura do mid, invasores e reação defensiva; testes, lint e build verdes.
+
+---
+
+### [x] T14.5 - Combate pré-jogo e auditoria de cadência
+
+> Concluída em 2026-07-12 - Liberei confrontos entre Arcanes pelas runas, separei visualmente ataques/skills/itens/mobilidade e protegi a cadência importada com regressão por fonte.
+
+**Objetivo**: tornar a disputa das runas realmente interativa e garantir que ataques básicos respeitem os atributos importados sem serem confundidos com skills ou procs.
+
+**Escopo**:
+- Permitir combate somente entre Arcanes durante `-01:00 -> 00:00`, mantendo creeps, torres, estruturas, neutros e boss inativos.
+- Fazer Arcanes envolvidos na mesma runa aproximarem-se até o alcance, enfrentarem o adversário e recuarem com vida criticamente baixa.
+- Identificar efeitos visuais por fonte e por ação (`attack`, `skill`, `item`, `mobility`) para não representar todo dano como ataque básico.
+- Auditar a cadência com heróis importados e impedir por teste qualquer ataque antes do intervalo calculado a partir de `baseAttackTime` e attack speed.
+- Registrar as lacunas de atributos carregados que ainda precisam de paridade integral no runtime.
+
+**Critérios**: disputa pré-jogo causa dano entre Arcanes sem ativar entidades do mapa; nenhum atacante básico age duas vezes no mesmo tick ou antes do cooldown; efeitos distinguíveis; testes, lint e build verdes.
+
+**Medição**: a seed de auditoria produziu 35 ataques básicos e uma eliminação durante `-01:00 -> 00:00`; teste dedicado confirma que torres permanecem inativas. Três heróis escolhidos do roster carregado foram exercitados por 360 frames cada sem ataque anterior ao cooldown derivado de attack speed + BAT. A auditoria registrou em T17 os atributos ainda aproximados ou descartados. Benchmark mediano: 37,9 segundos simulados por segundo real; testes, lint e build verdes.
 
 ---
 
@@ -352,6 +371,22 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Implementar lacunas e adicionar testes por família de item e auditoria que falha para itens novos sem suporte declarado.
 
 **Critérios**: 100% dos itens catalogados com status explícito; nenhum ativo sem efeito/custo/cooldown; consumíveis integrados ao inventário normal; relatório persistido e testes/lint/build verdes.
+
+---
+
+### [ ] T17 - Paridade integral dos atributos importados
+
+**Objetivo**: eliminar aproximações legadas restantes e garantir que todo atributo calculado do herói tenha efeito explícito, testado e visível na simulação.
+
+**Escopo**:
+- Preservar o que já está integrado: HP/mana máximos, dano e faixa de dano, alcance/tipo de ataque, attack speed + BAT, armor, resistências, movimento e visão.
+- Substituir regeneração fixa fora da base por health/mana regen importados e modificadores de item/skill.
+- Integrar evasion e damage block à resolução de dano, com RNG determinístico e regras de stacking.
+- Aplicar acquisition range à busca de alvo e collision size ao hitbox, mantendo escalas de mapa coerentes.
+- Decidir e implementar o papel de turn rate na abstração do minimapa, sem introduzir oscilação de movimento.
+- Tornar explícita a política de dano básico médio versus rolagem min/max e cobri-la com testes determinísticos.
+
+**Critérios**: nenhum campo de `HeroCalculatedStats` é descartado sem decisão documentada; atributos e modificadores possuem testes runtime; replay continua determinístico; testes, lint, build e benchmark verdes.
 
 ---
 
