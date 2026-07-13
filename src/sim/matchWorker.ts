@@ -11,6 +11,10 @@ import {
   type TeamId,
 } from './simulation.ts'
 import { getReplayChunkTransferables, ReplayChunkEncoder, type EncodedReplayChunk } from './replayStore.ts'
+import {
+  defaultSimulationChunkSteps,
+  getNextSimulationChunkSteps,
+} from './precomputeScheduling.ts'
 
 export type MatchWorkerRequest =
   | { type: 'start'; seed: string; runId: number }
@@ -26,10 +30,6 @@ export type MatchWorkerResponse =
 
 const renderFrameIntervalSeconds = 0.2
 const renderDetailsIntervalSeconds = 2
-// A partida inteira é calculada antes do playback. Lotes de ~30s reduzem timers
-// e mensagens sem deixar o cancelamento lento demais nas máquinas de referência.
-const simulationChunkSteps = 900
-
 let activeRunId = 0
 self.onmessage = (event: MessageEvent<MatchWorkerRequest>) => {
   const message = event.data
@@ -59,6 +59,7 @@ async function runMatch(seed: string, runId: number) {
     let lastFrameTime = state.time
     let nextDetailsAt = state.time
     let pendingFrames: MatchRenderFrame[] = []
+    let simulationChunkSteps = defaultSimulationChunkSteps
     const replayEncoder = new ReplayChunkEncoder()
 
     const postFrame = () => {
@@ -87,6 +88,7 @@ async function runMatch(seed: string, runId: number) {
     const runChunk = () => {
       if (runId !== activeRunId) return
 
+      const chunkStartedAt = performance.now()
       for (let step = 0; step < simulationChunkSteps && !state.winner; step += 1) {
         decisionAccumulator += simulationFrameSeconds
         const shouldDecide = decisionAccumulator >= decisionGateSeconds
@@ -98,6 +100,8 @@ async function runMatch(seed: string, runId: number) {
           nextFrameAt += renderFrameIntervalSeconds
         }
       }
+      const chunkElapsedMilliseconds = performance.now() - chunkStartedAt
+      simulationChunkSteps = getNextSimulationChunkSteps(simulationChunkSteps, chunkElapsedMilliseconds)
       // A vitória pode ocorrer entre dois frames de 0,2s. Sem este snapshot
       // final, o replay para no estado anterior à queda da base.
       if (state.winner && lastFrameTime + 0.0001 < state.time) {

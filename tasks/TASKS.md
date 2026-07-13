@@ -639,7 +639,9 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T24 - Pré-carregamento integral otimizado
+### [x] T24 - Pré-carregamento integral otimizado
+
+> Concluída em 2026-07-13 - O playback aguarda o replay completo e Worker/benchmark usam lotes adaptativos à velocidade da máquina, preservando cancelamento, determinismo e velocidades até 32x.
 
 **Objetivo**: calcular e armazenar a partida inteira antes de abrir a arena, reduzindo ao máximo essa espera sem simplificar a simulação.
 
@@ -651,7 +653,88 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 **Critérios**: arena nunca aparece antes do replay completo; nenhuma parada por buffer em qualquer velocidade; digest preservado; loading e restart confiáveis; benchmark completo, testes, lint e build verdes.
 
-**Reajuste em andamento (2026-07-13)**: removida a liberação adaptativa a pedido; Worker voltou ao pré-carregamento integral e passou a lotes de 30s. Primeira rodada do hot path reutiliza caches por tick e buffers de colisão, evita varreduras administrativas sem trabalho e preservou o digest nos benchmarks curtos. Validação final do carregador e benchmark completo ficaram pendentes para a próxima estação.
+**Medição final (2026-07-13)**: a seed `performance-reference` simulou 51:52 em 27,24s nesta rodada (`114,2x`) e preservou o digest `45a6bc737cc8a8cb`; o baseline da T20 levava 55,05s. O replay ocupou 93,1 MB e o `tick` permaneceu como próximo gargalo, com 96,7%. No navegador, partidas aleatórias de 63+ minutos ficaram no carregador até `workerDone`, restart recalculou do zero, 1x-32x ficaram disponíveis e não houve erro de console.
+
+---
+
+### [ ] T25 - Planos cinemáticos para creeps de rota
+
+**Objetivo**: eliminar atualizações de movimento a 30Hz quando uma creep apenas percorre um trecho previsível da rota.
+
+**Escopo**:
+- Representar deslocamento livre por um `MotionPlan` quantizado, com origem, destino, início, chegada e próximo instante de ativação.
+- Materializar a posição somente quando combate, visão, replay, waypoint, pull, aggro ou invalidação precisarem dela.
+- Manter cada creep individual para last hit, deny, ouro, XP e render.
+- Criar modo A/B headless entre movimento fixo e planejado, usando seeds douradas e relatório de divergências.
+
+**Critérios**: contatos de wave, ataques, pulls e objetivos permanecem determinísticos; nenhuma creep atravessa um alvo; reduzir ao menos 10% do tempo total ou 35% de `updateCreepMovement` na partida completa; testes, lint e build verdes.
+
+---
+
+### [ ] T26 - Ativação tática e índice espacial persistente
+
+**Objetivo**: acordar trajetórias antes de qualquer interação e parar de reconstruir grades espaciais completas por tick.
+
+**Escopo**:
+- Manter buckets espaciais persistentes e atualizar uma entidade somente ao cruzar uma célula.
+- Usar margem conservadora de movimento para ativar creeps antes de visão, ataque, torre, Arcane, neutro ou colisão.
+- Reutilizar buffers de consulta sem criar arrays temporários.
+- Invalidar imediatamente por morte, teleporte, deslocamento, aggro, pull ou mudança de objetivo.
+
+**Critérios**: nenhuma aquisição de alvo atrasada; digest/eventos aprovados no A/B; ganho incremental mensurável na partida completa.
+
+---
+
+### [ ] T27 - Planos de viagem para Arcanes fora de combate
+
+**Objetivo**: usar movimento analítico em retornos à base, avanços de rota e deslocamentos longos, mantendo micro tático em alta frequência.
+
+**Escopo**:
+- Planejar trechos estáveis para base, lane, objetivo, formação e saída de TP.
+- Cancelar o plano imediatamente por perigo visível, dano, controle, call, mudança de decisão ou entrada em ilha tática.
+- Preservar o scheduler atual de IA e a autoridade das decisões de combate.
+
+**Critérios**: Arcanes não oscilam nem ignoram perigo; decisões e tempos de chegada permanecem auditáveis; ganho total acumulado de movimento chega a pelo menos 1,5x sobre o baseline da T24.
+
+---
+
+### [ ] T28 - Ilhas táticas e timing wheel de eventos
+
+**Objetivo**: reservar 30Hz para regiões realmente contestadas e saltar períodos sem interação relevante.
+
+**Escopo**:
+- Formar ilhas ativas em torno de combate, torres, campos, boss e trajetórias convergentes.
+- Agendar ataques, cooldowns, efeitos, respawns, waves, chegadas e decisões em buckets temporais quantizados.
+- Avançar o relógio diretamente ao próximo evento quando nenhuma ilha exigir passo fixo.
+- Manter ordem determinística para eventos simultâneos.
+
+**Critérios**: DoT/HoT, channeling, controle, ataque e economia preservam seus instantes; nenhuma luta perde fidelidade; alvo de 3x sobre o baseline da T24 em partida completa.
+
+---
+
+### [ ] T29 - Estado orientado a dados para unidades numerosas
+
+**Objetivo**: reduzir alocações e melhorar localidade de cache depois que as fronteiras de movimento estiverem estáveis.
+
+**Escopo**:
+- Migrar canais quentes de creeps para arrays tipados por componente: posição, HP, time, lane, alvo e agenda.
+- Manter IDs e fachadas de leitura compatíveis para IA, combate e replay.
+- Evitar conversão objeto/array dentro do tick.
+
+**Critérios**: queda mensurável de GC e heap; replay e inspector continuam funcionais; testes e digests aprovados.
+
+---
+
+### [ ] T30 - Replay por trajetórias e cache endereçado por conteúdo
+
+**Objetivo**: reduzir custo e memória do replay e evitar recalcular partidas idênticas.
+
+**Escopo**:
+- Gravar segmentos de movimento e eventos, mantendo keyframes periódicos para seek.
+- Reconstruir posições no player sem snapshots redundantes.
+- Armazenar replays completos em IndexedDB por versão do motor, regras, seed, escalações e estratégias.
+
+**Critérios**: seek e replay completos permanecem determinísticos; cache nunca reutiliza regras incompatíveis; memória fica abaixo do baseline binário atual.
 
 ---
 

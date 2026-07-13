@@ -11,6 +11,10 @@ import {
   tick,
 } from '../src/sim/simulation.ts'
 import { getReplayChunkTransferables, ReplayChunkEncoder } from '../src/sim/replayStore.ts'
+import {
+  defaultSimulationChunkSteps,
+  getNextSimulationChunkSteps,
+} from '../src/sim/precomputeScheduling.ts'
 
 const args = process.argv.slice(2)
 
@@ -30,7 +34,6 @@ const seed = getArg('seed', 'performance-reference')
 const segmentSeconds = Math.max(60, Number(getArg('segment-seconds', 300)) || 300)
 const renderFrameIntervalSeconds = 0.2
 const renderDetailsIntervalSeconds = 2
-const simulationChunkSteps = 150
 
 await loadGameData()
 
@@ -75,6 +78,9 @@ function runBenchmark() {
   let frameMilliseconds = 0
   let encodeMilliseconds = 0
   let transferMilliseconds = 0
+  let simulationChunkSteps = defaultSimulationChunkSteps
+  let stepsInCurrentChunk = 0
+  let chunkStartedAt = 0
   let segmentStartedAt = performance.now()
   let segmentStartTime = state.time
   let nextSegmentAt = state.time + segmentSeconds
@@ -85,6 +91,7 @@ function runBenchmark() {
   const cpuStartedAt = process.cpuUsage()
   const startedAt = performance.now()
   segmentStartedAt = startedAt
+  chunkStartedAt = startedAt
 
   const flushFrames = () => {
     if (pendingFrames.length === 0) return
@@ -108,6 +115,7 @@ function runBenchmark() {
     state = tick(state, simulationFrameSeconds, shouldDecide)
     tickMilliseconds += performance.now() - measuredAt
     stepCount += 1
+    stepsInCurrentChunk += 1
 
     if (state.time + 0.0001 >= nextFrameAt) {
       const includeDetails = state.time + 0.0001 >= nextDetailsAt
@@ -119,7 +127,13 @@ function runBenchmark() {
       frameCount += 1
     }
 
-    if (stepCount % simulationChunkSteps === 0) flushFrames()
+    if (stepsInCurrentChunk >= simulationChunkSteps) {
+      const chunkElapsedMilliseconds = performance.now() - chunkStartedAt
+      simulationChunkSteps = getNextSimulationChunkSteps(simulationChunkSteps, chunkElapsedMilliseconds)
+      flushFrames()
+      stepsInCurrentChunk = 0
+      chunkStartedAt = performance.now()
+    }
 
     if (state.time + 0.0001 >= nextSegmentAt || state.winner) {
       const now = performance.now()
