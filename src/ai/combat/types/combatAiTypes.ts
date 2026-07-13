@@ -71,6 +71,32 @@ export interface CombatEncounterSnapshot {
   reasonTags: string[]
 }
 
+export interface CombatTargetScoreInput {
+  targetId: string
+  strategicValue: number
+  currentThreat: number
+  killProbability: number
+  accessibility: number
+  allyFollowUp: number
+  positioningError: number
+  cooldownPunishValue: number
+  interruptValue: number
+  objectiveConversionValue: number
+  defensiveResources: number
+  enemySaveCoverage: number
+  overextensionRisk: number
+  baitRisk: number
+  expectedOverkill: number
+  targetSwitchCost: number
+  dangerScore: number
+  towerExposure: number
+  reasons: string[]
+}
+
+export interface CombatTargetScoreBreakdown extends CombatTargetScoreInput {
+  finalScore: number
+}
+
 export interface CombatBlackboard {
   encounterId: string
   teamId: CombatTeamId
@@ -86,6 +112,10 @@ export interface CombatBlackboard {
   enemyHeroIds: string[]
   primaryTargetId?: string
   secondaryTargetId?: string
+  primaryTargetScore?: number
+  primaryTargetDanger?: number
+  targetFocusConfidence: number
+  targetReasons: string[]
   protectedAllyId?: string
   closestEnemyDistance: number
   alliedAverageHealthPct: number

@@ -360,7 +360,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 **Fases de implementação**:
 - [x] **Fundação**: tipos runtime, detector/classificador de encontros, contexto espacial, eventos de invalidação e ciclo de vida determinístico do blackboard.
-- [ ] **Cérebro básico**: máquina de fases `pre_contact -> opening -> commit/sustain -> chase/disengage`, score de alvo, foco compartilhado, stickiness e troca de alvo.
+- [x] **Cérebro básico**: máquina de fases `pre_contact -> opening -> commit/sustain -> chase/disengage`, score de alvo, foco compartilhado, stickiness e troca de alvo.
 - [ ] **Coordenação**: papéis dinâmicos, formação, reservas de CC/dano/save/interrupt, anti-overkill e uso contextual de ultimates.
 - [ ] **Cenários**: skirmishes/reforços, trades de lane, level timings, influência da wave, runas/camps/pulls, dive, counter-dive e transferência de aggro.
 - [ ] **Humanização e tuning**: integrar mechanics, laning, map awareness, teamfight, positioning, communication, discipline, clutch, mastery, fatigue e tilt ao modelo de execução.
@@ -372,6 +372,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Inspetor do Arcane exibe encontro, fase e números locais sem ainda dar autoridade de alvo ao novo sistema.
 - Corrigido o timestamp inicial de ataque herdado da abertura em `00:00`; Arcanes agora podem combater desde `-01:00` e a rota natural de teste inicia dano por volta de `-51s`.
 - Auditoria de 10min encontrou 77 encontros, máximo de três simultâneos e nenhuma retenção permanente; benchmark determinístico mediano de 46,7x nesta estação após incluir a reavaliação por evento crítico.
+
+**Progresso do cérebro básico (2026-07-12)**:
+- Score coletivo considera valor estratégico da role, ameaça, chance de kill, acessibilidade, follow-up, isolamento, channeling, recursos defensivos, saves, overkill, vantagem numérica e conversão em objetivo.
+- O medidor de perigo existente alimenta risco de aproximação e exposição a torres; alvo sob torre sem wave ou tank não pode virar foco compartilhado.
+- Foco possui stickiness e limiar de troca, evitando alternância por ganhos marginais; ataques alcançáveis priorizam o alvo compartilhado.
+- Cada Arcane compara perigo do alvo com HP, agressividade, fase e números locais; risco novo invalida a aproximação entre decisões e produz hold/recuo em vez de rush.
+- Auditoria final de 5min: 18 focos ficaram inseguros entre decisões; todos viraram hold/recuo no tick seguinte e nenhuma ordem de avanço permaneceu ativa. A seed de controle passou de 2-9 para 2-3 após reduzir perseguições suicidas.
+- Benchmark determinístico: 40,2x wall / 44,2x CPU nesta execução, com digest estável entre três rodadas.
 
 **Restrições**:
 - O arquivo-fonte é especificação/pseudocódigo; funções simbólicas devem ser adaptadas aos tipos, fórmulas, skills, itens e status já existentes, sem criar uma segunda resolução de combate.

@@ -7,6 +7,7 @@ import { selectPlayerMode } from '../ai/player/playerAgent.ts'
 import { selectTeamPlan } from '../ai/team/teamBrain.ts'
 import type { AiMemoryEvent, AnalyzedGameState, ExecutionFailureType, PlayerModeType, RawAiGameSnapshot, TeamPlan } from '../ai/types/aiTypes.ts'
 import { detectCombatEncounters } from '../ai/combat/analysis/combatContextAnalyzer.ts'
+import { scoreCombatTarget, selectCombatFocus } from '../ai/combat/analysis/targetPriorityAnalyzer.ts'
 import { COMBAT_AI_RULES } from '../ai/combat/config/combatAiConstants.ts'
 import { createEmptyCombatBlackboards, updateCombatBlackboards } from '../ai/combat/teamfight/combatBlackboard.ts'
 import type { CombatBlackboard, CombatBlackboardState, CombatDetectionInput } from '../ai/combat/types/combatAiTypes.ts'
@@ -2496,14 +2497,153 @@ export function respawnArcaneIfReady(arcane: Arcane, time: number, index: number
 
 export function updateCombatAiFoundation(state: SimulationState): SimulationState {
   const encounters = detectCombatEncounters(createCombatDetectionInput(state))
+  const detectedBlackboards = updateCombatBlackboards({
+    gameTime: state.time,
+    previous: state.combatBlackboards,
+    encounters,
+  })
   return {
     ...state,
-    combatBlackboards: updateCombatBlackboards({
-      gameTime: state.time,
-      previous: state.combatBlackboards,
-      encounters,
-    }),
+    combatBlackboards: assignCombatFocusTargets(state, detectedBlackboards),
   }
+}
+
+export function assignCombatFocusTargets(state: SimulationState, blackboards: CombatBlackboardState): CombatBlackboardState {
+  const assignTeam = (team: TeamId) => blackboards[team].map((board) => {
+    if (board.phase === 'disengage' || board.phase === 'reset') {
+      return {
+        ...board,
+        primaryTargetId: undefined,
+        secondaryTargetId: undefined,
+        primaryTargetScore: undefined,
+        primaryTargetDanger: undefined,
+        targetFocusConfidence: 0,
+        targetReasons: ['disengage'],
+      }
+    }
+    const allies = board.alliedHeroIds
+      .map((id) => state.arcanes.find((arcane) => arcane.id === id))
+      .filter((arcane): arcane is Arcane => arcane !== undefined && arcane.stats.hp > 0 && arcane.respawn <= state.time)
+    const enemies = board.enemyHeroIds
+      .map((id) => state.arcanes.find((arcane) => arcane.id === id))
+      .filter((arcane): arcane is Arcane => arcane !== undefined && arcane.stats.hp > 0 && arcane.respawn <= state.time)
+    const targetScores = enemies.map((target) => createCombatTargetScore(state, board, allies, target))
+    const focus = selectCombatFocus(targetScores, board.primaryTargetId)
+    return {
+      ...board,
+      primaryTargetId: focus.primary?.targetId,
+      secondaryTargetId: focus.secondary?.targetId,
+      primaryTargetScore: focus.primary?.finalScore,
+      primaryTargetDanger: focus.primary?.dangerScore,
+      targetFocusConfidence: focus.confidence,
+      targetReasons: focus.primary?.reasons ?? ['no_viable_target'],
+    }
+  })
+  return { dawn: assignTeam('dawn'), dusk: assignTeam('dusk') }
+}
+
+export function createCombatTargetScore(
+  state: SimulationState,
+  board: CombatBlackboard,
+  allies: Arcane[],
+  target: Arcane,
+) {
+  const hpRatio = target.stats.hp / Math.max(1, target.stats.maxHp)
+  const allHostiles = state.arcanes.filter((enemy) => enemy.team !== board.teamId && enemy.stats.hp > 0 && enemy.respawn <= state.time)
+  const nearbyAllies = allies.filter((ally) => distance(ally.pos, target.pos) <= 14)
+  const targetProtectors = allHostiles.filter((enemy) => enemy.id !== target.id && distance(enemy.pos, target.pos) <= 9)
+  const localNumbers = getLocalNumbers(state, board.teamId, target.pos, 14, allHostiles)
+  const dangerValues = allies.map((ally) => getEnemyActionThreatScore(state, ally, target.pos, allHostiles))
+  const dangerScore = average(dangerValues)
+  const towerExposure = getCombatTargetTowerExposure(state, board.teamId, target.pos)
+  const alliedDamageWindow = allies.reduce((sum, ally) => {
+    const threat = getArcaneOffensiveThreat(state, ally)
+    const arrivalPenalty = clampNumber(1 - Math.max(0, distance(ally.pos, target.pos) - 5) / 22, 0.2, 1)
+    return sum + (getEffectiveArcaneDamage(state, ally) * 2 + threat.readyDamage) * arrivalPenalty
+  }, 0)
+  const expectedOverkill = Math.max(0, alliedDamageWindow - target.stats.hp) / Math.max(1, target.stats.maxHp) * 100
+  const killProbability = clampNumber(
+    (1 - hpRatio) * 55 + alliedDamageWindow / Math.max(1, target.stats.hp) * 38 + Math.max(0, localNumbers.advantage) * 10,
+    0,
+    100,
+  )
+  const averageApproachGap = average(allies.map((ally) => Math.max(0, distance(ally.pos, target.pos) - getArcaneAttackCenterRange(ally, target))))
+  const accessibility = clampNumber(100 - averageApproachGap * 6 - towerExposure * 0.28, 0, 100)
+  const targetThreat = getArcaneOffensiveThreat(state, target)
+  const currentThreat = clampNumber(
+    getEffectiveArcaneDamage(state, target) / Math.max(1, average(allies.map((ally) => ally.stats.maxHp))) * 260 +
+      targetThreat.readyDamage / Math.max(1, average(allies.map((ally) => ally.stats.maxHp))) * 120,
+    0,
+    100,
+  )
+  const strategicValue = getCombatRoleStrategicValue(target.role)
+  const allyFollowUp = clampNumber(nearbyAllies.length * 22 + Math.max(0, localNumbers.advantage) * 12, 0, 100)
+  const positioningError = clampNumber((3 - targetProtectors.length) * 18 + Math.max(0, 8 - distance(target.pos, board.center)) * 3, 0, 100)
+  const interruptValue = target.channeling ? 100 : 0
+  const defensiveResources = clampNumber(hpRatio * 32 + Math.max(0, target.stats.armor) * 1.2 + target.stats.magicResistance * 0.35 + getArcaneBarrierAmount(state, target) / Math.max(1, target.stats.maxHp) * 80, 0, 100)
+  const enemySaveCoverage = clampNumber(targetProtectors.filter((enemy) => enemy.role.includes('Support')).length * 28 + targetProtectors.length * 8, 0, 100)
+  const overextensionRisk = clampNumber(dangerScore + Math.max(0, -localNumbers.advantage) * 22, 0, 100)
+  const baitRisk = clampNumber(towerExposure * 0.7 + targetProtectors.length * 9 + (hpRatio < 0.25 ? 12 : 0), 0, 100)
+  const objectiveConversionValue = board.encounterType === 'high_ground_fight' || board.encounterType === 'base_defense'
+    ? strategicValue * 0.55
+    : board.encounterType === 'objective_skirmish' || board.encounterType === 'tower_dive'
+      ? strategicValue * 0.34
+      : 12
+  const reasons = [
+    killProbability >= 65 ? 'kill_window' : 'durable_target',
+    accessibility >= 62 ? 'accessible' : 'hard_to_reach',
+    dangerScore >= COMBAT_AI_RULES.targetSelection.unsafeDangerThreshold ? 'high_danger' : 'manageable_danger',
+    towerExposure >= 60 ? 'tower_exposure' : 'no_tower_exposure',
+    localNumbers.advantage >= 0 ? 'numbers_ok' : 'outnumbered',
+    interruptValue > 0 ? 'interrupt' : 'focus',
+  ]
+
+  return scoreCombatTarget({
+    targetId: target.id,
+    strategicValue,
+    currentThreat,
+    killProbability,
+    accessibility,
+    allyFollowUp,
+    positioningError,
+    cooldownPunishValue: target.stats.mana / Math.max(1, target.stats.maxMana) < 0.25 ? 24 : 6,
+    interruptValue,
+    objectiveConversionValue,
+    defensiveResources,
+    enemySaveCoverage,
+    overextensionRisk,
+    baitRisk,
+    expectedOverkill: clampNumber(expectedOverkill, 0, 100),
+    targetSwitchCost: board.primaryTargetId === target.id ? -COMBAT_AI_RULES.targetSelection.currentTargetStickiness : 0,
+    dangerScore,
+    towerExposure,
+    reasons,
+  })
+}
+
+export function getCombatTargetTowerExposure(state: SimulationState, attackingTeam: TeamId, point: Point) {
+  const defendingTeam: TeamId = attackingTeam === 'dawn' ? 'dusk' : 'dawn'
+  const tower = state.towers.find((candidate) => (
+    candidate.team === defendingTeam && candidate.hp > 0 && distance(candidate.pos, point) <= candidate.range + 1.5
+  ))
+  const tierFour = state.structures.find((candidate) => (
+    candidate.kind === 'tower_tier_4' && candidate.team === defendingTeam && candidate.hp > 0 && distance(candidate.pos, point) <= candidate.range + 1.5
+  ))
+  const structure = tower ?? tierFour
+  if (!structure) return 0
+  const alliedWave = state.creeps.some((creep) => creep.team === attackingTeam && creep.hp > 0 && distance(creep.pos, structure.pos) <= structure.range + 2)
+  const tankCommitted = structure.aggroTargetId && state.arcanes.some((arcane) => (
+    arcane.id === structure.aggroTargetId && arcane.team === attackingTeam && arcane.stats.hp / Math.max(1, arcane.stats.maxHp) >= 0.58
+  ))
+  return alliedWave || tankCommitted ? 28 : 100
+}
+
+export function getCombatRoleStrategicValue(role: string) {
+  if (role === 'Safe Lane') return 100
+  if (role === 'Mid') return 92
+  if (role === 'Offlane') return 68
+  if (role === 'Greedy Support') return 58
+  return 52
 }
 
 const criticalCombatEffectKinds = new Set<TimedEffect['kind']>(['stun', 'root', 'hex', 'fear', 'taunt', 'sleep'])
@@ -2620,6 +2760,7 @@ export function cloneCombatBlackboardState(state: CombatBlackboardState): Combat
     alliedHeroIds: [...board.alliedHeroIds],
     enemyHeroIds: [...board.enemyHeroIds],
     reasonTags: [...board.reasonTags],
+    targetReasons: [...board.targetReasons],
   })
   return {
     dawn: state.dawn.map(cloneBoard),
@@ -4248,6 +4389,11 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       isWounded ? 62 : 78,
       42 + arcane.aggression * 0.38 + (phase === 'late' ? 12 : phase === 'mid' ? 8 : 0) - (isWounded ? 10 : 0),
     )
+    const combatBoard = getArcaneCombatBlackboard(state, arcane)
+    const combatFocusTarget = getCombatFocusTarget(state, arcane, combatBoard)
+    const combatFocusAssessment = combatFocusTarget && combatBoard
+      ? getCombatFocusAssessment(state, arcane, combatFocusTarget, combatBoard, visibleEnemies)
+      : undefined
     const laneAnchor = nearestLanePoint(arcane.pos, path)
     const laneDistance = distance(arcane.pos, laneAnchor)
     const shouldRespectLane = phase === 'early' && laneDistance > (isSupport ? 14 : 8) && !atBase
@@ -4403,6 +4549,12 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     const modeWantsObjective = execution.executedMode === 'take_objective'
     const modeWantsSave = execution.executedMode === 'save_ally'
     const modeWantsFight = execution.executedMode === 'join_fight' || execution.executedMode === 'finish_enemy'
+    const combatPhaseWantsFight = combatBoard?.phase === 'opening' || combatBoard?.phase === 'commit' || combatBoard?.phase === 'sustain' || combatBoard?.phase === 'chase'
+    const wantsCombatFocus = combatFocusTarget !== undefined && (
+      modeWantsFight ||
+      combatPhaseWantsFight ||
+      distance(arcane.pos, combatFocusTarget.pos) <= getArcaneAttackCenterRange(arcane, combatFocusTarget) + 2
+    )
     const farmPriority = getRoleFarmPriority(arcane.role)
     const canTakeOpportunisticJungle = farmPriority >= 62 || (arcane.role === 'Greedy Support' && phase !== 'early')
     const canTakeAssignedJungle = modeWantsJungle && farmPriority >= 34
@@ -4472,6 +4624,18 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
         value: 130 + arcane.stats.level * 10,
         duration: 3.5,
       })
+    } else if (wantsCombatFocus && combatFocusTarget && combatFocusAssessment && !combatFocusAssessment.canApproach) {
+      target = getCombatStagingPoint(state, arcane, combatFocusTarget, combatBoard, combatFocusAssessment)
+      macroDecision = combatFocusAssessment.mustDisengage ? 'Recuar da luta' : 'Manter formacao'
+      microDecision = combatFocusAssessment.mustDisengage
+        ? `Rompendo foco em ${combatFocusTarget.player}`
+        : `Aguardando janela contra ${combatFocusTarget.player}`
+      aiReason = `${aiReason}${aiReason ? ', ' : ''}combat_focus_blocked, danger_${Math.round(combatFocusAssessment.danger)}`
+    } else if (wantsCombatFocus && combatFocusTarget && combatFocusAssessment?.canApproach) {
+      target = combatFocusTarget.pos
+      macroDecision = 'Lutar em equipe'
+      microDecision = `Foco em ${combatFocusTarget.player}`
+      aiReason = `${aiReason}${aiReason ? ', ' : ''}combat_focus, danger_${Math.round(combatFocusAssessment.danger)}`
     } else if (initiateTarget && hpRatio > 0.74 && effectiveDanger < (modeWantsFight ? 62 : 54)) {
       target = initiateTarget.pos
       macroDecision = 'Lutar em equipe'
@@ -4612,6 +4776,27 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     aiExecutionChance = 100
     aiExecutionDelay = 0
     aiFailure = undefined
+  }
+
+  if (microDecision.startsWith('Foco em')) {
+    const liveFocusBoard = getArcaneCombatBlackboard(state, arcane)
+    const liveFocusTarget = getCombatFocusTarget(state, arcane, liveFocusBoard)
+    if (!liveFocusBoard || !liveFocusTarget) {
+      target = arcane.pos
+      macroDecision = 'Reavaliar luta'
+      microDecision = 'Foco encerrado'
+      aiReason = `${aiReason}${aiReason ? ', ' : ''}combat_focus_invalid`
+    } else {
+      const liveFocusAssessment = getCombatFocusAssessment(state, arcane, liveFocusTarget, liveFocusBoard)
+      if (!liveFocusAssessment.canApproach) {
+        target = getCombatStagingPoint(state, arcane, liveFocusTarget, liveFocusBoard, liveFocusAssessment)
+        macroDecision = liveFocusAssessment.mustDisengage ? 'Recuar da luta' : 'Manter formacao'
+        microDecision = liveFocusAssessment.mustDisengage
+          ? `Rompendo foco em ${liveFocusTarget.player}`
+          : `Aguardando janela contra ${liveFocusTarget.player}`
+        aiReason = `${aiReason}${aiReason ? ', ' : ''}live_danger_guard, danger_${Math.round(liveFocusAssessment.danger)}`
+      }
+    }
   }
 
   const shouldShopAtBase = shouldDecide && atBase && (canBuyAtBase || !macroDecision.startsWith('Avancar'))
@@ -5388,6 +5573,100 @@ export function getWantedConsumable(state: SimulationState, arcane: Arcane) {
 export function getAffordableWantedConsumable(state: SimulationState, arcane: Arcane) {
   const consumable = getWantedConsumable(state, arcane)
   return consumable && arcane.stats.gold >= consumable.cost ? consumable : undefined
+}
+
+export function getArcaneCombatBlackboard(state: SimulationState, arcane: Arcane, includeDisengaging = false) {
+  return state.combatBlackboards[arcane.team].find((board) => (
+    board.alliedHeroIds.includes(arcane.id) &&
+    (includeDisengaging || (board.phase !== 'disengage' && board.phase !== 'reset'))
+  ))
+}
+
+export function getCombatFocusTarget(state: SimulationState, arcane: Arcane, board = getArcaneCombatBlackboard(state, arcane)) {
+  if (!board?.primaryTargetId) return undefined
+  return state.arcanes.find((target) => (
+    target.id === board.primaryTargetId &&
+    target.team !== arcane.team &&
+    target.stats.hp > 0 &&
+    target.respawn <= state.time
+  ))
+}
+
+export function getCombatFocusAssessment(
+  state: SimulationState,
+  arcane: Arcane,
+  target: Arcane,
+  board: CombatBlackboard,
+  visibleEnemies = state.arcanes.filter((enemy) => enemy.team !== arcane.team && enemy.stats.hp > 0 && enemy.respawn <= state.time),
+) {
+  const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
+  const actionDanger = getEnemyActionThreatScore(state, arcane, target.pos, visibleEnemies)
+  const towerExposure = getCombatTargetTowerExposure(state, arcane.team, target.pos)
+  const localNumbers = getLocalNumbers(state, arcane.team, target.pos, 14, visibleEnemies)
+  const danger = Math.max(actionDanger, board.primaryTargetDanger ?? 0, towerExposure * 0.82)
+  const phaseAllowance = board.phase === 'chase' ? 12 : board.phase === 'commit' || board.phase === 'sustain' ? 8 : 0
+  const healthPenalty = hpRatio < 0.7 ? (0.7 - hpRatio) * 55 : 0
+  const dangerTolerance = clampNumber(42 + arcane.aggression * 0.34 + phaseAllowance - healthPenalty, 38, 78)
+  const mustDisengage = board.phase === 'disengage' || hpRatio < 0.34 || danger >= 86 || localNumbers.advantage <= -1.5
+  const canApproach = !mustDisengage &&
+    danger <= dangerTolerance &&
+    towerExposure < 60 &&
+    localNumbers.advantage >= -0.5
+
+  return { canApproach, mustDisengage, danger, dangerTolerance, towerExposure, localNumbers }
+}
+
+export function getCombatStagingPoint(
+  state: SimulationState,
+  arcane: Arcane,
+  target: Arcane,
+  board = getArcaneCombatBlackboard(state, arcane, true),
+  assessment = board ? getCombatFocusAssessment(state, arcane, target, board) : undefined,
+) {
+  if (!board) return arcane.pos
+  if (assessment?.mustDisengage) {
+    return moveToward(arcane.pos, teamInfo[arcane.team].base, 8)
+  }
+  const defendingTeam: TeamId = arcane.team === 'dawn' ? 'dusk' : 'dawn'
+  const threateningStructure = [
+    ...state.towers.filter((tower) => tower.team === defendingTeam && tower.hp > 0),
+    ...state.structures.filter((structure) => structure.kind === 'tower_tier_4' && structure.team === defendingTeam && structure.hp > 0),
+  ].find((structure) => distance(structure.pos, target.pos) <= structure.range + 1.5)
+  if (threateningStructure && distance(arcane.pos, threateningStructure.pos) <= threateningStructure.range + 2.5) {
+    return getPointOutsideThreatRadius(
+      arcane.pos,
+      threateningStructure.pos,
+      threateningStructure.range + getEntityCollisionRadius(arcane) + 2.8,
+      teamInfo[arcane.team].base,
+    )
+  }
+  if (assessment && (assessment.danger > assessment.dangerTolerance + 8 || assessment.localNumbers.advantage < -0.5)) {
+    return getPointAwayFromThreat(arcane.pos, target.pos, 5, teamInfo[arcane.team].base)
+  }
+  return arcane.pos
+}
+
+export function getPointOutsideThreatRadius(point: Point, threat: Point, radius: number, fallback: Point) {
+  const currentDistance = distance(point, threat)
+  if (currentDistance >= radius) return point
+  const direction = currentDistance > 0.001
+    ? { x: (point.x - threat.x) / currentDistance, y: (point.y - threat.y) / currentDistance }
+    : getNormalizedDirection(threat, fallback)
+  return clampToMapBounds({ x: threat.x + direction.x * radius, y: threat.y + direction.y * radius })
+}
+
+export function getPointAwayFromThreat(point: Point, threat: Point, distanceToCreate: number, fallback: Point) {
+  const currentDistance = distance(point, threat)
+  const direction = currentDistance > 0.001
+    ? { x: (point.x - threat.x) / currentDistance, y: (point.y - threat.y) / currentDistance }
+    : getNormalizedDirection(threat, fallback)
+  return clampToMapBounds({ x: point.x + direction.x * distanceToCreate, y: point.y + direction.y * distanceToCreate })
+}
+
+function getNormalizedDirection(from: Point, to: Point) {
+  const directionDistance = distance(from, to)
+  if (directionDistance <= 0.001) return { x: 1, y: 0 }
+  return { x: (to.x - from.x) / directionDistance, y: (to.y - from.y) / directionDistance }
 }
 
 export function getConsumableSlotBudget(state: SimulationState, arcane: Arcane) {
@@ -7389,7 +7668,11 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     const lastHitTarget = pregame || farmingJungle ? undefined : getLastHitTarget(next, arcane, creepIndicesByTeamLane[enemyTeam][arcane.lane])
     const denyTarget = pregame || farmingJungle ? undefined : getDenyTarget(next, arcane, creepIndicesByTeamLane[arcane.team][arcane.lane])
     const laneControl = isLaningControlMicroDecision(arcane.microDecision)
-    let target: CombatTarget | undefined = bossTarget ?? objectiveTarget ?? lastHitTarget ?? denyTarget
+    const focusTarget = getCombatFocusTarget(next, arcane)
+    const reachableFocusTarget = focusTarget && distance(arcane.pos, focusTarget.pos) <= getArcaneAttackCenterRange(arcane, focusTarget)
+      ? focusTarget
+      : undefined
+    let target: CombatTarget | undefined = reachableFocusTarget ?? bossTarget ?? objectiveTarget ?? lastHitTarget ?? denyTarget
     if (!target) {
       const enemyArcaneTarget = nearestReachableEnemyArcane(arcane, next.arcanes, next.time)
       const fallbackEnemyCreeps: Creep[] = []

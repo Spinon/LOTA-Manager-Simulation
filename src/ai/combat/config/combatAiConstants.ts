@@ -19,5 +19,13 @@ export const COMBAT_AI_RULES = {
     disengageHealthThreshold: 0.3,
     resetRetentionSeconds: 2.4,
   },
+  targetSelection: {
+    currentTargetStickiness: 10,
+    switchThreshold: 12,
+    unsafeDangerThreshold: 68,
+    towerExposurePenalty: 0.9,
+    dangerPenalty: 0.72,
+    minimumFocusScore: 18,
+  },
   maxActiveEncountersPerTeam: 3,
 } as const

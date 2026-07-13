@@ -18,6 +18,9 @@ import {
   formatMatchTime,
   getGamePhase,
   getCombatCriticalEventSignature,
+  getCombatFocusAssessment,
+  getCombatStagingPoint,
+  getCombatTargetTowerExposure,
   getBountyRuneSide,
   getArcanePassiveCombatModifiers,
   getCampClearAssessment,
@@ -270,6 +273,26 @@ await loadGameData()
   const combatFrame = createMatchRenderFrame(combatUpdated)
   const hydratedCombat = materializeMatchRenderFrame(combatFrame, createMatchStaticData(combatUpdated), combatFrame.details)
   assert.deepEqual(hydratedCombat.combatBlackboards, combatUpdated.combatBlackboards, 'detailed replay frames should preserve combat blackboards')
+
+  const towerState = createInitialState('combat-danger-tower-integration')
+  towerState.time = 300
+  const defendingTower = towerState.towers.find((tower) => tower.team === 'dusk' && tower.tier === 1)!
+  const diver = towerState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const bait = towerState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  diver.pos = { x: defendingTower.pos.x - defendingTower.range - 3, y: defendingTower.pos.y }
+  bait.pos = { ...defendingTower.pos }
+  towerState.arcanes = towerState.arcanes.map((arcane) => (
+    arcane.id === diver.id || arcane.id === bait.id ? arcane : { ...arcane, stats: { ...arcane.stats, hp: 0 } }
+  ))
+  towerState.creeps = []
+  const towerCombat = updateCombatAiFoundation(towerState)
+  const towerBoard = towerCombat.combatBlackboards.dawn[0]
+  assert.ok(towerBoard, 'a tower bait should still be recognized as an encounter')
+  assert.equal(getCombatTargetTowerExposure(towerCombat, diver.team, bait.pos), 100)
+  const towerAssessment = getCombatFocusAssessment(towerCombat, diver, bait, towerBoard, [bait])
+  assert.equal(towerAssessment.canApproach, false, 'combat focus must not authorize an unsupported tower dive')
+  const stagingPoint = getCombatStagingPoint(towerCombat, diver, bait, towerBoard, towerAssessment)
+  assert.ok(distance(stagingPoint, defendingTower.pos) > distance(diver.pos, defendingTower.pos), 'tower staging should create distance instead of rushing the bait')
 }
 
 {
@@ -607,6 +630,40 @@ let state: SimulationState = initialState
   resolveCombat(priorityState, createTickFrameContext())
   assert.equal(priorityState.creeps[0].hp, 0, 'last hit must execute before deny when both are available')
   assert.equal(priorityState.creeps[1].hp, 1, 'the deny target must remain untouched while a last hit is available')
+}
+
+{
+  const focusState = createStateAtGameStart('combat-focus-attack-priority')
+  focusState.time = 200
+  const attacker = focusState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const [closerEnemy, focusedEnemy] = focusState.arcanes.filter((arcane) => arcane.team === 'dusk').slice(0, 2)
+  attacker.pos = { x: 50, y: 50 }
+  attacker.lastAttack = 190
+  attacker.items = []
+  attacker.skillLevels = {}
+  closerEnemy.pos = { x: 50.15, y: 50 }
+  focusedEnemy.pos = { x: 50.3, y: 50 }
+  closerEnemy.lastAttack = Number.POSITIVE_INFINITY
+  focusedEnemy.lastAttack = Number.POSITIVE_INFINITY
+  closerEnemy.skillLevels = {}
+  focusedEnemy.skillLevels = {}
+  focusState.arcanes = focusState.arcanes.map((arcane) => (
+    arcane.id === attacker.id || arcane.id === closerEnemy.id || arcane.id === focusedEnemy.id
+      ? arcane
+      : { ...arcane, stats: { ...arcane.stats, hp: 0 } }
+  ))
+  focusState.creeps = []
+  focusState.towers = []
+  focusState.structures = []
+  focusState.camps = []
+  focusState.boss.hp = 0
+  const focusedState = updateCombatAiFoundation(focusState)
+  focusedState.combatBlackboards.dawn[0].primaryTargetId = focusedEnemy.id
+  const closerHp = closerEnemy.stats.hp
+  const focusedHp = focusedEnemy.stats.hp
+  resolveCombat(focusedState, createTickFrameContext())
+  assert.equal(focusedState.arcanes.find((arcane) => arcane.id === closerEnemy.id)!.stats.hp, closerHp, 'basic attacks should not abandon team focus for the nearest enemy')
+  assert.ok(focusedState.arcanes.find((arcane) => arcane.id === focusedEnemy.id)!.stats.hp < focusedHp, 'the reachable shared focus should receive the basic attack')
 }
 
 {

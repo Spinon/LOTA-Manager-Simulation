@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 
 import { detectCombatEncounters } from './analysis/combatContextAnalyzer.ts'
+import { scoreCombatTarget, selectCombatFocus } from './analysis/targetPriorityAnalyzer.ts'
 import { createEmptyCombatBlackboards, updateCombatBlackboards } from './teamfight/combatBlackboard.ts'
 import type { CombatDetectionInput, CombatHeroSnapshot } from './types/combatAiTypes.ts'
 
@@ -102,5 +103,46 @@ assert.equal(expired.dawn.length, 0, 'lost encounters should expire instead of b
 const deterministicA = detectCombatEncounters(input(1_200, teamfightHeroes))
 const deterministicB = detectCombatEncounters(input(1_200, teamfightHeroes))
 assert.deepEqual(deterministicA, deterministicB, 'encounter detection must be deterministic')
+
+const targetInput = {
+  strategicValue: 65,
+  currentThreat: 45,
+  killProbability: 68,
+  accessibility: 78,
+  allyFollowUp: 72,
+  positioningError: 50,
+  cooldownPunishValue: 10,
+  interruptValue: 0,
+  objectiveConversionValue: 20,
+  defensiveResources: 32,
+  enemySaveCoverage: 12,
+  overextensionRisk: 24,
+  baitRisk: 8,
+  expectedOverkill: 5,
+  targetSwitchCost: 0,
+  dangerScore: 28,
+  towerExposure: 0,
+  reasons: ['safe_target'],
+}
+const safeTarget = scoreCombatTarget({ targetId: 'safe-support', ...targetInput })
+const towerBait = scoreCombatTarget({
+  targetId: 'tower-core',
+  ...targetInput,
+  strategicValue: 100,
+  killProbability: 88,
+  dangerScore: 92,
+  towerExposure: 100,
+  overextensionRisk: 90,
+  baitRisk: 85,
+  reasons: ['tower_bait'],
+})
+assert.equal(selectCombatFocus([safeTarget, towerBait]).primary?.targetId, 'safe-support', 'tower danger should outweigh a tempting strategic target')
+assert.equal(selectCombatFocus([towerBait]).primary, undefined, 'an unsupported tower target should not become team focus')
+
+const currentTarget = scoreCombatTarget({ targetId: 'current', ...targetInput, targetSwitchCost: -10 })
+const marginalAlternative = { ...safeTarget, targetId: 'marginal', finalScore: currentTarget.finalScore + 8 }
+assert.equal(selectCombatFocus([currentTarget, marginalAlternative], currentTarget.targetId).primary?.targetId, 'current', 'small score gains should not cause target thrashing')
+const decisiveAlternative = { ...safeTarget, targetId: 'decisive', finalScore: currentTarget.finalScore + 25 }
+assert.equal(selectCombatFocus([currentTarget, decisiveAlternative], currentTarget.targetId).primary?.targetId, 'decisive', 'large gains should switch focus')
 
 console.log('combatBlackboard tests passed')

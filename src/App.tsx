@@ -2203,6 +2203,9 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
     const teamPlan = state.teamPlans[entity.team]
     const combatBoard = state.combatBlackboards[entity.team]
       .find((board) => board.alliedHeroIds.includes(entity.id) || board.enemyHeroIds.includes(entity.id))
+    const combatFocus = combatBoard?.primaryTargetId
+      ? state.arcanes.find((arcane) => arcane.id === combatBoard.primaryTargetId)
+      : undefined
     const activeEffects = getActiveEffectLabels(state, entity)
     const hpPercent = Math.round((entity.stats.hp / Math.max(1, entity.stats.maxHp * auraMultiplier)) * 100)
     const manaPercent = Math.round((entity.stats.mana / Math.max(1, entity.stats.maxMana * auraMultiplier)) * 100)
@@ -2277,6 +2280,9 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
               ['Encontro', combatBoard ? getCombatEncounterLabel(combatBoard.encounterType) : 'Fora de luta'],
               ['Fase', combatBoard ? getCombatPhaseLabel(combatBoard.phase) : '-'],
               ['Local', combatBoard ? `${combatBoard.alliedHeroIds.length}v${combatBoard.enemyHeroIds.length}` : '-'],
+              ['Foco', combatFocus?.player ?? '-'],
+              ['Conf.', combatBoard ? `${combatBoard.targetFocusConfidence}%` : '-'],
+              ['Risco', combatBoard?.primaryTargetDanger !== undefined ? `${Math.round(combatBoard.primaryTargetDanger)}` : '-'],
               ['Razao', entity.aiReason],
             ]}
           />
