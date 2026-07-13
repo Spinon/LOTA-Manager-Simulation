@@ -326,12 +326,12 @@ function getUnlockEvidence(rule: ReturnType<typeof getSkillRuntimeUnlockRule>) {
   if (rule === 'situational_utility') return 'utility action becomes available in its matching AI situation'
   if (rule === 'souvenir_resource') return 'souvenir requires a dedicated acquisition and charge resource'
   if (rule === 'alternate_stance') return 'alternate weapon skills require a persistent stance state'
-  if (rule === 'parent_state') return 'subskill requires its parent ability state to be active'
+  if (rule === 'parent_state') return 'subskill is unlocked and consumed by its serialized parent ability state'
   return 'imported contextual/subskill action without a dedicated activation state machine'
 }
 
 function getActivationStatus(rule: ReturnType<typeof getSkillRuntimeUnlockRule>): SkillSupportStatus {
   if (rule === 'invoked_loadout' || rule === 'song_loadout' || rule === 'situational_utility') return 'approximate'
-  if (rule === 'souvenir_resource' || rule === 'alternate_stance' || rule === 'parent_state' || rule === 'unsupported_contextual') return 'missing'
+  if (rule === 'souvenir_resource' || rule === 'alternate_stance' || rule === 'unsupported_contextual') return 'missing'
   return 'complete'
 }

@@ -53,7 +53,9 @@ import {
   hasAutomaticContextualSkillSelection,
   getRuntimeHeroSkills,
   getSkillRuntimeUnlockRule,
+  parentSkillStateKey,
   type AbilityUpgradeSlot,
+  type RuntimeParentSkillState,
 } from '../game-systems/skillUnlocks.ts'
 import {
   getLaneCreepReward,
@@ -153,6 +155,7 @@ export type Arcane = {
   decision: string
   items: string[]
   itemCooldowns: Record<string, number>
+  skillStates: Record<string, RuntimeParentSkillState>
   tpScrolls: number
   tpCooldownUntil: number
   channeling?: ChannelingAction
@@ -947,6 +950,7 @@ let runtimeSkillsByArcane = new WeakMap<object, {
   heroDefinitionId: string
   items: string[]
   skillLevels?: SkillLevels
+  skillStates?: Record<string, RuntimeParentSkillState>
   situation?: ReturnType<typeof getPrimarySkillUsageSituation>
   lowHealthSong?: boolean
   skills: HeroSkillDefinition[]
@@ -982,7 +986,7 @@ export async function loadGameData() {
   toRuntimeItemModifier = itemModule.toItemModifier
 }
 
-export const rosterSeed: Omit<Arcane, 'pos' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCooldowns' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'kills' | 'deaths' | 'assists' | 'damageDealt' | 'heroDamageDealt' | 'structureDamageDealt' | 'damageTaken' | 'healingDone' | 'healingReceived' | 'laneCreepKills' | 'denies' | 'neutralKills' | 'objectiveKills' | 'stats'>[] = [
+export const rosterSeed: Omit<Arcane, 'pos' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCooldowns' | 'skillStates' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'kills' | 'deaths' | 'assists' | 'damageDealt' | 'heroDamageDealt' | 'structureDamageDealt' | 'damageTaken' | 'healingDone' | 'healingReceived' | 'laneCreepKills' | 'denies' | 'neutralKills' | 'objectiveKills' | 'stats'>[] = [
   { id: 'd-quasar', team: 'dawn', player: 'Quasar', name: 'Sword Tempest', heroDefinitionId: 'h007_sword_tempest', role: 'Safe Lane', lane: 'bot', portrait: 'ST', items: ['Blade', 'Boots'] },
   { id: 'd-aster', team: 'dawn', player: 'Aster', name: 'Storm Channeler', heroDefinitionId: 'h014_storm_channeler', role: 'Mid', lane: 'mid', portrait: 'SC', items: ['Wand'] },
   { id: 'd-bulwark', team: 'dawn', player: 'Bulwark', name: 'Tide Colossus', heroDefinitionId: 'h022_tide_colossus', role: 'Offlane', lane: 'top', portrait: 'TC', items: ['Shield'] },
@@ -1029,6 +1033,7 @@ export function createInitialState(seed = 'lota-default-seed'): SimulationState 
       decision: 'Saindo da base',
       items: startingItems,
       itemCooldowns: {},
+      skillStates: {},
       tpScrolls: 1,
       tpCooldownUntil: teleportBaseCooldownSeconds,
       skillLevels: {},
@@ -1272,7 +1277,7 @@ export function getArcaneAbilityUpgradeSlots(arcane: Pick<Arcane, 'items'>) {
 }
 
 export function getArcaneRuntimeSkills(
-  arcane: Pick<Arcane, 'heroDefinitionId' | 'items' | 'skillLevels' | 'stats' | 'aiMode' | 'macroDecision'>,
+  arcane: Pick<Arcane, 'heroDefinitionId' | 'items' | 'skillLevels' | 'skillStates' | 'stats' | 'aiMode' | 'macroDecision'>,
 ) {
   const definition = getHeroDefinition(arcane.heroDefinitionId)
   const usesContextualSelection = hasAutomaticContextualSkillSelection(definition)
@@ -1306,6 +1311,7 @@ export function getArcaneRuntimeSkills(
     cached?.heroDefinitionId === arcane.heroDefinitionId &&
     cached.items === arcane.items &&
     cached.skillLevels === arcane.skillLevels &&
+    cached.skillStates === arcane.skillStates &&
     cached.situation === situation &&
     cached.lowHealthSong === lowHealthSong
   ) {
@@ -1315,12 +1321,14 @@ export function getArcaneRuntimeSkills(
     skillLevels: arcane.skillLevels,
     situation,
     hpRatio,
+    skillStates: arcane.skillStates,
   })
   const skills = getRuntimeHeroSkills(definition, upgradeSlots, contextualSkillIds)
   runtimeSkillsByArcane.set(arcane, {
     heroDefinitionId: arcane.heroDefinitionId,
     items: arcane.items,
     skillLevels: arcane.skillLevels,
+    skillStates: arcane.skillStates,
     situation,
     lowHealthSong,
     skills,
@@ -1633,6 +1641,11 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   next.effects = next.effects.filter((effect) => next.time - effect.createdAt < effect.duration)
   next.timedEffects = next.timedEffects.filter((effect) => effect.expiresAt > next.time)
   next = processTimedEffects(next)
+  next.arcanes = next.arcanes.map((arcane) => {
+    const activeStates = Object.entries(arcane.skillStates).filter(([, skillState]) => skillState.activeUntil > next.time)
+    if (activeStates.length === Object.keys(arcane.skillStates).length) return arcane
+    return { ...arcane, skillStates: Object.fromEntries(activeStates) }
+  })
   next.deathMarkers = next.deathMarkers.filter((marker) => marker.expiresAt > next.time)
   next.denyMarkers = next.denyMarkers.filter((marker) => marker.expiresAt > next.time)
   next.goldMarkers = next.goldMarkers.filter((marker) => marker.expiresAt > next.time)
@@ -1759,6 +1772,10 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
       target: { ...arcane.target },
       lastDecisionPos: { ...arcane.lastDecisionPos },
       itemCooldowns: { ...arcane.itemCooldowns },
+      skillStates: Object.fromEntries(Object.entries(arcane.skillStates).map(([key, value]) => [key, {
+        ...value,
+        ...(value.positions ? { positions: value.positions.map((position) => ({ ...position })) } : {}),
+      }])),
       skillLevels: { ...arcane.skillLevels },
       channeling: arcane.channeling ? { ...arcane.channeling, target: { ...arcane.channeling.target } } : undefined,
       items: [...arcane.items],
@@ -1803,6 +1820,7 @@ type RenderArcaneDetailFrame = [
   string[], Record<string, number>, number, number, ChannelingAction | undefined,
   SkillLevels, number, number, number, number, number, number, number, number,
   number, number, number, number, number, number, number, number, RenderStatsFrame,
+  Record<string, RuntimeParentSkillState>,
 ]
 
 type RenderArcaneFrame = [
@@ -1910,6 +1928,10 @@ function createMatchRenderDetails(state: SimulationState): MatchRenderDetails {
       arcane.damageTaken, arcane.healingDone, arcane.healingReceived,
       arcane.laneCreepKills, arcane.denies, arcane.neutralKills,
       arcane.objectiveKills, statsToRenderFrame(arcane.stats),
+      Object.fromEntries(Object.entries(arcane.skillStates).map(([key, value]) => [key, {
+        ...value,
+        ...(value.positions ? { positions: value.positions.map((position) => ({ ...position })) } : {}),
+      }])),
     ]),
     creeps: state.creeps.map((creep) => [creep.id, renderNumber(creep.damage), renderNumber(creep.visionRange)]),
   }
@@ -2012,6 +2034,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       decision: arcane[7],
       items: arcane[15],
       itemCooldowns: arcane[16],
+      skillStates: arcane[38] ?? {},
       tpScrolls: arcane[17],
       tpCooldownUntil: arcane[18],
       channeling: motion[8],
@@ -2614,6 +2637,7 @@ export function respawnArcaneIfReady(arcane: Arcane, time: number, index: number
     pathIndex: 1,
     respawn: aliveRespawnTimestamp,
     lastHitBy: undefined,
+    skillStates: {},
     macroDecision: 'Avancar rota',
     microDecision: 'Renasceu na base',
     aiMode: 'push_lane',
@@ -7546,6 +7570,7 @@ export function castSimpleSkill(
   fallbackTarget: CombatTarget | undefined,
   preferFallbackTarget = false,
 ) {
+  if (skill.sourceAbilityId === 5607) return castStoredRemnantSkill(state, arcane, skill, level, fallbackTarget)
   if (isConfirmedGlobalSkill(skill) && !shouldCastGlobalSkill(state, arcane, skill)) return false
   const target = getSimpleSkillTarget(state, arcane, skill, level, fallbackTarget, preferFallbackTarget)
   if (!target) return false
@@ -7632,7 +7657,7 @@ export function castSimpleSkill(
   }
 
   addSimpleSkillEffect(state, arcane, target)
-  const casted = damage > 0 || affectedTargets.some((candidate) => 'player' in candidate && hasSimpleStatusTag(skill)) || profile.manaDelta !== 0 || profile.isMobility || profile.summonCount > 0 || hasAnySimpleSkillTag(skill, ['purge', 'dispel'])
+  const casted = damage > 0 || affectedTargets.some((candidate) => 'player' in candidate && hasSimpleStatusTag(skill)) || profile.manaDelta !== 0 || profile.isMobility || profile.summonCount > 0 || hasAnySimpleSkillTag(skill, ['purge', 'dispel']) || isParentSkillStateCreator(skill)
   if (casted) {
     finishSimpleSkillCast(state, arcane, skill, manaCost, target)
     registerCombatSkillReservation(state, arcane, skill, level, target, profile)
@@ -8019,6 +8044,7 @@ export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, sk
     mana: Math.max(0, liveArcane.stats.mana - manaCost),
   }
   liveArcane.decision = `Castou ${skill.key}`
+  updateParentSkillStateAfterCast(state, liveArcane, skill, target)
   state.skillMarkers = [
     ...state.skillMarkers.slice(-23),
     {
@@ -8046,7 +8072,120 @@ export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, sk
     arcane.microDecision = liveArcane.microDecision
     arcane.decision = liveArcane.decision
     arcane.channeling = liveArcane.channeling
+    arcane.skillStates = liveArcane.skillStates
   }
+}
+
+export function updateParentSkillStateAfterCast(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  target: CombatTarget,
+) {
+  const sourceAbilityId = skill.sourceAbilityId ?? 0
+  const level = Math.max(1, getSimpleSkillLevel(arcane, skill))
+  const nextStates = { ...arcane.skillStates }
+  if (sourceAbilityId === 5474) {
+    nextStates[parentSkillStateKey(5474)] = {
+      activeUntil: state.time + getSimpleSkillNumericValue(skill, 'duration', level, 40),
+    }
+  } else if (sourceAbilityId === 5486) {
+    nextStates[parentSkillStateKey(5486)] = {
+      activeUntil: state.time + getSimpleSkillNumericValue(skill, 'spirit_duration', level, 15),
+      mode: 'out',
+    }
+  } else if (sourceAbilityId === 5606) {
+    const key = parentSkillStateKey(5606)
+    const previous = nextStates[key]
+    const positions = [...(previous?.positions ?? []), { ...target.pos }].slice(-3)
+    nextStates[key] = {
+      activeUntil: state.time + getSimpleSkillNumericValue(skill, 'duration', level, 45),
+      charges: positions.length,
+      positions,
+    }
+  } else if (sourceAbilityId === 5108) {
+    nextStates[parentSkillStateKey(5108)] = {
+      activeUntil: state.time + 120,
+      charges: Math.max(1, Math.round(getSimpleSkillNumericValue(skill, 'attack_count', level, 5))),
+    }
+  } else if (sourceAbilityId === 5490 || sourceAbilityId === 5493) {
+    const key = parentSkillStateKey(5486)
+    const previous = nextStates[key]
+    if (previous) nextStates[key] = { ...previous, mode: sourceAbilityId === 5490 ? 'in' : 'out' }
+  } else if (sourceAbilityId === 5607) {
+    const key = parentSkillStateKey(5606)
+    const previous = nextStates[key]
+    if (previous?.positions?.length) {
+      const consumedIndex = previous.positions.reduce((bestIndex, position, index, positions) => (
+        distance(position, arcane.pos) < distance(positions[bestIndex], arcane.pos) ? index : bestIndex
+      ), 0)
+      const positions = previous.positions.filter((_, index) => index !== consumedIndex)
+      if (positions.length === 0) delete nextStates[key]
+      else nextStates[key] = { ...previous, charges: positions.length, positions }
+    }
+  } else if (sourceAbilityId === 6937) {
+    delete nextStates[parentSkillStateKey(5108)]
+  } else {
+    return
+  }
+  arcane.skillStates = nextStates
+}
+
+function isParentSkillStateCreator(skill: HeroSkillDefinition) {
+  return [5474, 5486, 5606, 5108].includes(skill.sourceAbilityId ?? 0)
+}
+
+export function castStoredRemnantSkill(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+  fallbackTarget: CombatTarget | undefined,
+) {
+  const remnantState = arcane.skillStates[parentSkillStateKey(5606)]
+  if (!remnantState?.positions?.length) return false
+  const manaCost = getSimpleSkillManaCost(arcane, skill, level)
+  if (arcane.stats.mana < manaCost) return false
+  const destination = [...remnantState.positions].sort((left, right) => {
+    if (!fallbackTarget) return distance(left, arcane.pos) - distance(right, arcane.pos)
+    return distance(left, fallbackTarget.pos) - distance(right, fallbackTarget.pos)
+  })[0]
+  const from = { ...arcane.pos }
+  const radius = Math.max(1.8, getSimpleSkillNumericValue(skill, 'radius', level, 450) / 140)
+  const damage = getSimpleSkillDamage(arcane, skill, level)
+  const source: CombatSource = {
+    id: `${arcane.id}-${skill.id}`,
+    label: `${arcane.player}: ${skill.name}`,
+    team: arcane.team,
+    damageType: getSimpleSkillDamageType(skill),
+  }
+  const targets: Array<Arcane | Creep | Camp> = [
+    ...state.arcanes.filter((target) => target.team !== arcane.team && target.stats.hp > 0 && distance(target.pos, destination) <= radius),
+    ...state.creeps.filter((target) => target.team !== arcane.team && target.hp > 0 && distance(target.pos, destination) <= radius),
+    ...state.camps.filter((target) => target.hp > 0 && distance(target.pos, destination) <= radius),
+  ]
+  targets.forEach((target) => damageEntity(state, target.id, damage, source))
+  const liveArcane = state.arcanes.find((candidate) => candidate.id === arcane.id) ?? arcane
+  liveArcane.pos = { ...destination }
+  liveArcane.target = { ...destination }
+  state.effects = addAttackEffect(state.effects, {
+    kind: 'arcane',
+    action: 'skill',
+    sourceId: arcane.id,
+    targetKind: 'arcane',
+    team: arcane.team,
+    from,
+    to: destination,
+    createdAt: state.time,
+  })
+  finishSimpleSkillCast(state, liveArcane, skill, manaCost, liveArcane)
+  if (liveArcane !== arcane) {
+    arcane.pos = liveArcane.pos
+    arcane.target = liveArcane.target
+    arcane.stats = liveArcane.stats
+    arcane.skillStates = liveArcane.skillStates
+  }
+  return true
 }
 
 export function getSimpleSkillTarget(
@@ -9506,6 +9645,7 @@ export function resolveDeaths(state: SimulationState): SimulationState {
         respawn: next.time + getArcaneRespawnDuration(arcane.stats.level),
         lastHitBy: undefined,
         channeling: undefined,
+        skillStates: {},
         tpScrolls: Math.min(teleportScrollMaxCharges, arcane.tpScrolls + 1),
         macroDecision: 'Fora de combate',
         microDecision: 'Aguardando respawn',

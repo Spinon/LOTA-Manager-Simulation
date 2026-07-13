@@ -9,6 +9,7 @@ import {
   buildArcaneStats,
   buyItemAtBase,
   canTargetWithSimpleDamageSkill,
+  castSimpleSkill,
   createInitialState,
   createMatchRenderFrame,
   createMatchStaticData,
@@ -96,6 +97,7 @@ import {
   type TickFrameContext,
 } from './simulation.ts'
 import { getSkillEffectProfile } from '../game-systems/skillRuntime.ts'
+import { parentSkillStateKey } from '../game-systems/skillUnlocks.ts'
 import type { HeroSkillDefinition } from '../game-systems/heroAttributes.ts'
 import { ReplayChunkEncoder, ReplayFrameStore } from './replayStore.ts'
 
@@ -241,6 +243,86 @@ await loadGameData()
   const disguise = getArcaneRuntimeSkills(trickster).find((skill) => skill.sourceAbilityId === 1627)!
   assert.ok(disguise, 'the disguise utility should become available while retreating')
   assert.equal(getSimpleSkillLevel(trickster, disguise), 1)
+}
+
+{
+  const prepareCaster = (seed: string, heroDefinitionId: string, skillLevels: Arcane['skillLevels']) => {
+    const state = createInitialState(seed)
+    state.time = 10 * 60
+    const caster = state.arcanes[0]
+    const enemy = state.arcanes.find((candidate) => candidate.team !== caster.team)!
+    caster.heroDefinitionId = heroDefinitionId
+    caster.skillLevels = skillLevels
+    caster.skillStates = {}
+    caster.stats.level = 18
+    caster.stats.maxMana = 2_000
+    caster.stats.mana = 2_000
+    caster.aiMode = 'join_fight'
+    caster.macroDecision = 'Lutar em equipe'
+    caster.pos = { x: 50, y: 50 }
+    enemy.pos = { x: 52, y: 50 }
+    enemy.stats.maxHp = 3_000
+    enemy.stats.hp = 3_000
+    state.arcanes.forEach((candidate) => {
+      if (candidate.team !== caster.team && candidate.id !== enemy.id) candidate.stats.hp = 0
+    })
+    return { state, caster, enemy }
+  }
+
+  const light = prepareCaster('parent-state-light-form-test', 'h082_light_keeper', { R: 2 })
+  assert.equal(getArcaneRuntimeSkills(light.caster).some((skill) => skill.sourceAbilityId === 1372), false)
+  const spiritForm = getArcaneRuntimeSkills(light.caster).find((skill) => skill.sourceAbilityId === 5474)!
+  assert.equal(castSimpleSkill(light.state, light.caster, spiritForm, 2, light.enemy), true)
+  assert.ok(light.caster.skillStates[parentSkillStateKey(5474)].activeUntil > light.state.time + 40)
+  const radiantBind = getArcaneRuntimeSkills(light.caster).find((skill) => skill.sourceAbilityId === 1372)!
+  assert.ok(radiantBind, 'Spirit Form should unlock its extra control skill')
+  assert.equal(getSimpleSkillLevel(light.caster, radiantBind), 2)
+  assert.equal(castSimpleSkill(light.state, light.caster, radiantBind, 2, light.enemy), true)
+  assert.ok(light.caster.skillStates[parentSkillStateKey(5474)], 'casting the extra skill must not end Spirit Form')
+
+  const spirit = prepareCaster('parent-state-spirits-test', 'h083_spirit_tether', { W: 3 })
+  const guardianSpirits = getArcaneRuntimeSkills(spirit.caster).find((skill) => skill.sourceAbilityId === 5486)!
+  assert.equal(castSimpleSkill(spirit.state, spirit.caster, guardianSpirits, 3, spirit.enemy), true)
+  assert.equal(spirit.caster.skillStates[parentSkillStateKey(5486)].mode, 'out')
+  const spiritsIn = getArcaneRuntimeSkills(spirit.caster).find((skill) => skill.sourceAbilityId === 5490)!
+  assert.ok(spiritsIn, 'teamfight mode should request the inward spirits control')
+  assert.equal(castSimpleSkill(spirit.state, spirit.caster, spiritsIn, 3, spirit.enemy), true)
+  assert.equal(spirit.caster.skillStates[parentSkillStateKey(5486)].mode, 'in')
+  assert.equal(getArcaneRuntimeSkills(spirit.caster).some((skill) => skill.sourceAbilityId === 5490), false, 'the active spirits mode should not be recast repeatedly')
+  spirit.caster.aiMode = 'farm_jungle'
+  spirit.caster.macroDecision = 'Farmar selva'
+  assert.ok(getArcaneRuntimeSkills(spirit.caster).some((skill) => skill.sourceAbilityId === 5493), 'farming should request the outward spirits control')
+
+  const ember = prepareCaster('parent-state-remnant-test', 'h098_ember_duelist', { R: 2 })
+  const fireRemnant = getArcaneRuntimeSkills(ember.caster).find((skill) => skill.sourceAbilityId === 5606)!
+  assert.equal(castSimpleSkill(ember.state, ember.caster, fireRemnant, 2, ember.enemy), true)
+  assert.deepEqual(ember.caster.skillStates[parentSkillStateKey(5606)].positions, [{ x: 52, y: 50 }])
+  const activateRemnant = getArcaneRuntimeSkills(ember.caster).find((skill) => skill.sourceAbilityId === 5607)!
+  assert.ok(activateRemnant, 'placing a remnant should unlock its activation')
+  const enemyHpBeforeRemnant = ember.enemy.stats.hp
+  assert.equal(castSimpleSkill(ember.state, ember.caster, activateRemnant, 2, ember.enemy), true)
+  assert.deepEqual(ember.caster.pos, { x: 52, y: 50 }, 'activation should move to the stored remnant position')
+  assert.ok(ember.state.arcanes.find((arcane) => arcane.id === ember.enemy.id)!.stats.hp < enemyHpBeforeRemnant, 'activation should deal its imported area damage')
+  assert.equal(ember.caster.skillStates[parentSkillStateKey(5606)], undefined, 'activation should consume the stored remnant')
+
+  const giant = prepareCaster('parent-state-tree-test', 'h124_stone_giant', { E: 3 })
+  const treeGrab = getArcaneRuntimeSkills(giant.caster).find((skill) => skill.sourceAbilityId === 5108)!
+  assert.equal(castSimpleSkill(giant.state, giant.caster, treeGrab, 3, giant.enemy), true)
+  assert.equal(giant.caster.skillStates[parentSkillStateKey(5108)].charges, 7)
+  const tossTree = getArcaneRuntimeSkills(giant.caster).find((skill) => skill.sourceAbilityId === 6937)!
+  assert.ok(tossTree, 'holding a tree should unlock tree toss')
+  assert.equal(getSimpleSkillLevel(giant.caster, tossTree), 3)
+  assert.equal(castSimpleSkill(giant.state, giant.caster, tossTree, 3, giant.enemy), true)
+  assert.equal(giant.caster.skillStates[parentSkillStateKey(5108)], undefined, 'throwing the tree should consume the held tree')
+
+  light.caster.skillStates[parentSkillStateKey(5474)] = { activeUntil: light.state.time + 0.1 }
+  light.caster.stats.mana = 0
+  const expiredState = tick(light.state, 0.2, false)
+  assert.equal(expiredState.arcanes[0].skillStates[parentSkillStateKey(5474)], undefined, 'expired parent states should be pruned by the simulation tick')
+
+  const replayFrame = createMatchRenderFrame(spirit.state)
+  const replayState = materializeMatchRenderFrame(replayFrame, createMatchStaticData(spirit.state), replayFrame.details)
+  assert.deepEqual(replayState.arcanes[0].skillStates, spirit.state.arcanes[0].skillStates, 'parent skill state should survive replay materialization')
 }
 
 assert.equal(getRoleGpmTarget('Safe Lane', 40 * 60), 760)

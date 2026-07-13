@@ -19,6 +19,14 @@ export type ContextualSkillSelectionInput = {
   skillLevels: Partial<Record<string, number>>
   situation: SkillUsageSituation
   hpRatio: number
+  skillStates?: Record<string, RuntimeParentSkillState>
+}
+
+export type RuntimeParentSkillState = {
+  activeUntil: number
+  charges?: number
+  mode?: 'in' | 'out'
+  positions?: Array<{ x: number; y: number }>
 }
 
 export const abilityUpgradeItemIds: Record<AbilityUpgradeSlot, string> = {
@@ -32,7 +40,7 @@ const ringmasterHeroId = 'h118_circus_controller'
 const stanceHeroId = 'h119_twin_blade_duelist'
 const songHeroId = 'h120_heavy_artillery_commander'
 const parentStateHeroIds = ['h082_light_keeper', 'h083_spirit_tether', 'h098_ember_duelist', 'h124_stone_giant']
-const automaticContextualHeroIds = new Set([invokerHeroId, songHeroId, monkeyHeroId])
+const automaticContextualHeroIds = new Set([invokerHeroId, songHeroId, monkeyHeroId, ...parentStateHeroIds])
 
 const invokerOrbRecipes: Record<number, string> = {
   5376: 'QQQ',
@@ -88,6 +96,7 @@ export function getContextualSkillIds(
       ?.filter((skill) => skill.sourceAbilityId === 1627)
       .map((skill) => skill.id) ?? []
   }
+  if (parentStateHeroIds.includes(definition.id)) return getParentStateLoadout(definition, input)
   return []
 }
 
@@ -145,6 +154,16 @@ export function getContextualSkillLevel(
   }
   if (rule === 'song_loadout') return Math.max(0, skillLevels.R ?? 0)
   if (rule === 'situational_utility') return 1
+  if (rule === 'parent_state') {
+    const levelKeyByAbilityId: Record<number, string> = {
+      1372: 'R',
+      5490: 'W',
+      5493: 'W',
+      5607: 'R',
+      6937: 'E',
+    }
+    return Math.max(0, skillLevels[levelKeyByAbilityId[skill.sourceAbilityId ?? 0]] ?? 0)
+  }
   return 0
 }
 
@@ -176,6 +195,29 @@ function getSongLoadout(definition: HeroDefinition, input: ContextualSkillSelect
     .map((skill) => skill.id) ?? []
 }
 
+function getParentStateLoadout(definition: HeroDefinition, input: ContextualSkillSelectionInput) {
+  const states = input.skillStates ?? {}
+  let sourceAbilityId: number | undefined
+  if (definition.id === 'h082_light_keeper' && states[parentSkillStateKey(5474)]) sourceAbilityId = 1372
+  if (definition.id === 'h083_spirit_tether') {
+    const spirits = states[parentSkillStateKey(5486)]
+    if (spirits) {
+      const desiredMode = ['teamfight', 'gank', 'save'].includes(input.situation) ? 'in' : 'out'
+      if (spirits.mode !== desiredMode) sourceAbilityId = desiredMode === 'in' ? 5490 : 5493
+    }
+  }
+  if (definition.id === 'h098_ember_duelist' && (states[parentSkillStateKey(5606)]?.positions?.length ?? 0) > 0) sourceAbilityId = 5607
+  if (definition.id === 'h124_stone_giant' && (states[parentSkillStateKey(5108)]?.charges ?? 0) > 0) sourceAbilityId = 6937
+  if (sourceAbilityId === undefined) return []
+  return definition.supplementalSkills
+    ?.filter((skill) => skill.sourceAbilityId === sourceAbilityId)
+    .map((skill) => skill.id) ?? []
+}
+
+export function parentSkillStateKey(sourceAbilityId: number) {
+  return String(sourceAbilityId)
+}
+
 export function getRuntimeNormalizedSkill(skill: HeroSkillDefinition) {
   const cached = normalizedSkillCache.get(skill)
   if (cached) return cached
@@ -205,10 +247,54 @@ export function getRuntimeNormalizedSkill(skill: HeroSkillDefinition) {
         duration: skill.values.transfiguration_duration ?? 1.5,
       },
     }
+  } else if (parentStateHeroIds.some((heroId) => skill.id.startsWith(`${heroId}_`))) {
+    normalized = normalizeParentStateSkill(skill, sourceAbilityId)
   }
 
   normalizedSkillCache.set(skill, normalized)
   return normalized
+}
+
+function normalizeParentStateSkill(skill: HeroSkillDefinition, sourceAbilityId: number): HeroSkillDefinition {
+  const names: Record<number, string> = {
+    5474: 'Forma Radiante',
+    1372: 'Vinculo Radiante',
+    5486: 'Espiritos Guardioes',
+    5490: 'Espiritos para Dentro',
+    5493: 'Espiritos para Fora',
+    5606: 'Remanescente Ardente',
+    5607: 'Ativar Remanescente',
+    5108: 'Agarrar Arvore',
+    6937: 'Arremessar Arvore',
+  }
+  const base = { ...skill, name: names[sourceAbilityId] ?? skill.name }
+  if (sourceAbilityId === 5474) return { ...base, tags: withTags(skill, ['transformation', 'damage_buff']) }
+  if (sourceAbilityId === 5486) {
+    return {
+      ...base,
+      values: {
+        ...skill.values,
+        summons: skill.values.spirit_amount ?? 5,
+        summonDuration: skill.values.spirit_duration ?? skill.values.duration ?? 15,
+      },
+    }
+  }
+  if (sourceAbilityId === 5490 || sourceAbilityId === 5493) {
+    return { ...base, target: 'self', tags: withTags(skill, ['summon_control', 'defensive_utility']) }
+  }
+  if (sourceAbilityId === 5606) {
+    return { ...base, values: { ...skill.values, damage: 0 } }
+  }
+  if (sourceAbilityId === 5607) return { ...base, target: 'area', tags: withTags(skill, ['mobility', 'area']) }
+  if (sourceAbilityId === 5108) {
+    return {
+      ...base,
+      target: 'self',
+      tags: withTags(skill, ['damage_buff']),
+      values: { ...skill.values, duration: 120 },
+    }
+  }
+  return base
 }
 
 function normalizeInvokedSkill(skill: HeroSkillDefinition, sourceAbilityId: number): HeroSkillDefinition {

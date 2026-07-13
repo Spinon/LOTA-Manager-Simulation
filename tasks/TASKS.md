@@ -482,6 +482,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Auditoria atual: 3 completas, 628 parciais, 13 aproximações intencionais e 90 ausentes. Testes cobrem receitas, limite de dois feitiços, troca por contexto, orbes não-castáveis, escala, mana, cooldown, cura e utilidade de recuo.
 - O kit runtime passou a ter cache por Arcane, invalidado por herói, inventário, níveis, situação e faixa de vida. Benchmark A/B sob a mesma carga: `HEAD` em 37,4x wall e esta rodada em 50,7x wall / 47,1x CPU; digest `9ebd3080f5fadc7e` permaneceu estável.
 
+**Progresso dos estados de habilidade-pai (2026-07-13)**:
+- Cinco subskills deixaram de ser botões soltos e passaram a depender de um estado compacto no próprio Arcane. O estado guarda duração, cargas, modo e posições quando necessário; é clonado pelo tick, removido na expiração/morte e serializado apenas nos frames detalhados do replay.
+- Forma Radiante libera Vínculo Radiante durante seus 40-50s sem encerrar a transformação. Espíritos Guardiões libera somente a mudança de raio necessária para a situação atual e não repete o toggle enquanto o modo já estiver correto.
+- Remanescente Ardente registra até três posições. Ativar Remanescente escolhe a posição mais útil para o alvo, move o Arcane exatamente até ela, causa o dano em área importado e consome somente aquele remnant.
+- Agarrar Árvore registra as 5-8 cargas oficiais e libera Arremessar Árvore no mesmo nível da habilidade-pai; o arremesso consome a árvore carregada. O buff de ataques por carga continua classificado como parcial até a resolução de ataques básicos consumir uma carga por hit.
+- Ativação atual: 712 completas, 14 aproximadas e 8 ausentes. Restam apenas os quatro souvenirs com aquisição/charges e as quatro skills da stance alternativa. Auditoria geral: 3 completas, 631 parciais, 15 aproximações intencionais e 85 ausentes.
+- Testes cobrem bloqueio antes do pai, unlock, escala, troca de modo, posição/dano/consumo do remnant, cargas da árvore, expiração e ida/volta pelo replay.
+- Testes, lint e build verdes. Benchmark determinístico: 52,5x wall / 47,6x CPU, digest `9ebd3080f5fadc7e` estável; o estado vazio não alterou o resultado da partida de referência.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens
