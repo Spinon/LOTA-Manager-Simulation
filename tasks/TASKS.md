@@ -622,7 +622,9 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T23 - Cadências internas e estado sujo do tick
+### [x] T23 - Cadências internas e estado sujo do tick
+
+> Concluída em 2026-07-13 - Manutenção administrativa e refresh de auras passaram a 10Hz; estados mecânicos, movimento, combate e ticks periódicos permanecem em 30Hz/evento.
 
 **Objetivo**: reservar 30Hz para integração sensível ao tempo e executar manutenção de estado apenas quando necessário.
 
@@ -632,6 +634,8 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Preservar durações e dano por segundo sem reduzir a precisão observável.
 
 **Critérios**: reduzir custo residual do `tick`, manter fórmulas temporais e digest aprovado, testes/lint/build verdes.
+
+**Medição**: comparação pareada contra `1f1dd11`, na mesma execução e seed até 06:00, reduziu a mediana de 11,05s para 9,63s, ganho de 14,7%. DoT/HoT agora retornam antes de alocar quando nenhum tick venceu; auras preservam a mesma regeneração integrada pelo intervalo de 0,1s; testes garantem expiração imediata dos estados de habilidade-pai.
 
 ---
 

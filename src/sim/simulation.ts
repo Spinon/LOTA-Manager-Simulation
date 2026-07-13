@@ -1658,29 +1658,35 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   // Ouro passivo acumula na cadência do gate de decisão (mesma taxa por
   // segundo): conceder a cada tick clonava 10 arcanes/tick só para somar ouro.
   const passiveGold = shouldDecide && next.time >= 0 ? passiveGoldForTick(next.time, decisionGateSeconds) : 0
-  next.effects = next.effects.filter((effect) => next.time - effect.createdAt < effect.duration)
-  next.timedEffects = next.timedEffects.filter((effect) => effect.expiresAt > next.time)
+  if (next.timedEffects.some((effect) => effect.expiresAt <= next.time)) {
+    next.timedEffects = next.timedEffects.filter((effect) => effect.expiresAt > next.time)
+  }
   next = processTimedEffects(next)
   next.arcanes = next.arcanes.map((arcane) => {
-    const activeStates = Object.entries(arcane.skillStates).filter(([, skillState]) => skillState.activeUntil > next.time)
-    if (activeStates.length === Object.keys(arcane.skillStates).length) return arcane
-    return { ...arcane, skillStates: Object.fromEntries(activeStates) }
+    const entries = Object.entries(arcane.skillStates)
+    if (entries.length === 0 || entries.every(([, skillState]) => skillState.activeUntil > next.time)) return arcane
+    return { ...arcane, skillStates: Object.fromEntries(entries.filter(([, skillState]) => skillState.activeUntil > next.time)) }
   })
-  next.deathMarkers = next.deathMarkers.filter((marker) => marker.expiresAt > next.time)
-  next.denyMarkers = next.denyMarkers.filter((marker) => marker.expiresAt > next.time)
-  next.goldMarkers = next.goldMarkers.filter((marker) => marker.expiresAt > next.time)
-  next.skillMarkers = (next.skillMarkers ?? []).filter((marker) => marker.expiresAt > next.time)
-  next.recentTeleports = (next.recentTeleports ?? []).filter((record) => next.time - record.startedAt <= teleportNearbyPenaltySeconds)
-  next.teamMemory = {
-    dawn: pruneAiMemory(next.teamMemory.dawn, next.time),
-    dusk: pruneAiMemory(next.teamMemory.dusk, next.time),
+  if (shouldDecide) {
+    next.effects = next.effects.filter((effect) => next.time - effect.createdAt < effect.duration)
+    next.deathMarkers = next.deathMarkers.filter((marker) => marker.expiresAt > next.time)
+    next.denyMarkers = next.denyMarkers.filter((marker) => marker.expiresAt > next.time)
+    next.goldMarkers = next.goldMarkers.filter((marker) => marker.expiresAt > next.time)
+    next.skillMarkers = (next.skillMarkers ?? []).filter((marker) => marker.expiresAt > next.time)
+    next.recentTeleports = (next.recentTeleports ?? []).filter((record) => next.time - record.startedAt <= teleportNearbyPenaltySeconds)
+    next.teamMemory = {
+      dawn: pruneAiMemory(next.teamMemory.dawn, next.time),
+      dusk: pruneAiMemory(next.teamMemory.dusk, next.time),
+    }
+    next.teamAuras = Object.fromEntries(
+      Object.entries(next.teamAuras).filter(([, aura]) => aura && aura.expiresAt > next.time),
+    ) as Partial<Record<TeamId, TeamAura>>
   }
-  next.teamAuras = Object.fromEntries(
-    Object.entries(next.teamAuras).filter(([, aura]) => aura && aura.expiresAt > next.time),
-  ) as Partial<Record<TeamId, TeamAura>>
   const dayCycle = getDayCycle(next.time)
-  applyItemAuraEffects(next)
-  applySkillAuraEffects(next)
+  if (shouldDecide) {
+    applyItemAuraEffects(next)
+    applySkillAuraEffects(next, decisionGateSeconds)
+  }
   next.arcanes = next.arcanes.map((arcane, index) => {
     const current = dayCycle !== previousDayCycle
       ? {
@@ -1691,7 +1697,7 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
     return respawnArcaneIfReady(current, next.time, index)
   })
 
-  next.camps = resetDisengagedNeutralCamps(next.camps, next.time).map((camp) => {
+  if (shouldDecide) next.camps = resetDisengagedNeutralCamps(next.camps, next.time).map((camp) => {
     if (camp.hp > 0) {
       return camp
     }
@@ -6750,6 +6756,12 @@ export function isArcaneAttackDisabled(state: SimulationState, arcane: Arcane) {
 }
 
 export function processTimedEffects(state: SimulationState): SimulationState {
+  const hasDuePeriodicEffect = state.timedEffects.some((effect) => (
+    (effect.kind === 'dot' || effect.kind === 'hot') &&
+    (effect.nextTickAt ?? Number.POSITIVE_INFINITY) <= state.time
+  ))
+  if (!hasDuePeriodicEffect) return state
+
   const tickedEffectIds = new Set<string>()
   state.timedEffects.forEach((effect) => {
     if ((effect.kind !== 'dot' && effect.kind !== 'hot') || (effect.nextTickAt ?? Number.POSITIVE_INFINITY) > state.time) {
@@ -7876,7 +7888,7 @@ export function getSimpleSkillControlType(skill: HeroSkillDefinition, target: Ar
   return 'disable'
 }
 
-export function applySkillAuraEffects(state: SimulationState) {
+export function applySkillAuraEffects(state: SimulationState, elapsedSeconds = simulationFrameSeconds) {
   state.arcanes
     .filter((holder) => holder.stats.hp > 0 && holder.respawn <= state.time && !hasTimedEffect(state, holder.id, 'break'))
     .forEach((holder) => {
@@ -7907,7 +7919,7 @@ export function applySkillAuraEffects(state: SimulationState) {
 
         allies.forEach((ally) => {
           if (hasSkillTag(skill, ['mana_aura'])) {
-            ally.stats.mana = Math.min(ally.stats.maxMana, ally.stats.mana + simulationFrameSeconds * (0.65 + level * 0.35))
+            ally.stats.mana = Math.min(ally.stats.maxMana, ally.stats.mana + elapsedSeconds * (0.65 + level * 0.35))
           }
           addTimedEffect(state, ally, {
             sourceId: `${holder.id}-${skill.id}`,
