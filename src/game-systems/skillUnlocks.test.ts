@@ -5,8 +5,11 @@ import {
   getContextualSkillIds,
   getContextualSkillLevel,
   getGrantedSkillLevel,
+  getPreferredTwinBladeStance,
   getRuntimeHeroSkills,
   getSkillRuntimeUnlockRule,
+  getTwinBladeStance,
+  parentSkillStateKey,
 } from './skillUnlocks.ts'
 
 const baseSkill: HeroSkillDefinition = {
@@ -87,5 +90,50 @@ assert.deepEqual(getContextualSkillIds(songDefinition, {
   hpRatio: 0.4,
 }), [songSkills[2].id], 'low health should select the healing song')
 assert.equal(getContextualSkillLevel(songSkills[2], { R: 2 }), 2)
+
+const twinBladePrimary = [1498, 1499, 1500, 1501].map((sourceAbilityId, index) => ({
+  ...baseSkill,
+  id: `h119_twin_blade_duelist_standard_${index + 1}_${sourceAbilityId}`,
+  key: (['Q', 'W', 'E', 'R'] as const)[index],
+  sourceAbilityId,
+  maxLevel: index === 3 ? 3 : 4,
+})) satisfies HeroSkillDefinition[]
+const twinBladeSwitch = {
+  ...baseSkill,
+  id: 'h119_twin_blade_duelist_innate_1_1497',
+  key: 'I1',
+  sourceAbilityId: 1497,
+  category: 'innate' as const,
+  learnable: false,
+}
+const twinBladeAlternate = [1502, 1503, 1504, 1506].map((sourceAbilityId, index) => ({
+  ...baseSkill,
+  id: `h119_twin_blade_duelist_standard_${index + 5}_${sourceAbilityId}`,
+  key: `S${index + 1}`,
+  sourceAbilityId,
+  learnable: false,
+  maxLevel: index === 3 ? 3 : 4,
+})) satisfies HeroSkillDefinition[]
+const twinBladeDefinition = {
+  id: 'h119_twin_blade_duelist',
+  skills: [...twinBladePrimary, twinBladeSwitch],
+  supplementalSkills: twinBladeAlternate,
+} as HeroDefinition
+const saiState = { [parentSkillStateKey(1497)]: { activeUntil: Number.MAX_SAFE_INTEGER, mode: 'sai' as const } }
+const saiIds = getContextualSkillIds(twinBladeDefinition, {
+  skillLevels: { Q: 4, W: 3, E: 2, R: 1 },
+  skillStates: saiState,
+  situation: 'gank',
+  hpRatio: 0.8,
+})
+assert.deepEqual(saiIds, twinBladeAlternate.map((skill) => skill.id), 'Sai stance should select all four alternate weapon skills')
+const saiKit = getRuntimeHeroSkills(twinBladeDefinition, new Set(), saiIds)
+assert.deepEqual(saiKit.filter((skill) => ['Q', 'W', 'E', 'R'].includes(skill.key)).map((skill) => skill.id), twinBladeAlternate.map((skill) => skill.id), 'Sai skills should replace rather than accompany the Katana Q/W/E/R')
+assert.deepEqual(saiKit.filter((skill) => ['Q', 'W', 'E', 'R'].includes(skill.key)).map((skill) => skill.key), ['Q', 'W', 'E', 'R'])
+assert.equal(getContextualSkillLevel(saiKit.find((skill) => skill.sourceAbilityId === 1503)!, { W: 3 }), 3, 'alternate skill levels should mirror their paired primary slot')
+assert.equal(getTwinBladeStance(), 'katana', 'Katana should be the default stance')
+assert.equal(getTwinBladeStance(saiState), 'sai')
+assert.equal(getPreferredTwinBladeStance({ situation: 'gank', hpRatio: 0.9 }), 'sai')
+assert.equal(getPreferredTwinBladeStance({ situation: 'objective', hpRatio: 0.4 }), 'katana')
 
 console.log('skillUnlocks tests passed')

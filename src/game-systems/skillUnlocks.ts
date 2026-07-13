@@ -25,9 +25,12 @@ export type ContextualSkillSelectionInput = {
 export type RuntimeParentSkillState = {
   activeUntil: number
   charges?: number
-  mode?: 'in' | 'out'
+  mode?: 'in' | 'out' | 'katana' | 'sai'
+  graceUntil?: number
   positions?: Array<{ x: number; y: number }>
 }
+
+export type TwinBladeStance = 'katana' | 'sai'
 
 export const abilityUpgradeItemIds: Record<AbilityUpgradeSlot, string> = {
   scepter: 'i135_grand_spell_scepter',
@@ -40,7 +43,25 @@ const ringmasterHeroId = 'h118_circus_controller'
 const stanceHeroId = 'h119_twin_blade_duelist'
 const songHeroId = 'h120_heavy_artillery_commander'
 const parentStateHeroIds = ['h082_light_keeper', 'h083_spirit_tether', 'h098_ember_duelist', 'h124_stone_giant']
-const automaticContextualHeroIds = new Set([invokerHeroId, songHeroId, monkeyHeroId, ...parentStateHeroIds])
+const automaticContextualHeroIds = new Set([invokerHeroId, songHeroId, monkeyHeroId, stanceHeroId, ...parentStateHeroIds])
+const twinBladeSwitchAbilityId = 1497
+const twinBladeAlternateAbilityIds = [1502, 1503, 1504, 1506]
+const twinBladeKeyByAbilityId: Record<number, HeroSkillDefinition['key']> = {
+  1502: 'Q',
+  1503: 'W',
+  1504: 'E',
+  1506: 'R',
+}
+const twinBladePairedAbilityIds: Record<number, number> = {
+  1498: 1502,
+  1502: 1498,
+  1499: 1503,
+  1503: 1499,
+  1500: 1504,
+  1504: 1500,
+  1501: 1506,
+  1506: 1501,
+}
 
 const invokerOrbRecipes: Record<number, string> = {
   5376: 'QQQ',
@@ -96,6 +117,7 @@ export function getContextualSkillIds(
       ?.filter((skill) => skill.sourceAbilityId === 1627)
       .map((skill) => skill.id) ?? []
   }
+  if (definition.id === stanceHeroId) return getTwinBladeStanceLoadout(definition, input)
   if (parentStateHeroIds.includes(definition.id)) return getParentStateLoadout(definition, input)
   return []
 }
@@ -121,7 +143,12 @@ export function getRuntimeHeroSkills(
   const cached = skillsByUnlockState.get(cacheKey)
   if (cached) return cached
 
-  const primary = (definition.skills ?? []).map(getRuntimeNormalizedSkill)
+  const usesAlternateStance = definition.id === stanceHeroId && selectedContextualIds.some((id) => (
+    definition.supplementalSkills?.some((skill) => skill.id === id && twinBladeAlternateAbilityIds.includes(skill.sourceAbilityId ?? 0))
+  ))
+  const primary = (definition.skills ?? [])
+    .filter((skill) => !usesAlternateStance || !['Q', 'W', 'E', 'R'].includes(skill.key))
+    .map(getRuntimeNormalizedSkill)
   const supplemental = (definition.supplementalSkills ?? []).filter((skill) => {
     const rule = getSkillRuntimeUnlockRule(skill, 'supplemental')
     if (rule === 'scepter_item') return upgradeSlots.has('scepter')
@@ -154,6 +181,10 @@ export function getContextualSkillLevel(
   }
   if (rule === 'song_loadout') return Math.max(0, skillLevels.R ?? 0)
   if (rule === 'situational_utility') return 1
+  if (rule === 'alternate_stance') {
+    const levelKey = twinBladeKeyByAbilityId[skill.sourceAbilityId ?? 0]
+    return levelKey ? Math.max(0, skillLevels[levelKey] ?? 0) : 0
+  }
   if (rule === 'parent_state') {
     const levelKeyByAbilityId: Record<number, string> = {
       1372: 'R',
@@ -214,6 +245,31 @@ function getParentStateLoadout(definition: HeroDefinition, input: ContextualSkil
     .map((skill) => skill.id) ?? []
 }
 
+function getTwinBladeStanceLoadout(definition: HeroDefinition, input: ContextualSkillSelectionInput) {
+  if (getTwinBladeStance(input.skillStates) !== 'sai') return []
+  return definition.supplementalSkills
+    ?.filter((skill) => twinBladeAlternateAbilityIds.includes(skill.sourceAbilityId ?? 0))
+    .map((skill) => skill.id) ?? []
+}
+
+export function getTwinBladeStance(skillStates?: Record<string, RuntimeParentSkillState>): TwinBladeStance {
+  return skillStates?.[parentSkillStateKey(twinBladeSwitchAbilityId)]?.mode === 'sai' ? 'sai' : 'katana'
+}
+
+export function getPreferredTwinBladeStance(input: Pick<ContextualSkillSelectionInput, 'situation' | 'hpRatio'>): TwinBladeStance {
+  if (input.situation === 'retreat' || input.situation === 'save' || input.situation === 'gank') return 'sai'
+  if (input.situation === 'teamfight' && input.hpRatio < 0.46) return 'sai'
+  return 'katana'
+}
+
+export function getTwinBladePairedAbilityId(sourceAbilityId: number) {
+  return twinBladePairedAbilityIds[sourceAbilityId]
+}
+
+export function twinBladeStanceStateKey() {
+  return parentSkillStateKey(twinBladeSwitchAbilityId)
+}
+
 export function parentSkillStateKey(sourceAbilityId: number) {
   return String(sourceAbilityId)
 }
@@ -236,6 +292,8 @@ export function getRuntimeNormalizedSkill(skill: HeroSkillDefinition) {
     normalized = normalizeInvokedSkill(skill, sourceAbilityId)
   } else if (skill.id.startsWith(`${songHeroId}_`)) {
     normalized = normalizeSongSkill(skill, sourceAbilityId)
+  } else if (skill.id.startsWith(`${stanceHeroId}_`)) {
+    normalized = normalizeTwinBladeSkill(skill, sourceAbilityId)
   } else if (skill.id.startsWith(`${monkeyHeroId}_`) && sourceAbilityId === 1627) {
     normalized = {
       ...skill,
@@ -253,6 +311,80 @@ export function getRuntimeNormalizedSkill(skill: HeroSkillDefinition) {
 
   normalizedSkillCache.set(skill, normalized)
   return normalized
+}
+
+function normalizeTwinBladeSkill(skill: HeroSkillDefinition, sourceAbilityId: number): HeroSkillDefinition {
+  const names: Record<number, string> = {
+    1497: 'Trocar Disciplina',
+    1498: 'Corte Ecoante',
+    1499: 'Garra de Arpeu',
+    1500: 'Katana Kazurai',
+    1501: 'Danca do Raptor',
+    1502: 'Investida do Falcao',
+    1503: 'Arremesso de Garra',
+    1504: 'Sai Shodo',
+    1506: 'Veu do Corvo',
+  }
+  const base = {
+    ...skill,
+    key: twinBladeKeyByAbilityId[sourceAbilityId] ?? skill.key,
+    name: names[sourceAbilityId] ?? skill.name,
+  }
+  if (sourceAbilityId === twinBladeSwitchAbilityId) {
+    return {
+      ...base,
+      kind: 'active',
+      target: 'self',
+      tags: withTags(skill, ['stance_switch']),
+    }
+  }
+  if (sourceAbilityId === 1498) {
+    return {
+      ...base,
+      tags: withTags(skill, ['slow']),
+      values: { ...skill.values, slow: skill.values.tag_slow, duration: skill.values.tag_slow_duration },
+    }
+  }
+  if (sourceAbilityId === 1499) {
+    return {
+      ...base,
+      tags: withTags(skill, ['mobility', 'slow']),
+      values: { ...skill.values, slow: skill.values.katana_ms_slow_pct, duration: skill.values.debuff_duration },
+    }
+  }
+  if (sourceAbilityId === 1502) {
+    return {
+      ...base,
+      target: 'self',
+      tags: withTags(skill, ['mobility', 'haste', 'damage_buff']),
+      values: {
+        ...skill.values,
+        moveSpeedBonusPct: skill.values.slow_resist,
+        attackSpeed: skill.values.bonus_attack_speed ?? 40,
+      },
+    }
+  }
+  if (sourceAbilityId === 1504) {
+    return {
+      ...base,
+      target: 'self',
+      tags: withTags(skill, ['spell_parry', 'defensive_utility', 'damage_reduction']),
+      values: { ...skill.values, duration: skill.values.parry_duration },
+    }
+  }
+  if (sourceAbilityId === 1506) {
+    return {
+      ...base,
+      target: 'self',
+      tags: withTags(skill, ['dispel', 'mobility', 'haste', 'escape', 'defensive_utility']),
+      values: {
+        ...skill.values,
+        duration: skill.values.buff_duration,
+        moveSpeedBonusPct: skill.values.bonus_ms,
+      },
+    }
+  }
+  return base
 }
 
 function normalizeParentStateSkill(skill: HeroSkillDefinition, sourceAbilityId: number): HeroSkillDefinition {

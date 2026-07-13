@@ -491,6 +491,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Testes cobrem bloqueio antes do pai, unlock, escala, troca de modo, posição/dano/consumo do remnant, cargas da árvore, expiração e ida/volta pelo replay.
 - Testes, lint e build verdes. Benchmark determinístico: 52,5x wall / 47,6x CPU, digest `9ebd3080f5fadc7e` estável; o estado vazio não alterou o resultado da partida de referência.
 
+**Progresso da postura Katana/Sai (2026-07-13)**:
+- `Switch Discipline` deixou de ser tratada como passiva genérica e passou a comandar uma postura persistente. Katana é o estado inicial; a IA prefere Sai para gank, recuo e save, usa o cooldown oficial de 8s como histerese e mantém Katana para lane, farm, push e objetivos.
+- Sai substitui integralmente Q/W/E/R em vez de acrescentar quatro botões ao kit. Os quatro níveis espelham os slots aprendidos da Katana, os nomes e efeitos importados foram normalizados e a postura atravessa os frames detalhados do replay.
+- Cada par de habilidades compartilha cooldown mesmo quando uma delas está oculta. O Scepter preserva a exceção oficial da primeira habilidade usada na janela de 3s depois da troca; o bônus de movimento do Sai e o primeiro dano da Katana entram no sistema comum de efeitos temporários.
+- O Sai aplica o BAT 1,5 importado contra o BAT 1,9 da Katana. Testes cobrem prioridade da troca pela IA, substituição sem oito skills simultâneas, níveis, mana, cooldown pareado, exceção do Scepter, bônus, velocidade de ataque e replay.
+- Ativação atual: 716 completas, 14 aproximadas e 4 ausentes. Restam apenas os quatro souvenirs com aquisição e charges. Auditoria geral: 4 completas, 635 parciais, 15 aproximações intencionais e 80 ausentes.
+- Testes, lint e build verdes. Benchmark determinístico: 52,5x wall / 48,8x CPU, digest `9ebd3080f5fadc7e` estável.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

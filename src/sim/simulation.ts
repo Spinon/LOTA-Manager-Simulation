@@ -50,10 +50,14 @@ import {
   getContextualSkillIds,
   getContextualSkillLevel,
   getGrantedSkillLevel,
+  getPreferredTwinBladeStance,
   hasAutomaticContextualSkillSelection,
   getRuntimeHeroSkills,
   getSkillRuntimeUnlockRule,
+  getTwinBladePairedAbilityId,
+  getTwinBladeStance,
   parentSkillStateKey,
+  twinBladeStanceStateKey,
   type AbilityUpgradeSlot,
   type RuntimeParentSkillState,
 } from '../game-systems/skillUnlocks.ts'
@@ -6673,7 +6677,10 @@ export function getEffectiveArcaneAttackCooldown(state: SimulationState, arcane:
   const modifiers = getArcaneStatModifierEffects(state, arcane)
   const passive = getArcanePassiveCombatModifiers(state, arcane)
   const attackSpeedPct = modifiers.reduce((sum, effect) => sum + (effect.modifiers?.attackSpeedPct ?? 0), passive.attackSpeedPct)
-  return arcane.stats.attackSpeed / Math.max(0.2, 1 + attackSpeedPct)
+  const stanceBatMultiplier = arcane.heroDefinitionId === 'h119_twin_blade_duelist' && getTwinBladeStance(arcane.skillStates) === 'sai'
+    ? 1.5 / 1.9
+    : 1
+  return arcane.stats.attackSpeed * stanceBatMultiplier / Math.max(0.2, 1 + attackSpeedPct)
 }
 
 export function getArcaneSlowPercent(state: SimulationState, arcane: Arcane) {
@@ -7513,11 +7520,12 @@ export function getStatBonusLevelUpScore(arcane: Arcane) {
 
 export function getSimpleSkillPriority(skill: HeroSkillDefinition) {
   const tags = new Set(skill.tags)
+  const stanceScore = tags.has('stance_switch') ? 80 : 0
   const controlScore = ['stun', 'disable', 'silence', 'slow', 'taunt'].some((tag) => tags.has(tag)) ? 16 : 0
   const sustainScore = ['heal', 'healer', 'regen', 'shield', 'barrier', 'spell_parry'].some((tag) => tags.has(tag)) ? 12 : 0
   const damageScore = skill.damageType !== 'none' || getSimpleSkillNumericValue(skill, 'damage', 1, 0) > 0 ? 10 : 0
   const ultimateScore = isUltimateSkill(skill) ? 20 : 0
-  return ultimateScore + controlScore + sustainScore + damageScore
+  return stanceScore + ultimateScore + controlScore + sustainScore + damageScore
 }
 
 export function getSimpleSkillCooldown(skill: HeroSkillDefinition, level: number) {
@@ -7570,6 +7578,7 @@ export function castSimpleSkill(
   fallbackTarget: CombatTarget | undefined,
   preferFallbackTarget = false,
 ) {
+  if (skill.sourceAbilityId === 1497) return castTwinBladeStanceSwitch(state, arcane, skill, level)
   if (skill.sourceAbilityId === 5607) return castStoredRemnantSkill(state, arcane, skill, level, fallbackTarget)
   if (isConfirmedGlobalSkill(skill) && !shouldCastGlobalSkill(state, arcane, skill)) return false
   const target = getSimpleSkillTarget(state, arcane, skill, level, fallbackTarget, preferFallbackTarget)
@@ -8045,6 +8054,8 @@ export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, sk
   }
   liveArcane.decision = `Castou ${skill.key}`
   updateParentSkillStateAfterCast(state, liveArcane, skill, target)
+  syncTwinBladePairedCooldown(state, liveArcane, skill)
+  if (skill.sourceAbilityId !== 1497) consumeTwinBladeKatanaSwapBuff(state, liveArcane)
   state.skillMarkers = [
     ...state.skillMarkers.slice(-23),
     {
@@ -8072,6 +8083,7 @@ export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, sk
     arcane.microDecision = liveArcane.microDecision
     arcane.decision = liveArcane.decision
     arcane.channeling = liveArcane.channeling
+    arcane.itemCooldowns = liveArcane.itemCooldowns
     arcane.skillStates = liveArcane.skillStates
   }
 }
@@ -8125,10 +8137,102 @@ export function updateParentSkillStateAfterCast(
     }
   } else if (sourceAbilityId === 6937) {
     delete nextStates[parentSkillStateKey(5108)]
+  } else if (sourceAbilityId === 1497) {
+    const currentMode = getTwinBladeStance(nextStates)
+    const nextMode = currentMode === 'katana' ? 'sai' : 'katana'
+    nextStates[twinBladeStanceStateKey()] = {
+      activeUntil: Number.MAX_SAFE_INTEGER,
+      mode: nextMode,
+      graceUntil: getArcaneAbilityUpgradeSlots(arcane).has('scepter')
+        ? state.time + getSimpleSkillNumericValue(skill, 'scepter_cooldown_timer', level, 3)
+        : undefined,
+    }
+    applyTwinBladeSwapBuff(state, arcane, skill, level, nextMode)
   } else {
     return
   }
   arcane.skillStates = nextStates
+}
+
+export function castTwinBladeStanceSwitch(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+) {
+  const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
+  const situation = getPrimarySkillUsageSituation({
+    phase: arcane.stats.level <= 8 ? 'early' : arcane.stats.level <= 18 ? 'mid' : 'late',
+    aiMode: arcane.aiMode,
+    macroDecision: arcane.macroDecision,
+    hpRatio,
+  })
+  if (getPreferredTwinBladeStance({ situation, hpRatio }) === getTwinBladeStance(arcane.skillStates)) return false
+  const manaCost = getSimpleSkillManaCost(arcane, skill, level)
+  if (arcane.stats.mana < manaCost) return false
+  finishSimpleSkillCast(state, arcane, skill, manaCost, arcane)
+  return true
+}
+
+function applyTwinBladeSwapBuff(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+  mode: 'katana' | 'sai',
+) {
+  const sourceId = mode === 'sai' ? 'twin-blade-sai-swap' : 'twin-blade-katana-swap'
+  state.timedEffects = state.timedEffects.filter((effect) => (
+    effect.targetId !== arcane.id || !effect.sourceId.startsWith('twin-blade-')
+  ))
+  addTimedEffect(state, arcane, {
+    sourceId,
+    sourceName: skill.name,
+    sourceTeam: arcane.team,
+    kind: 'buff',
+    polarity: 'positive',
+    value: 1,
+    modifiers: mode === 'sai'
+      ? { moveSpeedPct: getSimpleSkillNumericValue(skill, 'sai_swap_bonus_movement_speed', level, 12) / 100 }
+      : { damagePct: getSimpleSkillNumericValue(skill, 'katana_swap_bonus_damage', level, 12) / 100 },
+    duration: mode === 'sai'
+      ? getSimpleSkillNumericValue(skill, 'sai_swap_duration', level, 2)
+      : 8,
+  })
+}
+
+function consumeTwinBladeKatanaSwapBuff(state: SimulationState, arcane: Arcane) {
+  state.timedEffects = state.timedEffects.filter((effect) => (
+    effect.targetId !== arcane.id || effect.sourceId !== 'twin-blade-katana-swap'
+  ))
+}
+
+function syncTwinBladePairedCooldown(state: SimulationState, arcane: Arcane, skill: HeroSkillDefinition) {
+  const pairedAbilityId = getTwinBladePairedAbilityId(skill.sourceAbilityId ?? 0)
+  if (!pairedAbilityId) return
+  const definition = getHeroDefinition(arcane.heroDefinitionId)
+  const pairedSkill = [...(definition.skills ?? []), ...(definition.supplementalSkills ?? [])]
+    .find((candidate) => candidate.sourceAbilityId === pairedAbilityId)
+  if (!pairedSkill) return
+
+  const stanceState = arcane.skillStates[twinBladeStanceStateKey()]
+  const pairedCooldown = arcane.itemCooldowns[pairedSkill.id] ?? 0
+  if (getArcaneAbilityUpgradeSlots(arcane).has('scepter')) {
+    const consumesGrace = (stanceState?.graceUntil ?? 0) > state.time
+    if (consumesGrace) {
+      arcane.skillStates = {
+        ...arcane.skillStates,
+        [twinBladeStanceStateKey()]: { ...stanceState, graceUntil: 0 },
+      }
+    }
+    if (consumesGrace || pairedCooldown > state.time) return
+  }
+
+  const level = Math.max(1, getSimpleSkillLevel(arcane, skill))
+  setArcaneSkillCooldown(state, arcane, pairedSkill.id, Math.max(
+    pairedCooldown,
+    state.time + getSimpleSkillCooldown(skill, level),
+  ))
 }
 
 function isParentSkillStateCreator(skill: HeroSkillDefinition) {
@@ -8851,6 +8955,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
 
     arcane.lastAttack = next.time
     const itemAttack = resolveArcaneItemAttackEffects(next, arcane, target)
+    consumeTwinBladeKatanaSwapBuff(next, arcane)
     if ('player' in target && 'team' in target) {
       applyTowerAggro(next, target.team, arcane.id)
       applyCreepAggro(next, target.team, arcane.id)

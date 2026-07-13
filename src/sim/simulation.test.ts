@@ -325,6 +325,75 @@ await loadGameData()
   assert.deepEqual(replayState.arcanes[0].skillStates, spirit.state.arcanes[0].skillStates, 'parent skill state should survive replay materialization')
 }
 
+{
+  const stanceState = createInitialState('twin-blade-stance-runtime-test')
+  stanceState.time = 12 * 60
+  let duelist = stanceState.arcanes[0]
+  let enemy = stanceState.arcanes.find((candidate) => candidate.team !== duelist.team)!
+  duelist.heroDefinitionId = 'h119_twin_blade_duelist'
+  duelist.skillLevels = { Q: 4, W: 3, E: 2, R: 1 }
+  duelist.skillStates = {}
+  duelist.stats.level = 12
+  duelist.stats.maxMana = 1_000
+  duelist.stats.mana = 1_000
+  duelist.aiMode = 'farm_lane'
+  duelist.macroDecision = 'Criar vantagem com gank'
+  duelist.pos = { x: 50, y: 50 }
+  enemy.pos = { x: 51, y: 50 }
+
+  const katanaKit = getArcaneRuntimeSkills(duelist)
+  const switchDiscipline = katanaKit.find((skill) => skill.sourceAbilityId === 1497)!
+  assert.ok(katanaKit.some((skill) => skill.sourceAbilityId === 1498))
+  assert.equal(katanaKit.some((skill) => skill.sourceAbilityId === 1502), false, 'alternate skills should begin hidden in Katana stance')
+  assert.equal(tryCastSimpleSkill(stanceState, duelist, enemy), true, 'the AI selector should prioritize the stance switch when the situation calls for Sai')
+  assert.equal(duelist.skillStates[parentSkillStateKey(1497)].mode, 'sai')
+  assert.equal(duelist.itemCooldowns[switchDiscipline.id], stanceState.time + 8, 'the AI stance switch should use its imported cooldown')
+  assert.ok(stanceState.timedEffects.some((effect) => effect.targetId === duelist.id && effect.sourceId === 'twin-blade-sai-swap'), 'switching to Sai should grant the imported movement bonus')
+
+  const saiKit = getArcaneRuntimeSkills(duelist)
+  const saiSlots = saiKit.filter((skill) => ['Q', 'W', 'E', 'R'].includes(skill.key))
+  assert.deepEqual(saiSlots.map((skill) => skill.sourceAbilityId), [1502, 1503, 1504, 1506], 'Sai should replace all four Katana slots')
+  assert.deepEqual(saiSlots.map((skill) => skill.key), ['Q', 'W', 'E', 'R'])
+  const talonToss = saiKit.find((skill) => skill.sourceAbilityId === 1503)!
+  assert.equal(getSimpleSkillLevel(duelist, talonToss), 3, 'Sai W should mirror the learned Katana W level')
+  const primaryW = getHeroDefinition(duelist.heroDefinitionId).skills!.find((skill) => skill.sourceAbilityId === 1499)!
+  assert.equal(castSimpleSkill(stanceState, duelist, talonToss, 3, enemy), true)
+  duelist = stanceState.arcanes.find((candidate) => candidate.id === duelist.id)!
+  enemy = stanceState.arcanes.find((candidate) => candidate.id === enemy.id)!
+  assert.equal(duelist.stats.mana, 930, 'Sai W should spend its imported level-three mana cost')
+  assert.equal(duelist.itemCooldowns[primaryW.id], stanceState.time + 9, 'using Sai W should put the hidden Katana W on the paired cooldown')
+
+  const saiAttackCooldown = getEffectiveArcaneAttackCooldown(stanceState, duelist)
+  duelist.aiMode = 'farm_lane'
+  duelist.macroDecision = 'Avancar rota'
+  assert.equal(castSimpleSkill(stanceState, duelist, switchDiscipline, 1, enemy), true)
+  assert.equal(duelist.skillStates[parentSkillStateKey(1497)].mode, 'katana')
+  assert.ok(getEffectiveArcaneAttackCooldown(stanceState, duelist) > saiAttackCooldown, 'Sai should use its faster imported base attack time')
+  assert.ok(getArcaneRuntimeSkills(duelist).some((skill) => skill.sourceAbilityId === 1498), 'returning to Katana should restore the primary kit')
+
+  const scepterName = shopCatalog.find((item) => item.id === 'i135_grand_spell_scepter')!.name
+  duelist.items = [scepterName]
+  duelist.itemCooldowns = {}
+  duelist.macroDecision = 'Criar vantagem com gank'
+  enemy.stats.maxHp = 5_000
+  enemy.stats.hp = 5_000
+  assert.equal(castSimpleSkill(stanceState, duelist, switchDiscipline, 1, enemy), true)
+  const scepterTalonToss = getArcaneRuntimeSkills(duelist).find((skill) => skill.sourceAbilityId === 1503)!
+  assert.equal(castSimpleSkill(stanceState, duelist, scepterTalonToss, 3, enemy), true)
+  duelist = stanceState.arcanes.find((candidate) => candidate.id === duelist.id)!
+  enemy = stanceState.arcanes.find((candidate) => candidate.id === enemy.id)!
+  assert.equal(duelist.itemCooldowns[primaryW.id], undefined, 'Scepter should exempt the first paired cooldown inside its post-switch grace window')
+  duelist.itemCooldowns = { [primaryW.id]: stanceState.time + 4 }
+  assert.equal(castSimpleSkill(stanceState, duelist, scepterTalonToss, 3, enemy), true)
+  duelist = stanceState.arcanes.find((candidate) => candidate.id === duelist.id)!
+  enemy = stanceState.arcanes.find((candidate) => candidate.id === enemy.id)!
+  assert.equal(duelist.itemCooldowns[primaryW.id], stanceState.time + 4, 'Scepter should not refresh an alternate ability that is already cooling down')
+
+  const replayFrame = createMatchRenderFrame(stanceState)
+  const replayState = materializeMatchRenderFrame(replayFrame, createMatchStaticData(stanceState), replayFrame.details)
+  assert.equal(replayState.arcanes[0].skillStates[parentSkillStateKey(1497)].mode, 'sai', 'the selected stance should survive replay materialization')
+}
+
 assert.equal(getRoleGpmTarget('Safe Lane', 40 * 60), 760)
 assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
 {
