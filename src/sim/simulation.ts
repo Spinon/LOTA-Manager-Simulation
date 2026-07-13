@@ -937,7 +937,7 @@ export function createInitialState(seed = 'lota-default-seed'): SimulationState 
       target: lanePaths[arcane.team][arcane.lane][1],
       pathIndex: 1,
       respawn: aliveRespawnTimestamp,
-      lastAttack: -10,
+      lastAttack: matchPreparationStartSeconds - 10,
       aggression: getRoleAggression(arcane.role),
       visionRange: getArcaneDefinitionVisionRange(arcane.heroDefinitionId, 'day'),
       shotcalling: getRoleShotcalling(arcane.role),

@@ -148,10 +148,10 @@ await loadGameData()
   pregameCombatState.arcanes = pregameCombatState.arcanes.map((arcane, index) => ({
     ...arcane,
     pos: index === 0 || index === 5 ? { x: 50, y: 50 } : arcane.pos,
-    lastAttack: index === 0 || index === 5 ? -100 : arcane.lastAttack,
     skillLevels: {},
     stats: index === 0 || index === 5 ? arcane.stats : { ...arcane.stats, hp: 0 },
   }))
+  assert.ok(pregameCombatState.arcanes[0].lastAttack < pregameCombatState.time, 'initial attacks must be ready throughout the preparation minute')
   const pregameTower = pregameCombatState.towers[0]
   pregameTower.pos = { x: 50, y: 50 }
   pregameTower.lastAttack = -100
@@ -160,6 +160,18 @@ await loadGameData()
   assert.ok(pregameCombatTick.arcanes[5].stats.hp < hpBeforePreparationFight, 'Arcanes contesting a pregame rune should fight before 00:00')
   assert.ok(pregameCombatTick.effects.some((effect) => effect.action === 'attack'), 'pregame combat should emit a basic-attack effect')
   assert.equal(pregameCombatTick.towers[0].lastAttack, -100, 'map structures must remain inactive during pregame combat')
+
+  let naturalPregame = createInitialState('pregame-contact-debug')
+  const initialAttackTimes = new Map(naturalPregame.arcanes.map((arcane) => [arcane.id, arcane.lastAttack]))
+  let pregameStep = 0
+  while (naturalPregame.time < -45) {
+    naturalPregame = tick(naturalPregame, simulationFrameSeconds, pregameStep % 3 === 0)
+    pregameStep += 1
+  }
+  assert.ok(
+    naturalPregame.arcanes.some((arcane) => arcane.lastAttack !== initialAttackTimes.get(arcane.id)),
+    'natural rune routes should produce combat well before the end of the preparation minute',
+  )
 
   const threatenedState = createInitialState('opening-rune-response-test')
   threatenedState.time = -30

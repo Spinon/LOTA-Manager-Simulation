@@ -370,6 +370,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Blackboard por encontro/time mantém ID, participantes, centro, tipo e fases `pre_contact`, `opening`, `commit`, `sustain`, `chase` e `disengage`, expirando contato perdido em 2,4s.
 - Atualização limitada a 350ms no worker; frames compactos não carregam diagnóstico e frames detalhados preservam o estado no replay.
 - Inspetor do Arcane exibe encontro, fase e números locais sem ainda dar autoridade de alvo ao novo sistema.
+- Corrigido o timestamp inicial de ataque herdado da abertura em `00:00`; Arcanes agora podem combater desde `-01:00` e a rota natural de teste inicia dano por volta de `-51s`.
 - Auditoria de 10min encontrou 77 encontros, máximo de três simultâneos e nenhuma retenção permanente; benchmark determinístico mediano de 46,7x nesta estação após incluir a reavaliação por evento crítico.
 
 **Restrições**:
