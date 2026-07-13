@@ -5,18 +5,21 @@ import {
   createInitialState,
   createMatchRenderFrame,
   createMatchStaticData,
-  decisionGateSeconds,
   endArcaneTravelDiagnostics,
   loadGameData,
   matchPreparationStartSeconds,
-  simulationFrameSeconds,
-  tick,
 } from '../src/sim/simulation.ts'
 import { getReplayChunkTransferables, ReplayChunkEncoder } from '../src/sim/replayStore.ts'
 import {
   defaultSimulationChunkSteps,
   getNextSimulationChunkSteps,
 } from '../src/sim/precomputeScheduling.ts'
+import {
+  advanceSimulationClock,
+  createSimulationClock,
+  readSimulationClockDiagnostics,
+} from '../src/sim/simulationClock.ts'
+import { advanceSimulationState } from '../src/sim/simulationRuntime.ts'
 
 const args = process.argv.slice(2)
 
@@ -44,6 +47,19 @@ if (creepSpatialMode !== 'rebuild' && creepSpatialMode !== 'persistent') {
 const arcaneTravelMode = getArg('arcane-travel', 'planned')
 if (arcaneTravelMode !== 'fixed' && arcaneTravelMode !== 'planned') {
   throw new Error(`Modo de viagem dos Arcanes invalido: ${arcaneTravelMode}`)
+}
+const clockMode = getArg('clock', 'event')
+if (clockMode !== 'fixed' && clockMode !== 'event') {
+  throw new Error(`Modo de relogio invalido: ${clockMode}`)
+}
+const tacticalSubsteps = getArg('tactical-substeps', 'on')
+if (tacticalSubsteps !== 'on' && tacticalSubsteps !== 'off') {
+  throw new Error(`Modo de substeps taticos invalido: ${tacticalSubsteps}`)
+}
+const clockMaxFrames = Math.max(1, Math.floor(Number(getArg('clock-max-frames', 9)) || 9))
+const replayClockBound = getArg('replay-clock-bound', 'on')
+if (replayClockBound !== 'on' && replayClockBound !== 'off') {
+  throw new Error(`Acoplamento do replay invalido: ${replayClockBound}`)
 }
 const segmentSeconds = Math.max(60, Number(getArg('segment-seconds', 300)) || 300)
 const renderFrameIntervalSeconds = 0.2
@@ -82,7 +98,7 @@ function createStateDigest(state) {
 function runBenchmark() {
   beginArcaneTravelDiagnostics()
   let state = createInitialState(seed, { creepMotionMode, creepSpatialMode, arcaneTravelMode })
-  let decisionAccumulator = 0
+  const simulationClock = createSimulationClock(clockMode, clockMaxFrames)
   let nextFrameAt = state.time
   let nextDetailsAt = state.time
   let pendingFrames = []
@@ -122,12 +138,13 @@ function runBenchmark() {
   }
 
   while (!state.winner && (fullMatch || state.time < simulatedSeconds)) {
-    decisionAccumulator += simulationFrameSeconds
-    const shouldDecide = decisionAccumulator >= decisionGateSeconds
-    if (shouldDecide) decisionAccumulator %= decisionGateSeconds
-
+    const advance = advanceSimulationClock(
+      state,
+      simulationClock,
+      replayClockBound === 'on' ? nextFrameAt : Number.POSITIVE_INFINITY,
+    )
     let measuredAt = performance.now()
-    state = tick(state, simulationFrameSeconds, shouldDecide)
+    state = advanceSimulationState(state, advance, tacticalSubsteps === 'on')
     tickMilliseconds += performance.now() - measuredAt
     stepCount += 1
     stepsInCurrentChunk += 1
@@ -138,7 +155,8 @@ function runBenchmark() {
       pendingFrames.push(createMatchRenderFrame(state, includeDetails))
       frameMilliseconds += performance.now() - measuredAt
       if (includeDetails) nextDetailsAt = state.time + renderDetailsIntervalSeconds
-      nextFrameAt += renderFrameIntervalSeconds
+      do nextFrameAt += renderFrameIntervalSeconds
+      while (nextFrameAt <= state.time + 0.0001)
       frameCount += 1
     }
 
@@ -202,6 +220,9 @@ function runBenchmark() {
     },
     segments,
     arcaneTravelDiagnostics,
+    clockDiagnostics: readSimulationClockDiagnostics(simulationClock),
+    winner: state.winner,
+    kills: state.kills,
     digest: createStateDigest(state),
   }
 }
@@ -216,6 +237,7 @@ const results = Array.from({ length: runCount }, (_, index) => {
     `${result.wallSeconds.toFixed(2)}s wall / ${result.cpuSeconds.toFixed(2)}s CPU ` +
     `(${result.simulationRate.toFixed(1)}x wall; ${result.cpuSimulationRate.toFixed(1)}x CPU) | digest ${result.digest}`,
   )
+  if (result.winner) console.log(`    resultado: ${result.winner} | kills ${result.kills.dawn}-${result.kills.dusk}`)
   if (result.arcaneTravelDiagnostics) {
     const diagnostics = result.arcaneTravelDiagnostics
     console.log(
@@ -229,6 +251,13 @@ const results = Array.from({ length: runCount }, (_, index) => {
       `${diagnostics.kinematicUpdates} cinemáticos / ${diagnostics.fullUpdates} completos`,
     )
   }
+  const clock = result.clockDiagnostics
+  console.log(
+    `    clock ${clockMode}: ${clock.ticks} ticks / ${clock.virtualFrames} frames virtuais, ` +
+    `${clock.skippedFrames} frames saltados, ${clock.fixedStepTicks} ticks em ilhas, ` +
+    `${clock.eventWakeups} despertares por evento, pico ${clock.peakIslandCount} ilhas / ` +
+    `${clock.peakTacticalEntityCount} entidades, ${clock.tacticalEntitySamples} microamostras`,
+  )
   const measuredTotal = Object.values(result.componentMilliseconds).reduce((sum, value) => sum + value, 0)
   console.log(
     `    tick ${formatShare(result.componentMilliseconds.tick, measuredTotal)} | ` +
@@ -269,6 +298,10 @@ console.log(`Modo: ${fullMatch ? 'partida completa' : `até ${formatClock(simula
 console.log(`Movimento de creeps: ${creepMotionMode}`)
 console.log(`Indice espacial de creeps: ${creepSpatialMode}`)
 console.log(`Viagem dos Arcanes: ${arcaneTravelMode}`)
+console.log(`Relogio: ${clockMode}`)
+console.log(`Horizonte maximo do relogio: ${clockMaxFrames} frames`)
+console.log(`Relogio preso ao replay: ${replayClockBound}`)
+console.log(`Substeps taticos: ${tacticalSubsteps}`)
 console.log(`Mediana: ${medianWallSeconds.toFixed(2)}s`)
 console.log(`Taxa mediana: ${medianRate.toFixed(1)} segundos simulados/segundo real`)
 console.log(`CPU mediana: ${medianCpuSeconds.toFixed(2)}s (${medianCpuRate.toFixed(1)} segundos simulados/segundo de CPU)`)

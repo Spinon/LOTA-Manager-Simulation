@@ -2,10 +2,7 @@ import {
   createInitialState,
   createMatchStaticData,
   createMatchRenderFrame,
-  decisionGateSeconds,
   loadGameData,
-  simulationFrameSeconds,
-  tick,
   type MatchRenderFrame,
   type MatchStaticData,
   type TeamId,
@@ -15,6 +12,8 @@ import {
   defaultSimulationChunkSteps,
   getNextSimulationChunkSteps,
 } from './precomputeScheduling.ts'
+import { advanceSimulationClock, createSimulationClock } from './simulationClock.ts'
+import { advanceSimulationState } from './simulationRuntime.ts'
 
 export type MatchWorkerRequest =
   | { type: 'start'; seed: string; runId: number }
@@ -53,7 +52,7 @@ async function runMatch(seed: string, runId: number) {
 
     let state = createInitialState(seed)
     self.postMessage({ type: 'static', runId, data: createMatchStaticData(state) } satisfies MatchWorkerResponse)
-    let decisionAccumulator = 0
+    const simulationClock = createSimulationClock('event')
     let nextFrameAt = state.time + renderFrameIntervalSeconds
     let frameCount = 0
     let lastFrameTime = state.time
@@ -90,11 +89,8 @@ async function runMatch(seed: string, runId: number) {
 
       const chunkStartedAt = performance.now()
       for (let step = 0; step < simulationChunkSteps && !state.winner; step += 1) {
-        decisionAccumulator += simulationFrameSeconds
-        const shouldDecide = decisionAccumulator >= decisionGateSeconds
-        if (shouldDecide) decisionAccumulator %= decisionGateSeconds
-
-        state = tick(state, simulationFrameSeconds, shouldDecide)
+        const advance = advanceSimulationClock(state, simulationClock, nextFrameAt)
+        state = advanceSimulationState(state, advance)
         if (state.time + 0.0001 >= nextFrameAt) {
           postFrame()
           nextFrameAt += renderFrameIntervalSeconds

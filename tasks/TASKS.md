@@ -720,7 +720,9 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T28 - Ilhas táticas e timing wheel de eventos
+### [!] T28 - Ilhas táticas e timing wheel de eventos
+
+> Bloqueada - A arquitetura e os buckets determinísticos foram entregues com ganho de 44,0%, mas o alvo de 3x exige remover as passadas orientadas a objetos (T29) e desacoplar os snapshots de replay do relógio global (T30) sem perder fidelidade.
 
 **Objetivo**: reservar 30Hz para regiões realmente contestadas e saltar períodos sem interação relevante.
 
@@ -731,6 +733,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Manter ordem determinística para eventos simultâneos.
 
 **Critérios**: DoT/HoT, channeling, controle, ataque e economia preservam seus instantes; nenhuma luta perde fidelidade; alvo de 3x sobre o baseline da T24 em partida completa.
+
+**Progresso (2026-07-13)**:
+- Timing wheel determinístico implementado com saltos de até 9 frames virtuais e interrupção em eventos críticos.
+- Ilhas táticas identificam combate, estruturas, campos, boss e trajetórias convergentes; ataques intermediários são processados apenas para atores agendados.
+- Worker, simulação headless e benchmark usam o mesmo runtime; modo `fixed` permanece disponível para auditoria A/B.
+- Benchmark completo (`performance-reference`): `fixed` 100,2x wall / 79,3x CPU; `event` 144,3x wall / 116,1x CPU, com 77,0% menos ticks globais.
+- Ganho normalizado: +44,0% wall e +46,4% CPU. O candidato alcançou 1,26x o baseline T24 (114,2x), ainda abaixo do alvo de 3x; o critério permanece bloqueado pelas T29/T30.
+- Soltar o relógio da cadência do replay chegou a 172,8x, porém alterou a partida de 56:13/29-48 para 41:50/7-59; a variante foi mantida apenas como opção de benchmark e não foi adotada no Worker.
+- Testes, lint, build, digest determinístico curto e smoke test visual aprovados. Dados completos em `reports/timing-wheel-audit.json`.
 
 ---
 

@@ -1,0 +1,69 @@
+{
+  "task": "T28",
+  "status": "blocked",
+  "date": "2026-07-13",
+  "seed": "performance-reference",
+  "fixed": {
+    "simulatedSeconds": 3322.6,
+    "wallSeconds": 33.16,
+    "cpuSeconds": 41.88,
+    "wallRate": 100.2,
+    "cpuRate": 79.3,
+    "globalTicks": 100686,
+    "virtualFrames": 100686,
+    "replayMegabytes": 101.8,
+    "digest": "e6c34ebb3dbb1dcf"
+  },
+  "event": {
+    "simulatedSeconds": 3433.2,
+    "wallSeconds": 23.79,
+    "cpuSeconds": 29.58,
+    "wallRate": 144.3,
+    "cpuRate": 116.1,
+    "globalTicks": 23122,
+    "virtualFrames": 104037,
+    "skippedGlobalFrames": 80915,
+    "tacticalActorSamples": 142094,
+    "replayMegabytes": 104.6,
+    "digest": "000b334c5f7ff2d8"
+  },
+  "comparison": {
+    "wallRateGainPercent": 44.01,
+    "cpuRateGainPercent": 46.41,
+    "wallTimeReductionPercent": 28.26,
+    "globalTickReductionPercent": 77.04,
+    "matchDurationDeltaSeconds": 110.6
+  },
+  "target": {
+    "baselineT24Rate": 114.2,
+    "targetMultiplier": 3,
+    "targetRate": 342.6,
+    "candidateMultiplier": 1.2636,
+    "met": false
+  },
+  "replayUnboundExperiment": {
+    "maximumEventJumpFrames": 9,
+    "simulatedSeconds": 2569.6,
+    "wallSeconds": 14.87,
+    "cpuSeconds": 20.05,
+    "wallRate": 172.8,
+    "cpuRate": 128.2,
+    "winner": "dusk",
+    "kills": "7-59",
+    "digest": "8ac08c83cfd56c20",
+    "fidelityAccepted": false,
+    "reason": "The match changed from 56:13 and 29-48 to 41:50 and 7-59 when replay sampling stopped constraining the global clock."
+  },
+  "blockingDependencies": [
+    "T29 data-oriented hot state for numerous units",
+    "T30 trajectory replay decoupled from global simulation ticks"
+  ],
+  "validation": {
+    "shortDeterministicDigest": "fe6ab3d8885b7727",
+    "tests": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "browserSmoke": "passed",
+    "browserConsoleErrors": 0
+  }
+}

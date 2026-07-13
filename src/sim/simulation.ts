@@ -412,6 +412,13 @@ export type SpatialGrid<T extends { pos: Point }> = {
   cellSize: number
   cells: Map<number, T[]>
 }
+export type TickExecutionOptions = {
+  fineStepEntityIds?: ReadonlySet<string>
+  fineStepDelta?: number
+  decisionElapsedSeconds?: number
+  previousWorldTime?: number
+  deferArcaneSafetyUntilDecision?: boolean
+}
 export const tickCreepSpatialQueryBuffer: Creep[] = []
 export const tickCreepSpatialIdBuffer: string[] = []
 export type MapRune = {
@@ -1776,7 +1783,13 @@ export function pruneExpiredArcaneSkillStates(arcane: Arcane, time: number) {
   return { ...arcane, skillStates }
 }
 
-export function tick(state: SimulationState, delta: number, shouldDecide: boolean): SimulationState {
+export function tick(
+  state: SimulationState,
+  delta: number,
+  shouldDecide: boolean,
+  clockDelta = delta,
+  executionOptions: TickExecutionOptions = {},
+): SimulationState {
   if (state.winner) return state
 
   let next: SimulationState = state
@@ -1785,21 +1798,10 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   const previousCombatEventSignature = shouldDecide && hasActiveCombatEncounter
     ? getCombatCriticalEventSignature(next)
     : undefined
-  tickCreepSpatialQueryBuffer.length = 0
-  tickCreepSpatialIdBuffer.length = 0
-  const frameContext: TickFrameContext = {
-    routeCreepTargetCache: { attack: new Map(), vision: new Map() },
-    creepSpatialQueryBuffer: tickCreepSpatialQueryBuffer,
-    creepSpatialIdBuffer: tickCreepSpatialIdBuffer,
-    arcaneNearRouteCache: new Map(),
-    attackableTowersCache: {},
-    attackableStructuresCache: {},
-    visibleEnemiesCache: new Map(),
-    baseThreatCache: new Map(),
-  }
-  const previousDayCycle = getDayCycle(next.time)
-  const previousTime = next.time
-  next.time = Number((next.time + delta).toFixed(3))
+  const frameContext = createTickFrameContext()
+  const previousTime = executionOptions.previousWorldTime ?? next.time
+  const previousDayCycle = getDayCycle(previousTime)
+  next.time = Number((next.time + clockDelta).toFixed(3))
   if (next.time >= 0 && next.time >= next.nextWave) {
     next.creeps.push(...spawnWave(next))
     next.nextWave += NON_COMBAT_RULES.map.waveIntervalSeconds
@@ -1808,7 +1810,8 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   next.runes = spawnRunesForTick(next, previousTime)
   // Ouro passivo acumula na cadência do gate de decisão (mesma taxa por
   // segundo): conceder a cada tick clonava 10 arcanes/tick só para somar ouro.
-  const passiveGold = shouldDecide && next.time >= 0 ? passiveGoldForTick(next.time, decisionGateSeconds) : 0
+  const decisionElapsedSeconds = executionOptions.decisionElapsedSeconds ?? decisionGateSeconds
+  const passiveGold = shouldDecide && next.time >= 0 ? passiveGoldForTick(next.time, decisionElapsedSeconds) : 0
   if (next.timedEffects.some((effect) => effect.expiresAt <= next.time)) {
     next.timedEffects = next.timedEffects.filter((effect) => effect.expiresAt > next.time)
   }
@@ -1834,7 +1837,7 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   const dayCycle = getDayCycle(next.time)
   if (shouldDecide) {
     applyItemAuraEffects(next)
-    applySkillAuraEffects(next, decisionGateSeconds)
+    applySkillAuraEffects(next, decisionElapsedSeconds)
   }
   const dayCycleChanged = dayCycle !== previousDayCycle
   const hasReadyRespawn = next.arcanes.some((arcane) => (
@@ -1871,7 +1874,9 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
     }
   })
   next = processJungleStacks(next, previousTime)
-  next.boss = updateBoss(next.boss, next.time, delta)
+  const fineStepDelta = executionOptions.fineStepDelta ?? delta
+  const bossDelta = executionOptions.fineStepEntityIds?.has(next.boss.id) ? fineStepDelta : delta
+  next.boss = updateBoss(next.boss, next.time, bossDelta)
   if (shouldDecide) {
     materializeCreepMotionPlansForTacticalWindow(next)
     materializeArcaneTravelPlansForTacticalWindow(next)
@@ -1887,7 +1892,14 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
     next.nextTeamDecisionAt = next.time + teamDecisionIntervalSeconds
   }
 
-  next.arcanes = next.arcanes.map((arcane) => updateArcaneMovement(arcane, next, delta, shouldDecide, frameContext))
+  next.arcanes = next.arcanes.map((arcane) => updateArcaneMovement(
+    arcane,
+    next,
+    executionOptions.fineStepEntityIds?.has(arcane.id) ? fineStepDelta : delta,
+    shouldDecide,
+    frameContext,
+    executionOptions.deferArcaneSafetyUntilDecision,
+  ))
   if (next.time >= 0) next = collectRunes(next)
   if (passiveGold > 0) {
     next.arcanes = next.arcanes.map((arcane) => (
@@ -1896,7 +1908,13 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
         : arcane
     ))
   }
-  next.creeps = updateCreepsForTick(next, delta, frameContext)
+  next.creeps = updateCreepsForTick(
+    next,
+    delta,
+    frameContext,
+    executionOptions.fineStepEntityIds,
+    fineStepDelta,
+  )
   // Separação de hitbox é cosmética (evita unidades empilhadas); rodar só nos
   // ticks de decisão (10Hz) é indistinguível no playback de 5Hz e poupa CPU.
   if (shouldDecide) {
@@ -1917,6 +1935,135 @@ export function tick(state: SimulationState, delta: number, shouldDecide: boolea
   }
   next.winner = next.bases.find((base) => base.hp <= 0)?.team === 'dawn' ? 'dusk' : next.bases.find((base) => base.hp <= 0)?.team === 'dusk' ? 'dawn' : undefined
   return next
+}
+
+export function createTickFrameContext(): TickFrameContext {
+  tickCreepSpatialQueryBuffer.length = 0
+  tickCreepSpatialIdBuffer.length = 0
+  return {
+    routeCreepTargetCache: { attack: new Map(), vision: new Map() },
+    creepSpatialQueryBuffer: tickCreepSpatialQueryBuffer,
+    creepSpatialIdBuffer: tickCreepSpatialIdBuffer,
+    arcaneNearRouteCache: new Map(),
+    attackableTowersCache: {},
+    attackableStructuresCache: {},
+    visibleEnemiesCache: new Map(),
+    baseThreatCache: new Map(),
+  }
+}
+
+export function tickTacticalIslands(
+  state: SimulationState,
+  _delta: number,
+  clockDelta: number,
+  entityIds: ReadonlySet<string>,
+): SimulationState {
+  if (state.winner || entityIds.size === 0) return state
+
+  state.time = Number((state.time + clockDelta).toFixed(3))
+  const hasExpiredEffect = state.timedEffects.some((effect) => effect.expiresAt <= state.time)
+  const hasDuePeriodicEffect = state.timedEffects.some((effect) => (
+    (effect.kind === 'dot' || effect.kind === 'hot') &&
+    (effect.nextTickAt ?? Number.POSITIVE_INFINITY) <= state.time
+  ))
+  if (hasExpiredEffect) {
+    state.timedEffects = state.timedEffects.filter((effect) => effect.expiresAt > state.time)
+  }
+  if (hasDuePeriodicEffect) state = processTimedEffects(state)
+  if (state.arcanes.some((arcane) => entityIds.has(arcane.id) && hasExpiredArcaneSkillState(arcane, state.time))) {
+    state.arcanes = state.arcanes.map((arcane) => (
+      entityIds.has(arcane.id) ? pruneExpiredArcaneSkillStates(arcane, state.time) : arcane
+    ))
+  }
+
+  const dueCombatActorIds = getDueTacticalCombatActorIds(state, entityIds)
+  const dueArcaneAttackIds = getDueTacticalArcaneAttackIds(state, entityIds)
+  const needsFrameContext = dueCombatActorIds.size > 0
+  const frameContext = needsFrameContext ? createTickFrameContext() : undefined
+  if (dueArcaneAttackIds.size > 0) resolveTacticalArcaneBasicAttacks(state, dueArcaneAttackIds)
+  if (dueCombatActorIds.size > 0) state = resolveCombat(state, frameContext!, dueCombatActorIds)
+  if (hasDuePeriodicEffect || dueArcaneAttackIds.size > 0 || hasDeadSimulationEntity(state)) state = resolveDeaths(state)
+  state.winner = getMatchWinner(state)
+  return state
+}
+
+function getDueTacticalCombatActorIds(state: SimulationState, entityIds: ReadonlySet<string>) {
+  const due = new Set<string>()
+  for (const creep of state.creeps) {
+    if (
+      !entityIds.has(creep.id) || creep.hp <= 0 || creep.motionPlan?.kind === 'route' ||
+      state.time + 0.0001 < creep.lastAttack + 1.25
+    ) continue
+    const target = creep.routeTargetId ? getCombatTargetById(state, creep.routeTargetId) : undefined
+    if (target && isCachedRouteCreepAttackTargetValid(creep, target, state)) due.add(creep.id)
+  }
+  for (const tower of state.towers) {
+    if (!entityIds.has(tower.id) || tower.hp <= 0 || state.time + 0.0001 < tower.lastAttack + 1.2) continue
+    const hasTarget = state.creeps.some((creep) => creep.team !== tower.team && creep.hp > 0 && distanceSquared(creep.pos, tower.pos) <= tower.range ** 2) ||
+      state.arcanes.some((arcane) => arcane.team !== tower.team && arcane.stats.hp > 0 && arcane.respawn <= state.time && distanceSquared(arcane.pos, tower.pos) <= tower.range ** 2)
+    if (hasTarget) due.add(tower.id)
+  }
+  for (const structure of state.structures) {
+    if (
+      !entityIds.has(structure.id) || structure.hp <= 0 || structure.kind !== 'tower_tier_4' ||
+      state.time + 0.0001 < structure.lastAttack + 1.05
+    ) continue
+    const hasTarget = state.creeps.some((creep) => creep.team !== structure.team && creep.hp > 0 && distanceSquared(creep.pos, structure.pos) <= structure.range ** 2) ||
+      state.arcanes.some((arcane) => arcane.team !== structure.team && arcane.stats.hp > 0 && arcane.respawn <= state.time && distanceSquared(arcane.pos, structure.pos) <= structure.range ** 2)
+    if (hasTarget) due.add(structure.id)
+  }
+  for (const camp of state.camps) {
+    if (!entityIds.has(camp.id) || camp.hp <= 0 || state.time + 0.0001 < camp.lastAttack + 1.35) continue
+    const leashRange = Math.max(8, camp.range + 2.5)
+    const hasTarget = state.arcanes.some((arcane) => arcane.stats.hp > 0 && arcane.respawn <= state.time && distanceSquared(arcane.pos, camp.pos) <= leashRange ** 2) ||
+      state.creeps.some((creep) => creep.hp > 0 && creep.pullCampId === camp.id && distanceSquared(creep.pos, camp.pos) <= leashRange ** 2)
+    if (hasTarget) due.add(camp.id)
+  }
+  if (
+    entityIds.has(state.boss.id) && state.boss.hp > 0 &&
+    state.time + 0.0001 >= state.boss.lastAttack + 1.05
+  ) {
+    const bossLeashRange = Math.max(10, state.boss.range + 3.5)
+    const bossHasTarget = state.arcanes.some((arcane) => arcane.stats.hp > 0 && arcane.respawn <= state.time && distanceSquared(arcane.pos, state.boss.pos) <= bossLeashRange ** 2)
+    if (bossHasTarget) due.add(state.boss.id)
+  }
+  return due
+}
+
+function getDueTacticalArcaneAttackIds(state: SimulationState, entityIds: ReadonlySet<string>) {
+  const due = new Set<string>()
+  for (const arcane of state.arcanes) {
+    if (
+      entityIds.has(arcane.id) && arcane.combatTargetId &&
+      arcane.stats.hp > 0 && arcane.respawn <= state.time && !arcane.channeling &&
+      state.time + 0.0001 >= arcane.lastAttack + getEffectiveArcaneAttackCooldown(state, arcane)
+    ) due.add(arcane.id)
+  }
+  return due
+}
+
+function resolveTacticalArcaneBasicAttacks(state: SimulationState, arcaneIds: ReadonlySet<string>) {
+  for (const arcane of state.arcanes) {
+    if (!arcaneIds.has(arcane.id) || isArcaneAttackDisabled(state, arcane)) continue
+    const retainedTarget = getRetainedArcaneCombatTarget(state, arcane)
+    if (!retainedTarget) continue
+    performArcaneBasicAttack(state, arcane, retainedTarget.target)
+  }
+}
+
+function hasDeadSimulationEntity(state: SimulationState) {
+  return state.creeps.some((creep) => creep.hp <= 0) ||
+    state.camps.some((camp) => camp.hp <= 0 && camp.respawn <= state.time) ||
+    (state.boss.hp <= 0 && state.boss.respawn <= state.time) ||
+    state.arcanes.some((arcane) => arcane.stats.hp <= 0 && arcane.respawn <= state.time)
+}
+
+function getMatchWinner(state: SimulationState): TeamId | undefined {
+  return state.bases.find((base) => base.hp <= 0)?.team === 'dawn'
+    ? 'dusk'
+    : state.bases.find((base) => base.hp <= 0)?.team === 'dusk'
+      ? 'dawn'
+      : undefined
 }
 
 export function resetDisengagedNeutralCamps(camps: Camp[], time: number) {
@@ -5074,6 +5221,7 @@ export function updateArcaneMovement(
   delta: number,
   shouldDecide: boolean,
   frameContext?: TickFrameContext,
+  deferSafetyUntilDecision = false,
 ): Arcane {
   if (arcane.respawn > state.time) {
     const microDecision = `Respawn em ${Math.ceil(arcane.respawn - state.time)}s`
@@ -5107,7 +5255,7 @@ export function updateArcaneMovement(
     arcane = materializeArcaneTravelPlan(arcane, state.time)
   }
 
-  if (canUseArcaneKinematicFastPath(arcane, state, shouldDecide)) {
+  if (canUseArcaneKinematicFastPath(arcane, state, shouldDecide, deferSafetyUntilDecision)) {
     if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.kinematicUpdates += 1
     return updateArcaneKinematics(arcane, state, delta, shouldDecide)
   }
@@ -7211,9 +7359,16 @@ export function absorbDamageWithBarriers(state: SimulationState, targetId: strin
 
 export type ArcaneTravelWakeReason = 'arrival' | 'damage' | 'control' | 'decision' | 'call' | 'danger'
 
-export function canUseArcaneKinematicFastPath(arcane: Arcane, state: SimulationState, shouldDecide: boolean) {
+export function canUseArcaneKinematicFastPath(
+  arcane: Arcane,
+  state: SimulationState,
+  shouldDecide: boolean,
+  deferSafetyUntilDecision = false,
+) {
   if (state.arcaneTravelMode !== 'planned' || arcane.forceDecision || state.time < 0) return false
-  if (isArcaneMovementDisabled(state, arcane) || arcane.microDecision.startsWith('Foco em')) return false
+  if (isArcaneMovementDisabled(state, arcane)) return false
+  if (deferSafetyUntilDecision && shouldDecide && state.time + 0.0001 < arcane.nextDecisionAt) return true
+  if (arcane.microDecision.startsWith('Foco em')) return false
   if (!shouldDecide) return true
   if (state.time + 0.0001 >= arcane.nextDecisionAt) return false
 
@@ -7533,18 +7688,26 @@ export function shouldWakeCreepMotionPlan(creep: Creep, state: SimulationState, 
   return target.hp <= 0 || plan.kind === 'route'
 }
 
-export function updateCreepsForTick(state: SimulationState, delta: number, frameContext: TickFrameContext) {
+export function updateCreepsForTick(
+  state: SimulationState,
+  delta: number,
+  frameContext: TickFrameContext,
+  fineStepEntityIds?: ReadonlySet<string>,
+  fineStepDelta = delta,
+) {
   const planned = state.creepMotionMode === 'planned'
   if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.candidates += state.creeps.length
   if (!planned) return state.creeps.map((creep) => {
     if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.movementUpdates += 1
-    return updateCreepMovement(creep, state, delta, frameContext)
+    const movementDelta = fineStepEntityIds?.has(creep.id) ? fineStepDelta : delta
+    return updateCreepMovement(creep, state, movementDelta, frameContext)
   })
 
   return state.creeps.map((creep) => {
+    const movementDelta = fineStepEntityIds?.has(creep.id) ? fineStepDelta : delta
     if (!creep.motionPlan) {
       if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.movementUpdates += 1
-      return updateCreepMovement(creep, state, delta, frameContext)
+      return updateCreepMovement(creep, state, movementDelta, frameContext)
     }
     if (!shouldWakeCreepMotionPlan(creep, state, frameContext)) {
       if (activeCreepMotionDiagnostics) activeCreepMotionDiagnostics.sleepingSkips += 1
@@ -9620,7 +9783,11 @@ export function hasAnySimpleSkillTag(skill: HeroSkillDefinition, tags: string[])
   return tags.some((tag) => skill.tags.includes(tag))
 }
 
-export function resolveCombat(state: SimulationState, frameContext: TickFrameContext): SimulationState {
+export function resolveCombat(
+  state: SimulationState,
+  frameContext: TickFrameContext,
+  actorFilter?: ReadonlySet<string>,
+): SimulationState {
   const next = state
   const pregame = next.time < 0
   const enemyCreepIndicesByTeam: Record<TeamId, number[]> = { dawn: [], dusk: [] }
@@ -9628,13 +9795,20 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     dawn: { top: [], mid: [], bot: [] },
     dusk: { top: [], mid: [], bot: [] },
   }
-  for (let index = 0; index < next.creeps.length; index += 1) {
-    const creep = next.creeps[index]
-    enemyCreepIndicesByTeam[creep.team === 'dawn' ? 'dusk' : 'dawn'].push(index)
-    creepIndicesByTeamLane[creep.team][creep.lane].push(index)
+  const needsCreepCombatIndexes = !actorFilter ||
+    next.arcanes.some((arcane) => actorFilter.has(arcane.id)) ||
+    next.towers.some((tower) => actorFilter.has(tower.id)) ||
+    next.structures.some((structure) => actorFilter.has(structure.id))
+  if (needsCreepCombatIndexes) {
+    for (let index = 0; index < next.creeps.length; index += 1) {
+      const creep = next.creeps[index]
+      enemyCreepIndicesByTeam[creep.team === 'dawn' ? 'dusk' : 'dawn'].push(index)
+      creepIndicesByTeamLane[creep.team][creep.lane].push(index)
+    }
   }
 
   next.creeps.forEach((creep) => {
+    if (actorFilter && !actorFilter.has(creep.id)) return
     if (pregame) return
     if (creep.motionPlan?.kind === 'route') return
     if (next.time < creep.lastAttack + 1.25) return
@@ -9662,6 +9836,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   })
 
   for (const tower of next.towers) {
+    if (actorFilter && !actorFilter.has(tower.id)) continue
     if (pregame) break
     if (tower.hp <= 0) continue
     if (next.time < tower.lastAttack + 1.2) continue
@@ -9697,6 +9872,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   }
 
   for (const structure of next.structures) {
+    if (actorFilter && !actorFilter.has(structure.id)) continue
     if (pregame) break
     if (structure.kind !== 'tower_tier_4' || structure.hp <= 0) continue
     if (next.time < structure.lastAttack + 1.05) continue
@@ -9728,6 +9904,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   }
 
   for (const camp of next.camps) {
+    if (actorFilter && !actorFilter.has(camp.id)) continue
     if (pregame) break
     if (camp.hp <= 0) continue
     if (next.time < camp.lastAttack + 1.35) continue
@@ -9793,6 +9970,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   }
 
   if (
+    (!actorFilter || actorFilter.has(next.boss.id)) &&
     !pregame &&
     next.boss.hp > 0 &&
     next.boss.aggroUntil &&
@@ -9860,6 +10038,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
   }
 
   next.arcanes.forEach((arcane) => {
+    if (actorFilter && !actorFilter.has(arcane.id)) return
     if (arcane.stats.hp <= 0 || arcane.respawn > next.time) return
     if (arcane.channeling) return
     if (isArcaneAttackDisabled(next, arcane)) return
@@ -9931,38 +10110,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     if (!protectsLastHitWindow && tryCastSimpleSkill(next, arcane, target)) return
     if (!target || next.time - arcane.lastAttack < attackCooldown) return
 
-    arcane.lastAttack = next.time
-    const itemAttack = resolveArcaneItemAttackEffects(next, arcane, target)
-    consumeTwinBladeKatanaSwapBuff(next, arcane)
-    if ('player' in target && 'team' in target) {
-      applyTowerAggro(next, target.team, arcane.id)
-      applyCreepAggro(next, target.team, arcane.id)
-    }
-    if (isBoss(target)) {
-      next.boss = {
-        ...next.boss,
-        aggroTargetId: arcane.id,
-        aggroUntil: next.time + 5,
-      }
-    }
-    next.effects = addAttackEffect(next.effects, {
-      kind: 'arcane',
-      action: 'attack',
-      sourceId: arcane.id,
-      targetKind: getCombatTargetKind(target),
-      team: arcane.team,
-      from: arcane.pos,
-      to: target.pos,
-      createdAt: next.time,
-    })
-    const dealtPhysicalDamage = Math.round(itemAttack.physicalDamage * getAuraMultiplier(next, arcane.team))
-    damageEntity(next, target.id, dealtPhysicalDamage, {
-      id: arcane.id,
-      label: arcane.player,
-      team: arcane.team,
-      damageType: 'physical',
-    })
-    applyPostAttackItemEffects(next, arcane, target, itemAttack, dealtPhysicalDamage)
+    performArcaneBasicAttack(next, arcane, target)
   })
 
   return next
@@ -11440,6 +11588,41 @@ export function nearestCreepAtIndices(point: Point, creeps: Creep[], indices: nu
   }
   if (closest?.motionPlan && time !== undefined) materializeCreepMotionPlan(closest, time, true)
   return closest
+}
+
+export function performArcaneBasicAttack(state: SimulationState, arcane: Arcane, target: CombatTarget) {
+  arcane.lastAttack = state.time
+  const itemAttack = resolveArcaneItemAttackEffects(state, arcane, target)
+  consumeTwinBladeKatanaSwapBuff(state, arcane)
+  if ('player' in target && 'team' in target) {
+    applyTowerAggro(state, target.team, arcane.id)
+    applyCreepAggro(state, target.team, arcane.id)
+  }
+  if (isBoss(target)) {
+    state.boss = {
+      ...state.boss,
+      aggroTargetId: arcane.id,
+      aggroUntil: state.time + 5,
+    }
+  }
+  state.effects = addAttackEffect(state.effects, {
+    kind: 'arcane',
+    action: 'attack',
+    sourceId: arcane.id,
+    targetKind: getCombatTargetKind(target),
+    team: arcane.team,
+    from: arcane.pos,
+    to: target.pos,
+    createdAt: state.time,
+  })
+  const dealtPhysicalDamage = Math.round(itemAttack.physicalDamage * getAuraMultiplier(state, arcane.team))
+  damageEntity(state, target.id, dealtPhysicalDamage, {
+    id: arcane.id,
+    label: arcane.player,
+    team: arcane.team,
+    damageType: 'physical',
+  })
+  applyPostAttackItemEffects(state, arcane, target, itemAttack, dealtPhysicalDamage)
 }
 
 export const creepTacticalActivationMargin = 6

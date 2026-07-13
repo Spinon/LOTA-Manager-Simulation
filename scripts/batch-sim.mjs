@@ -3,12 +3,12 @@
 //   npm run batch-sim -- --matches 20 [--seed prefixo]
 import {
   createInitialState,
-  decisionGateSeconds,
   loadGameData,
   matchPreparationStartSeconds,
   simulationFrameSeconds,
-  tick,
 } from '../src/sim/simulation.ts'
+import { advanceSimulationClock, createSimulationClock } from '../src/sim/simulationClock.ts'
+import { advanceSimulationState } from '../src/sim/simulationRuntime.ts'
 
 const args = process.argv.slice(2)
 
@@ -20,6 +20,10 @@ function getArg(name, fallback) {
 
 const matchCount = Math.max(1, Number(getArg('matches', 20)) || 20)
 const seedPrefix = getArg('seed', 'batch')
+const clockMode = getArg('clock', 'event')
+if (clockMode !== 'fixed' && clockMode !== 'event') {
+  throw new Error(`Modo de relogio invalido: ${clockMode}`)
+}
 
 const watchdogMinutes = Math.max(60, Number(getArg('watchdog-minutes', 90)) || 90)
 const watchdogSeconds = watchdogMinutes * 60
@@ -37,20 +41,18 @@ for (let matchIndex = 0; matchIndex < matchCount; matchIndex += 1) {
   const seed = `${seedPrefix}-${matchIndex + 1}`
   const matchStartedAt = performance.now()
   let state = createInitialState(seed)
+  const simulationClock = createSimulationClock(clockMode)
   const rosters = { dawn: [], dusk: [] }
   for (const arcane of state.arcanes) rosters[arcane.team].push(arcane.name)
 
-  let decisionAccumulator = 0
   let steps = 0
   let checkpointIndex = 0
   const checkpoints = {}
   let leaderAt20
   let deathsAtLateStart
   while (!state.winner && state.time < watchdogSeconds && steps < maxSimulationSteps) {
-    decisionAccumulator += simulationFrameSeconds
-    const shouldDecide = decisionAccumulator >= decisionGateSeconds
-    if (shouldDecide) decisionAccumulator %= decisionGateSeconds
-    state = tick(state, simulationFrameSeconds, shouldDecide)
+    const advance = advanceSimulationClock(state, simulationClock)
+    state = advanceSimulationState(state, advance)
     steps += 1
     if (checkpointIndex < checkpointMinutes.length && state.time >= checkpointMinutes[checkpointIndex] * 60) {
       const minute = checkpointMinutes[checkpointIndex]
@@ -134,6 +136,7 @@ const averageLateDeaths = results.reduce((sum, result) => sum + result.lateDeath
 console.log('')
 console.log('=== Relatório de balanceamento ===')
 console.log(`Partidas: ${results.length} (${totalWallMinutes.toFixed(1)}min de CPU)`)
+console.log(`Relogio: ${clockMode}`)
 console.log(`Terminaram organicamente: ${finished.length}/${results.length} (${Math.round((finished.length / results.length) * 100)}%)`)
 console.log(`Watchdog de diagnóstico (${watchdogMinutes}min): ${results.length - finished.length} partida(s) travada(s)`)
 console.log(`Duração p50/p90: ${(percentile(durations, 0.5) / 60).toFixed(1)} / ${(percentile(durations, 0.9) / 60).toFixed(1)}min`)
