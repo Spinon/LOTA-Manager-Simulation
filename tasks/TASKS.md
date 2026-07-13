@@ -325,6 +325,8 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 **Medição**: os dez Arcanes chegaram a até 2,2 unidades de um ponto de ouro antes de `00:00`; as seis runas foram coletadas no spawn e a seed de auditoria produziu divisão 4/2 entre os times, confirmando roubos. Testes cobrem simetria, três runas por lado, cobertura do mid, invasores e reação defensiva; testes, lint e build verdes.
 
+**Revisão de comportamento (2026-07-12)**: removido o chase programado ao primeiro inimigo encontrado. A runa permanece como waypoint; perigo, HP e números locais escolhem entre contestar, fazer staging ou ceder até a base. Invasores deixaram de ser fixos por role e agora variam com agressividade, comunicação, defesa observada e seed. Auditoria de oito aberturas registrou zero waypoints inimigos e zero mortes, com 0-2 invasores por partida; contato direto ainda produz combate, mas não é obrigatório para a abertura prosseguir.
+
 ---
 
 ### [x] T14.5 - Combate pré-jogo e auditoria de cadência

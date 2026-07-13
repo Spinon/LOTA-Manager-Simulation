@@ -4375,28 +4375,26 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       }
     }
     const runePlan = getPregameBountyRunePlan(state, arcane)
-    const contestedEnemy = nearest(
-      arcane.pos,
-      state.arcanes.filter((candidate) => (
-        candidate.team !== arcane.team &&
-        candidate.stats.hp > 0 &&
-        candidate.respawn <= state.time &&
-        distance(candidate.pos, runePlan.point) <= 10
-      )),
-      9,
-    )
-    const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
-    const retreating = hpRatio < 0.28
+    const enemies = state.arcanes.filter((candidate) => (
+      candidate.team !== arcane.team &&
+      candidate.stats.hp > 0 &&
+      candidate.respawn <= state.time &&
+      distance(candidate.pos, runePlan.point) <= 12
+    ))
+    const contestedEnemy = nearest(arcane.pos, enemies, 10)
+    const contest = getPregameRuneContestAssessment(state, arcane, runePlan, enemies)
+    const retreating = contest.mustRetreat
     const enemyInRange = contestedEnemy && distance(arcane.pos, contestedEnemy.pos) <= getArcaneAttackCenterRange(arcane, contestedEnemy)
+    const objectivePosition = contest.canContest
+      ? runePlan.point
+      : getPregameRuneStagingPoint(runePlan.point, ownBase, 3.2)
     const movementTarget = retreating
       ? ownBase
-      : contestedEnemy && !enemyInRange
-        ? contestedEnemy.pos
-        : enemyInRange
-          ? arcane.pos
-          : runePlan.point
+      : enemyInRange && contest.canContest
+        ? arcane.pos
+        : objectivePosition
     const nextPos = moveToward(arcane.pos, movementTarget, getEffectiveArcaneMoveSpeed(state, arcane) * delta)
-    const contesting = Boolean(contestedEnemy) && !retreating
+    const contesting = Boolean(contestedEnemy) && contest.canContest
     return {
       ...arcane,
       target: movementTarget,
@@ -4405,23 +4403,25 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
         ? 'Recuar da disputa'
         : runePlan.kind === 'invade' ? 'Invadir runa de ouro' : 'Defender runa de ouro',
       microDecision: retreating
-        ? 'Preservando vida antes das waves'
+        ? 'Cedendo runa para preservar vida'
         : contesting
-          ? `Enfrentando ${contestedEnemy!.player} na runa`
+          ? `Disputando espaco da runa contra ${contestedEnemy!.player}`
+          : !contest.canContest
+            ? 'Aguardando janela segura para a runa'
           : runePlan.kind === 'invade'
         ? `Avancando para runa inimiga (${laneNames[arcane.lane]})`
         : runePlan.threatened
           ? 'Respondendo invasao na runa aliada'
           : `Protegendo runa aliada (${laneNames[arcane.lane]})`,
-      aiMode: runePlan.kind === 'invade' ? 'finish_enemy' : 'push_lane',
-      aiReason: runePlan.threatened ? 'pre_game_rune_defense, enemy_pressure' : `pre_game_rune_${runePlan.kind}`,
+      aiMode: 'take_objective',
+      aiReason: `${runePlan.threatened ? 'pre_game_rune_defense, enemy_pressure' : `pre_game_rune_${runePlan.kind}`}, danger_${Math.round(contest.danger)}, numbers_${contest.localNumbers.advantage.toFixed(1)}`,
       nextDecisionAt: 0,
       forceDecision: state.time + delta >= 0,
       lastDecisionPos: nextPos,
       decision: retreating
         ? 'Recuando da disputa'
         : contesting
-          ? 'Combatendo pela runa'
+          ? 'Controlando a area da runa'
           : runePlan.kind === 'invade' ? 'Disputando runa inimiga' : 'Protegendo runa aliada',
       pos: nextPos,
     }
@@ -4985,6 +4985,35 @@ export type PregameBountyRunePlan = {
   threatened: boolean
 }
 
+export function getPregameRuneContestAssessment(
+  state: SimulationState,
+  arcane: Arcane,
+  plan: PregameBountyRunePlan,
+  enemies = state.arcanes.filter((candidate) => candidate.team !== arcane.team && candidate.stats.hp > 0 && candidate.respawn <= state.time),
+) {
+  const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
+  const localNumbers = getLocalNumbers(state, arcane.team, plan.point, 12, enemies)
+  const dangerAtRune = getEnemyActionThreatScore(state, arcane, plan.point, enemies)
+  const dangerHere = getEnemyActionThreatScore(state, arcane, arcane.pos, enemies)
+  const danger = Math.max(dangerAtRune, dangerHere)
+  const healthPenalty = Math.max(0, 0.78 - hpRatio) * 58
+  const dangerTolerance = clampNumber(46 + arcane.aggression * 0.24 + localNumbers.advantage * 9 - healthPenalty, 34, 72)
+  const mustRetreat = hpRatio < 0.48 || (hpRatio < 0.72 && danger >= dangerTolerance + 8) || localNumbers.advantage <= -0.9
+  const healthyObjectiveCommit = hpRatio >= 0.82 && localNumbers.advantage >= -0.45
+  const canContest = !mustRetreat && localNumbers.advantage >= -0.45 && (
+    healthyObjectiveCommit || (hpRatio >= 0.62 && danger <= dangerTolerance + 14)
+  )
+  return { canContest, mustRetreat, danger, dangerTolerance, localNumbers }
+}
+
+export function getPregameRuneStagingPoint(point: Point, ownBase: Point, distanceFromRune: number) {
+  const direction = getNormalizedDirection(point, ownBase)
+  return clampToMapBounds({
+    x: point.x + direction.x * distanceFromRune,
+    y: point.y + direction.y * distanceFromRune,
+  })
+}
+
 export function getPregameBountyRunePlan(state: SimulationState, arcane: Arcane): PregameBountyRunePlan {
   const ownedPoints = runeSpawnPoints.bounty.filter((point) => getBountyRuneSide(point) === arcane.team)
   const enemyPoints = runeSpawnPoints.bounty.filter((point) => getBountyRuneSide(point) !== arcane.team)
@@ -5017,7 +5046,11 @@ export function getPregameBountyRunePlan(state: SimulationState, arcane: Arcane)
     })
     .filter(({ enemyCount, allyCount }) => enemyCount > 0 && enemyCount >= allyCount)
     .sort((a, b) => b.score - a.score)[0]
-  const assignedInvader = arcane.role === 'Greedy Support' || arcane.role === 'Dedicated Support'
+  const supportInvasionBase = arcane.role === 'Greedy Support' ? 28 : arcane.role === 'Dedicated Support' ? 12 : -40
+  const invasionPersonality = supportInvasionBase + arcane.aggression * 0.2 + arcane.shotcalling * 0.16
+  const invasionVariation = seededRandomUnit(state.matchSeed, `${arcane.id}:pregame-rune-invasion`) * 24
+  const enemyDefense = enemies.filter((enemy) => distance(enemy.pos, enemyLanePoint) <= 14).length
+  const assignedInvader = invasionPersonality + invasionVariation - enemyDefense * 12 >= 58
   const threatOnAssignedRune = threatenedPoint && distance(threatenedPoint.point, ownLanePoint) < 1
   const canReactToThreat = threatenedPoint && (threatOnAssignedRune || distance(arcane.pos, threatenedPoint.point) <= 22)
 
@@ -7919,6 +7952,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     if (arcane.stats.hp <= 0 || arcane.respawn > next.time) return
     if (arcane.channeling) return
     if (isArcaneAttackDisabled(next, arcane)) return
+    if (pregame && (arcane.microDecision.startsWith('Cedendo runa') || arcane.microDecision.startsWith('Aguardando janela segura'))) return
     const attackCooldown = getEffectiveArcaneAttackCooldown(next, arcane)
     const attackReady = next.time - arcane.lastAttack >= attackCooldown
     if (!attackReady && !hasAnyCastableSkill(next, arcane)) return

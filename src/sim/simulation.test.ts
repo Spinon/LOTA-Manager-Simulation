@@ -27,6 +27,7 @@ import {
   getHeroDefinition,
   getItemPurchasePlan,
   getPregameBountyRunePlan,
+  getPregameRuneContestAssessment,
   getJungleStackChance,
   getHigherPriorityFarmAlly,
   getCreepXpShare,
@@ -178,15 +179,14 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   assert.equal(pregameCombatTick.towers[0].lastAttack, -100, 'map structures must remain inactive during pregame combat')
 
   let naturalPregame = createInitialState('pregame-contact-debug')
-  const initialAttackTimes = new Map(naturalPregame.arcanes.map((arcane) => [arcane.id, arcane.lastAttack]))
   let pregameStep = 0
   while (naturalPregame.time < -45) {
     naturalPregame = tick(naturalPregame, simulationFrameSeconds, pregameStep % 3 === 0)
     pregameStep += 1
   }
   assert.ok(
-    naturalPregame.arcanes.some((arcane) => arcane.lastAttack !== initialAttackTimes.get(arcane.id)),
-    'natural rune routes should produce combat well before the end of the preparation minute',
+    naturalPregame.arcanes.every((arcane) => arcane.aiMode === 'take_objective'),
+    'pregame routes should remain objective-driven instead of switching to scripted chases',
   )
 
   const threatenedState = createInitialState('opening-rune-response-test')
@@ -200,6 +200,20 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   assert.equal(responsePlan.kind, 'defend', 'a nearby support should answer pressure on an allied rune')
   assert.equal(responsePlan.threatened, true)
   assert.deepEqual(responsePlan.point, threatenedPoint)
+
+  const cautiousCore = threatenedState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Safe Lane')!
+  cautiousCore.pos = { x: threatenedPoint.x + 6, y: threatenedPoint.y }
+  cautiousCore.stats.hp = cautiousCore.stats.maxHp * 0.25
+  const cautiousAssessment = getPregameRuneContestAssessment(threatenedState, cautiousCore, {
+    point: threatenedPoint,
+    kind: 'defend',
+    threatened: true,
+  }, [invader])
+  assert.equal(cautiousAssessment.mustRetreat, true, 'a low-health Arcane should concede the rune instead of chasing')
+  const cautiousTick = tick(threatenedState, 0.01, true)
+  const cautiousAfterTick = cautiousTick.arcanes.find((arcane) => arcane.id === cautiousCore.id)!
+  assert.equal(cautiousAfterTick.macroDecision, 'Recuar da disputa')
+  assert.notDeepEqual(cautiousAfterTick.target, invader.pos, 'the enemy position must never become the rune-contest movement target')
 
   const jungleState = createInitialState('opening-jungle-test')
   jungleState.time = 59.99
