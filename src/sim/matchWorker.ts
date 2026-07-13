@@ -15,6 +15,7 @@ import { getReplayChunkTransferables, ReplayChunkEncoder, type EncodedReplayChun
 export type MatchWorkerRequest =
   | { type: 'start'; seed: string; runId: number }
   | { type: 'cancel'; runId: number }
+  | { type: 'playbackStarted'; runId: number }
   | { type: 'cursor'; runId: number; cursor: number }
 
 export type MatchWorkerResponse =
@@ -26,24 +27,34 @@ export type MatchWorkerResponse =
 
 const renderFrameIntervalSeconds = 0.2
 const renderDetailsIntervalSeconds = 2
-// Chunks curtos: cada flush vira um postMessage que o main thread precisa
-// desserializar de forma síncrona — lotes de ~5s de jogo (~25 frames) mantêm
-// esse bloqueio abaixo de ~15ms e deixam o worker responder rápido ao cursor.
-const simulationChunkSteps = 150
+// Loading usa lotes de ~15s para reduzir timers e mensagens. Quando o replay
+// começa, lotes de ~5s mantêm a entrega incremental e o cancelamento responsivo.
+const loadingSimulationChunkSteps = 450
+const playbackSimulationChunkSteps = 150
 
 let activeRunId = 0
+let playbackRunId = 0
 self.onmessage = (event: MessageEvent<MatchWorkerRequest>) => {
   const message = event.data
   if (message.type === 'cursor') {
     return
   }
 
+  if (message.type === 'playbackStarted') {
+    if (message.runId === activeRunId) playbackRunId = message.runId
+    return
+  }
+
   if (message.type === 'cancel') {
-    if (message.runId === activeRunId) activeRunId = 0
+    if (message.runId === activeRunId) {
+      activeRunId = 0
+      playbackRunId = 0
+    }
     return
   }
 
   activeRunId = message.runId
+  playbackRunId = 0
   void runMatch(message.seed, message.runId)
 }
 
@@ -88,6 +99,9 @@ async function runMatch(seed: string, runId: number) {
     const runChunk = () => {
       if (runId !== activeRunId) return
 
+      const simulationChunkSteps = playbackRunId === runId
+        ? playbackSimulationChunkSteps
+        : loadingSimulationChunkSteps
       for (let step = 0; step < simulationChunkSteps && !state.winner; step += 1) {
         decisionAccumulator += simulationFrameSeconds
         const shouldDecide = decisionAccumulator >= decisionGateSeconds

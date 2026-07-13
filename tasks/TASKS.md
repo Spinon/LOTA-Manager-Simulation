@@ -639,7 +639,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T24 - Carregamento adaptativo sem buffering
+### [x] T24 - Carregamento adaptativo sem buffering
 
 **Objetivo**: reduzir a espera percebida em máquinas fracas sem permitir que o playback alcance o Worker.
 
@@ -650,6 +650,8 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Aumentar lotes durante loading e reduzir mensagens sem bloquear cancelamento ou progresso.
 
 **Critérios**: primeira imagem em até 10-12s na máquina de referência; nenhuma parada por buffer em 16x quando a velocidade estiver liberada; loading e restart confiáveis.
+
+**Implementado (2026-07-13)**: taxa do Worker medida por amostras suavizadas e margem de segurança de 25%; liberação após 10s e 5min de buffer; velocidades acima da capacidade ficam temporariamente indisponíveis; playback reduz automaticamente a velocidade se a taxa cair; retomada exige reserva proporcional; Worker usa lotes de 15s durante loading e 5s durante playback. Playwright: primeira arena em 10,7s, restart em 10,2s e 16x avançou 128,8s em 8s sem buffering.
 
 ---
 
