@@ -346,6 +346,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
+### [x] T14.6 - Calibração de GPM profissional
+
+> Concluída em 2026-07-12 - Calibrei metas por role com 24 partidas profissionais recentes, corrigi a oferta crescente das waves e dei autoridade real à recuperação econômica da IA.
+
+**Resultado**: metas de 40 minutos em 760/650/590/365/317 GPM para HC/Mid/Off/Sup4/Sup5. A IA agora compara GPM atual com uma curva por minuto, protege last hits contra foco/casts, força `farm_map` quando os cores estão atrasados e mantém defesa urgente. Foram integrados melees extras aos 15/30/45 minutos e o bônus em área do flagbearer. Metodologia, amostra e próximos ajustes estão em `tasks/GPM_BALANCE.md`; testes, lint e build verdes.
+
+---
+
 ### [ ] T15 - Integração da IA de combate coletivo
 
 **Fonte**: `Game Systems/moba_teamfight_skirmish_laning_ai_codex.txt`.

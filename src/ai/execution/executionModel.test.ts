@@ -63,6 +63,7 @@ function makeContext(overrides: Partial<PlayerContext> = {}): PlayerContext {
       danger: 24,
       itemTimingUrgency: 24,
       developmentNeed: 20,
+      economyNeed: 20,
     },
     local: {
       enemyNumbersAdvantage: 0,

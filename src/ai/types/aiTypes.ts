@@ -142,6 +142,7 @@ export interface PlayerContext {
     danger: number
     itemTimingUrgency: number
     developmentNeed: number
+    economyNeed: number
   }
   local: {
     enemyNumbersAdvantage: number

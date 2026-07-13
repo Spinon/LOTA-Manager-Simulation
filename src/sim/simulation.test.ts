@@ -42,6 +42,8 @@ import {
   getLastHitTarget,
   getLastHitCandidateFromCreeps,
   getRoleFarmPriority,
+  getRoleGpmTarget,
+  getArcaneEconomyNeed,
   getTowerTankAssessment,
   getTowerTankCandidate,
   hasTimedEffect,
@@ -98,6 +100,17 @@ function createStateAtGameStart(seed: string) {
 }
 
 await loadGameData()
+
+assert.equal(getRoleGpmTarget('Safe Lane', 40 * 60), 760)
+assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
+{
+  const economyState = createInitialState('economy-need-test')
+  const core = economyState.arcanes.find((arcane) => arcane.role === 'Safe Lane')!
+  core.earnedGold = 8_000
+  assert.ok(getArcaneEconomyNeed(core, 20 * 60) > 40, 'a core far below the pro GPM curve should seek farm')
+  core.earnedGold = 13_000
+  assert.equal(getArcaneEconomyNeed(core, 20 * 60), 0, 'a core above its GPM curve should not receive recovery pressure')
+}
 
 {
   const openingState = createInitialState('opening-timeline-test')

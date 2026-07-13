@@ -29,7 +29,8 @@ export function getLaneCreepWaveKinds(gameTimeSeconds: number): LaneCreepKind[] 
   const siegeSeed = getLaneCreepSeed('siege')
   const flagbearerSeed = getLaneCreepSeed('flagbearer')
 
-  for (let index = 0; index < (meleeSeed.spawn.maxCount ?? 3); index += 1) {
+  const timedExtraMelee = Math.min(3, Math.floor(Math.max(0, gameTimeSeconds) / (15 * 60)))
+  for (let index = 0; index < (meleeSeed.spawn.maxCount ?? 3) + timedExtraMelee; index += 1) {
     kinds.push('melee')
   }
   for (let index = 0; index < (mageSeed.spawn.maxCount ?? 1); index += 1) {

@@ -48,6 +48,7 @@ function scoreFarmLaneMode(context: PlayerContext): PlayerModeScore {
     context.self.itemTimingUrgency * 0.8 +
     context.profile.personality.farmBias * 0.25 +
     context.profile.farmingEfficiency * 0.2 +
+    getEconomyRecoveryBonus(context, 0.72) +
     getDevelopmentFarmBonus(context, 0.68) -
     farmPriorityPressure.penalty +
     farmPriorityPressure.bonus -
@@ -70,6 +71,7 @@ function scoreFarmJungleMode(context: PlayerContext): PlayerModeScore {
     stackedEconomyPull +
     context.profile.farmingEfficiency * 0.18 +
     context.profile.personality.greed * 0.22 +
+    getEconomyRecoveryBonus(context, 0.78) +
     getDevelopmentFarmBonus(context, 0.76) +
     Math.max(0, context.map.gankRisk - 35) * 0.35 -
     farmPriorityPressure.penalty * 0.85 +
@@ -92,6 +94,7 @@ function scoreJoinFightMode(context: PlayerContext): PlayerModeScore {
     (1 - context.self.manaPct) * 14 -
     context.self.itemTimingUrgency * 0.22 -
     context.self.developmentNeed * 0.24 -
+    context.self.economyNeed * (0.08 + context.profile.farmPriority / 500) -
     getLateGameLifeRisk(context) * 0.52
 
   return makeScore('join_fight', score, getTeamFightUrgency(context), context.self.danger, ['fight', 'team_plan'])
@@ -128,6 +131,7 @@ function scoreTakeObjectiveMode(context: PlayerContext): PlayerModeScore {
     context.team.fightReadiness * 0.22 -
     context.self.danger * 0.42 -
     getDevelopmentFarmBonus(context, 0.16) -
+    getEconomyRecoveryBonus(context, 0.22) -
     getLateGameLifeRisk(context) * 0.48
 
   return makeScore('take_objective', score, context.local.objectivePressure, context.self.danger, ['objective', 'team_plan'])
@@ -140,6 +144,7 @@ function scorePushLaneMode(context: PlayerContext): PlayerModeScore {
     getGpmDecisionBonus(context, context.map.lanePushGpm) * 0.65 +
     context.team.lanePressure * 0.25 +
     context.profile.aggression * 0.16 +
+    getEconomyRecoveryBonus(context, 0.48) +
     getDevelopmentFarmBonus(context, 0.16) -
     farmPriorityPressure.penalty * 0.25 +
     farmPriorityPressure.bonus * 0.18 -
@@ -176,6 +181,13 @@ function getDevelopmentFarmBonus(context: PlayerContext, weight: number) {
   const healthConfidence = clamp((context.self.healthPct - 0.3) / 0.5, 0, 1)
   const dangerConfidence = clamp(1 - context.self.danger / 100, 0, 1)
   return context.self.developmentNeed * weight * healthConfidence * dangerConfidence
+}
+
+function getEconomyRecoveryBonus(context: PlayerContext, weight: number) {
+  const roleWeight = 0.38 + context.profile.farmPriority / 120
+  const healthConfidence = clamp((context.self.healthPct - 0.3) / 0.5, 0, 1)
+  const dangerConfidence = clamp(1 - context.self.danger / 105, 0.12, 1)
+  return context.self.economyNeed * weight * roleWeight * healthConfidence * dangerConfidence
 }
 
 function getLateGameLifeRisk(context: PlayerContext) {

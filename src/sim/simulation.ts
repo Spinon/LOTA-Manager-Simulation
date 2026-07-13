@@ -646,6 +646,32 @@ export function getArcaneDevelopmentNeed(arcane: Arcane, time: number) {
   return clampNumber((getRoleLevelTarget(arcane.role, time) - arcane.stats.level) * 10, 0, 100)
 }
 
+const roleGpmTargets: Record<string, ReadonlyArray<readonly [number, number]>> = {
+  'Safe Lane': [[0, 0], [6, 360], [10, 480], [20, 620], [40, 760], [60, 800]],
+  Mid: [[0, 0], [6, 400], [10, 500], [20, 560], [40, 650], [60, 690]],
+  Offlane: [[0, 0], [6, 300], [10, 380], [20, 480], [40, 590], [60, 620]],
+  'Greedy Support': [[0, 0], [6, 260], [10, 275], [20, 320], [40, 365], [60, 390]],
+  'Dedicated Support': [[0, 0], [6, 230], [10, 240], [20, 280], [40, 317], [60, 340]],
+}
+
+export function getRoleGpmTarget(role: string, time: number) {
+  const minutes = Math.max(0, time / 60)
+  const checkpoints = roleGpmTargets[role] ?? roleGpmTargets['Dedicated Support']
+  const upperIndex = checkpoints.findIndex(([minute]) => minute >= minutes)
+  if (upperIndex === -1) return checkpoints[checkpoints.length - 1][1]
+  if (upperIndex === 0) return checkpoints[0][1]
+  const [lowerMinute, lowerGpm] = checkpoints[upperIndex - 1]
+  const [upperMinute, upperGpm] = checkpoints[upperIndex]
+  return lowerGpm + (upperGpm - lowerGpm) * ((minutes - lowerMinute) / (upperMinute - lowerMinute))
+}
+
+export function getArcaneEconomyNeed(arcane: Arcane, time: number) {
+  if (time <= 0) return 0
+  const targetGpm = getRoleGpmTarget(arcane.role, time)
+  const currentGpm = arcane.earnedGold / Math.max(60, time) * 60
+  return clampNumber((targetGpm - currentGpm) / Math.max(1, targetGpm) * 125, 0, 100)
+}
+
 export function getGamePhase(time: number): GamePhase {
   if (time < 10 * 60) return 'early'
   if (time < 28 * 60) return 'mid'
@@ -2827,15 +2853,40 @@ export function updateTeamPlans(state: SimulationState): SimulationState {
   const analyzed = getAnalyzedGameState(state)
   const teamPlans = Object.fromEntries((['dawn', 'dusk'] as TeamId[]).map((team) => [
     team,
-    enrichTeamPlanWithMapTarget(state, team, selectTeamPlan({
+    applyTeamEconomyRecoveryPlan(state, team, enrichTeamPlanWithMapTarget(state, team, selectTeamPlan({
       analyzed,
       teamId: team,
       teamProfile: DEFAULT_TEAM_AI_PROFILES[team],
       previousPlan: state.teamPlans[team],
-    })),
+    }))),
   ])) as Partial<Record<TeamId, TeamPlan>>
 
   return { ...state, teamPlans }
+}
+
+export function getTeamCoreEconomyNeed(state: SimulationState, team: TeamId) {
+  const cores = state.arcanes.filter((arcane) => arcane.team === team && !arcane.role.includes('Support'))
+  return average(cores.map((arcane) => getArcaneEconomyNeed(arcane, state.time)))
+}
+
+export function applyTeamEconomyRecoveryPlan(
+  state: SimulationState,
+  team: TeamId,
+  plan: TeamPlan | undefined,
+): TeamPlan | undefined {
+  if (!plan || state.time < 8 * 60) return plan
+  const economyNeed = getTeamCoreEconomyNeed(state, team)
+  const baseThreat = getBaseThreat(state, team)
+  const urgentDefense = (baseThreat?.pressure ?? 0) >= 2 || plan.type === 'defend_high_ground' || plan.type === 'defend_tower'
+  if (economyNeed < 42 || urgentDefense || plan.type === 'end_game') return plan
+  return {
+    type: 'farm_map',
+    urgency: Math.round(clampNumber(48 + economyNeed * 0.38, 55, 86)),
+    risk: Math.round(clampNumber(30 - economyNeed * 0.16, 10, 28)),
+    expectedValue: Math.round(75 + economyNeed * 0.45),
+    decisionChance: plan.decisionChance,
+    reasonTags: ['economy_recovery', `core_gpm_deficit_${Math.round(economyNeed)}`],
+  }
 }
 
 export function enrichTeamPlanWithMapTarget(state: SimulationState, team: TeamId, plan: TeamPlan | undefined): TeamPlan | undefined {
@@ -2862,7 +2913,12 @@ export function getAnalyzedGameState(state: SimulationState) {
 export function updateTeamCalls(state: SimulationState): SimulationState {
   const phase = getGamePhase(state.time)
   const activeCalls = Object.fromEntries(
-    Object.entries(state.teamCalls).filter(([, call]) => call && call.expiresAt > state.time && isTeamCallTargetAlive(state, call)),
+    Object.entries(state.teamCalls).filter(([team, call]) => (
+      call &&
+      call.expiresAt > state.time &&
+      isTeamCallTargetAlive(state, call) &&
+      !(state.teamPlans[team as TeamId]?.type === 'farm_map' && getTeamCoreEconomyNeed(state, team as TeamId) >= 42)
+    )),
   ) as Partial<Record<TeamId, TeamCall>>
 
   if (phase === 'early') {
@@ -3562,6 +3618,7 @@ export function createPlayerAiContext(input: {
       danger: input.dangerScore,
       itemTimingUrgency,
       developmentNeed: getArcaneDevelopmentNeed(input.arcane, input.state.time),
+      economyNeed: getArcaneEconomyNeed(input.arcane, input.state.time),
     },
     local: {
       enemyNumbersAdvantage: Math.max(0, -localNumbers.advantage),
@@ -3674,26 +3731,16 @@ export function getItemTimingUrgency(arcane: Arcane, time: number) {
 }
 
 export function getExpectedItemTimingGpm(arcane: Arcane, time: number) {
-  const phase = getGamePhase(time)
-  const roleBase = arcane.role === 'Safe Lane'
-    ? 430
-    : arcane.role === 'Mid'
-      ? 390
-      : arcane.role === 'Offlane'
-        ? 330
-        : arcane.role === 'Greedy Support'
-          ? 255
-          : 210
-  const phaseMultiplier = phase === 'early' ? 0.78 : phase === 'mid' ? 1 : 1.16
+  const roleTarget = getRoleGpmTarget(arcane.role, time)
   const farmSkillMultiplier = arcane.role === 'Safe Lane'
-    ? 1.08
+    ? 1.04
     : arcane.role === 'Mid'
-      ? 1.02
+      ? 1.01
       : arcane.role.includes('Support')
-        ? 0.88
-        : 0.96
+        ? 0.96
+        : 0.99
 
-  return roleBase * phaseMultiplier * farmSkillMultiplier
+  return roleTarget * farmSkillMultiplier
 }
 
 export function nextShopItem(arcane: Arcane) {
@@ -4604,8 +4651,15 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     const modeWantsObjective = execution.executedMode === 'take_objective'
     const modeWantsSave = execution.executedMode === 'save_ally'
     const modeWantsFight = execution.executedMode === 'join_fight' || execution.executedMode === 'finish_enemy'
-    const combatPhaseWantsFight = combatBoard?.phase === 'opening' || combatBoard?.phase === 'commit' || combatBoard?.phase === 'sustain' || combatBoard?.phase === 'chase'
-    const wantsCombatFocus = combatFocusTarget !== undefined && (
+    const economyNeed = getArcaneEconomyNeed(arcane, state.time)
+    const canPrioritizeEconomy = economyNeed >= 34 &&
+      (modeWantsLaneFarm || modeWantsJungle) &&
+      effectiveDanger < 48 &&
+      (combatBoard?.encounterType === 'lane_trade' || combatBoard?.encounterType === 'jungle_skirmish')
+    const combatPhaseWantsFight = !canPrioritizeEconomy && (
+      combatBoard?.phase === 'opening' || combatBoard?.phase === 'commit' || combatBoard?.phase === 'sustain' || combatBoard?.phase === 'chase'
+    )
+    const wantsCombatFocus = combatFocusTarget !== undefined && !canPrioritizeEconomy && (
       modeWantsFight ||
       combatPhaseWantsFight ||
       distance(arcane.pos, combatFocusTarget.pos) <= getArcaneAttackCenterRange(arcane, combatFocusTarget) + 2
@@ -4734,11 +4788,11 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
           : farFromGroup
             ? `Movendo para agrupamento: ${teamCall.targetName}`
             : `Executando objetivo: ${teamCall.targetName}`
-    } else if (gankTarget && hpRatio > 0.68 && effectiveDanger < 56) {
+    } else if (gankTarget && economyNeed < 34 && hpRatio > 0.68 && effectiveDanger < 56) {
       target = gankTarget.pos
       macroDecision = 'Criar vantagem'
       microDecision = `Gank em ${gankTarget.player}`
-    } else if (rotateTarget && hpRatio > 0.64 && effectiveDanger < 58) {
+    } else if (rotateTarget && economyNeed < 34 && hpRatio > 0.64 && effectiveDanger < 58) {
       target = rotateTarget.pos
       macroDecision = `Rotacionar para ${laneNames[rotateTarget.lane]}`
       microDecision = `Ajudando side lane: ${laneNames[rotateTarget.lane]}`
@@ -7880,7 +7934,12 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     const reachableFocusTarget = focusTarget && distance(arcane.pos, focusTarget.pos) <= getArcaneAttackCenterRange(arcane, focusTarget)
       ? focusTarget
       : undefined
-    let target: CombatTarget | undefined = reachableFocusTarget ?? bossTarget ?? objectiveTarget ?? lastHitTarget ?? denyTarget
+    const protectsLastHitWindow = (laneControl || arcane.aiMode === 'farm_lane') && lastHitTarget !== undefined
+    let target: CombatTarget | undefined = bossTarget ?? objectiveTarget ?? (
+      protectsLastHitWindow
+        ? lastHitTarget
+        : reachableFocusTarget ?? lastHitTarget ?? denyTarget
+    )
     if (!target) {
       const enemyArcaneTarget = nearestReachableEnemyArcane(arcane, next.arcanes, next.time)
       const fallbackEnemyCreeps: Creep[] = []
@@ -7901,7 +7960,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
         ...(canAttackBoss ? [next.boss] : []),
       ])
     }
-    if (tryCastSimpleSkill(next, arcane, target)) return
+    if (!protectsLastHitWindow && tryCastSimpleSkill(next, arcane, target)) return
     if (!target || next.time - arcane.lastAttack < attackCooldown) return
 
     arcane.lastAttack = next.time
@@ -8457,11 +8516,14 @@ export function resolveDeaths(state: SimulationState): SimulationState {
       const creepRewards = deadCreeps.reduce((total, creep) => {
         if (isDeniedCreep(creep)) return total
         const lastHitGold = creep.lastHitBy?.id === arcane.id ? getCreepGoldReward(creep) : 0
+        const flagbearerAuraGold = creep.type === 'flagbearer' && creep.team !== arcane.team && distance(creep.pos, arcane.pos) <= 15
+          ? 10
+          : 0
         const xpShare = getCreepXpShare(next, creep, arcane)
         const sharedXp = xpShare > 0 ? Math.ceil(getCreepXpReward(creep, next.time) * xpShare) : 0
 
         return {
-          gold: total.gold + lastHitGold,
+          gold: total.gold + lastHitGold + flagbearerAuraGold,
           xp: total.xp + sharedXp,
         }
       }, { gold: 0, xp: 0 })

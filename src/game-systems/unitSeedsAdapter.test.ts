@@ -12,6 +12,9 @@ import {
   assert.deepEqual(getLaneCreepWaveKinds(0), ['melee', 'melee', 'melee', 'mage'])
   assert.deepEqual(getLaneCreepWaveKinds(120), ['melee', 'melee', 'melee', 'mage', 'flagbearer'])
   assert.deepEqual(getLaneCreepWaveKinds(300), ['melee', 'melee', 'melee', 'mage', 'siege', 'flagbearer'])
+  assert.equal(getLaneCreepWaveKinds(15 * 60).filter((kind) => kind === 'melee').length, 4)
+  assert.equal(getLaneCreepWaveKinds(30 * 60).filter((kind) => kind === 'melee').length, 5)
+  assert.equal(getLaneCreepWaveKinds(45 * 60).filter((kind) => kind === 'melee').length, 6)
 }
 
 {
