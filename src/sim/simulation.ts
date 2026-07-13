@@ -52,7 +52,7 @@ import {
   getStructureStatsByRole,
   type LaneCreepKind,
 } from '../game-systems/unitSeedsAdapter.ts'
-import { isDay } from '../game-systems/visionFormulas.ts'
+import { currentVision, isDay, worldVisionToMapRadius } from '../game-systems/visionFormulas.ts'
 
 export type TeamId = 'dawn' | 'dusk'
 export type TeamMatchOutcome = 'winner' | 'loser' | 'draw'
@@ -336,6 +336,14 @@ export const playerAiProfileCache = new Map<string, ReturnType<typeof buildPlaye
 export const creepSpatialGridCache = new WeakMap<SimulationState, { time: number; grid: SpatialGrid<Creep> }>()
 export const aliveTowersByLaneCache = new WeakMap<SimulationState, { time: number; byTeamLane: Map<string, Tower[]> }>()
 export const offensiveThreatCache = new WeakMap<Arcane, { time: number; range: number; readyDamage: number }>()
+type TeamVisionProvider = { pos: Point; range: number }
+const teamVisionProviderCache = new WeakMap<SimulationState, {
+  time: number
+  arcanes: Arcane[]
+  creeps: Creep[]
+  grids: Record<TeamId, SpatialGrid<TeamVisionProvider>>
+  maxRanges: Record<TeamId, number>
+}>()
 
 export type SimulationEntityIndexes = {
   arcane: Map<string, number>
@@ -973,7 +981,7 @@ export function createInitialState(seed = 'lota-default-seed'): SimulationState 
       respawn: aliveRespawnTimestamp,
       lastAttack: matchPreparationStartSeconds - 10,
       aggression: getRoleAggression(arcane.role),
-      visionRange: getArcaneDefinitionVisionRange(arcane.heroDefinitionId, 'day'),
+      visionRange: getArcaneDefinitionVisionRange(arcane.heroDefinitionId, getDayCycle(matchPreparationStartSeconds)),
       shotcalling: getRoleShotcalling(arcane.role),
       macroDecision: 'Avancar rota',
       microDecision: 'Saindo da base',
@@ -1209,7 +1217,7 @@ export function rebuildArcaneStatsAfterItemChange(arcane: Arcane, nextItems: str
 
 export function getArcaneDefinitionVisionRange(heroDefinitionId: string, cycle: DayCycle) {
   const calculated = calculateHeroStats(getHeroDefinition(heroDefinitionId), 1, [])
-  return (cycle === 'day' ? calculated.vision.dayVision : calculated.vision.nightVision) / 100
+  return worldVisionToMapRadius(cycle === 'day' ? calculated.vision.dayVision : calculated.vision.nightVision)
 }
 
 export function getHeroDefinition(heroDefinitionId: string) {
@@ -2592,7 +2600,12 @@ export function assignCombatFocusTargets(state: SimulationState, blackboards: Co
       .filter((arcane): arcane is Arcane => arcane !== undefined && arcane.stats.hp > 0 && arcane.respawn <= state.time)
     const enemies = board.enemyHeroIds
       .map((id) => state.arcanes.find((arcane) => arcane.id === id))
-      .filter((arcane): arcane is Arcane => arcane !== undefined && arcane.stats.hp > 0 && arcane.respawn <= state.time)
+      .filter((arcane): arcane is Arcane => (
+        arcane !== undefined &&
+        arcane.stats.hp > 0 &&
+        arcane.respawn <= state.time &&
+        isPointVisibleToTeam(state, board.teamId, arcane.pos)
+      ))
     const targetScores = enemies.map((target) => createCombatTargetScore(state, board, allies, target))
     const focus = selectCombatFocus(targetScores, board.primaryTargetId)
     return {
@@ -4379,6 +4392,7 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       candidate.team !== arcane.team &&
       candidate.stats.hp > 0 &&
       candidate.respawn <= state.time &&
+      isPointVisibleToTeam(state, arcane.team, candidate.pos) &&
       distance(candidate.pos, runePlan.point) <= 12
     ))
     const contestedEnemy = nearest(arcane.pos, enemies, 10)
@@ -4989,7 +5003,12 @@ export function getPregameRuneContestAssessment(
   state: SimulationState,
   arcane: Arcane,
   plan: PregameBountyRunePlan,
-  enemies = state.arcanes.filter((candidate) => candidate.team !== arcane.team && candidate.stats.hp > 0 && candidate.respawn <= state.time),
+  enemies = state.arcanes.filter((candidate) => (
+    candidate.team !== arcane.team &&
+    candidate.stats.hp > 0 &&
+    candidate.respawn <= state.time &&
+    isPointVisibleToTeam(state, arcane.team, candidate.pos)
+  )),
 ) {
   const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
   const localNumbers = getLocalNumbers(state, arcane.team, plan.point, 12, enemies)
@@ -5030,7 +5049,8 @@ export function getPregameBountyRunePlan(state: SimulationState, arcane: Arcane)
   const enemies = state.arcanes.filter((candidate) => (
     candidate.team !== arcane.team &&
     candidate.stats.hp > 0 &&
-    candidate.respawn <= state.time
+    candidate.respawn <= state.time &&
+    isPointVisibleToTeam(state, arcane.team, candidate.pos)
   ))
   const allies = state.arcanes.filter((candidate) => (
     candidate.team === arcane.team &&
@@ -5721,7 +5741,8 @@ export function getCombatFocusTarget(state: SimulationState, arcane: Arcane, boa
     target.id === board.primaryTargetId &&
     target.team !== arcane.team &&
     target.stats.hp > 0 &&
-    target.respawn <= state.time
+    target.respawn <= state.time &&
+    isPointVisibleToTeam(state, arcane.team, target.pos)
   ))
 }
 
@@ -5887,7 +5908,8 @@ export function getCombatMoveTargetNearPoint(state: SimulationState, arcane: Arc
     return nearest(target, state.arcanes.filter((other) => (
       other.team !== arcane.team &&
       other.stats.hp > 0 &&
-      other.respawn <= state.time
+      other.respawn <= state.time &&
+      isPointVisibleToTeam(state, arcane.team, other.pos)
     )), 6)
   }
 
@@ -7330,6 +7352,7 @@ export function shouldCommitOffensiveSkill(
     candidate.team !== arcane.team &&
     candidate.stats.hp > 0 &&
     candidate.respawn <= state.time &&
+    isPointVisibleToTeam(state, arcane.team, candidate.pos) &&
     distance(candidate.pos, target.pos) <= 12
   )).length
   if (nearbyAllies >= 2 && nearbyEnemies >= 2) return true
@@ -7427,7 +7450,12 @@ export function getSimplePositiveSkillTarget(
 ): Arcane | undefined {
   if (skill.target === 'self') {
     const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
-    const threatened = nearest(arcane.pos, state.arcanes.filter((enemy) => enemy.team !== arcane.team && enemy.stats.hp > 0 && enemy.respawn <= state.time), 12)
+    const threatened = nearest(arcane.pos, state.arcanes.filter((enemy) => (
+      enemy.team !== arcane.team &&
+      enemy.stats.hp > 0 &&
+      enemy.respawn <= state.time &&
+      isPointVisibleToTeam(state, arcane.team, enemy.pos)
+    )), 12)
     return threatened || hpRatio < 0.78 || arcane.aiMode === 'retreat' ? arcane : undefined
   }
   const range = getSimpleSkillRange(arcane, skill, level)
@@ -7453,7 +7481,8 @@ export function getSimplePositiveSkillTarget(
   const fighting = nearest(arcane.pos, state.arcanes.filter((enemy) => (
     enemy.team !== arcane.team &&
     enemy.stats.hp > 0 &&
-    enemy.respawn <= state.time
+    enemy.respawn <= state.time &&
+    isPointVisibleToTeam(state, arcane.team, enemy.pos)
   )), Math.max(arcane.visionRange * 0.65, 8))
 
   return fighting ? arcane : undefined
@@ -7975,7 +8004,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
         : reachableFocusTarget ?? lastHitTarget ?? denyTarget
     )
     if (!target) {
-      const enemyArcaneTarget = nearestReachableEnemyArcane(arcane, next.arcanes, next.time)
+      const enemyArcaneTarget = nearestReachableEnemyArcane(next, arcane, next.arcanes)
       const fallbackEnemyCreeps: Creep[] = []
       for (const index of enemyCreepIndicesByTeam[arcane.team]) {
         const creep = next.creeps[index]
@@ -9403,11 +9432,16 @@ export function nearestAliveEnemyArcane(point: Point, arcanes: Arcane[], team: T
   return closest
 }
 
-export function nearestReachableEnemyArcane(arcane: Arcane, candidates: Arcane[], time: number) {
+export function nearestReachableEnemyArcane(state: SimulationState, arcane: Arcane, candidates: Arcane[]) {
   let closest: Arcane | undefined
   let closestDistanceSquared = Number.POSITIVE_INFINITY
   for (const candidate of candidates) {
-    if (candidate.team === arcane.team || candidate.stats.hp <= 0 || candidate.respawn > time) continue
+    if (
+      candidate.team === arcane.team ||
+      candidate.stats.hp <= 0 ||
+      candidate.respawn > state.time ||
+      !isPointVisibleToTeam(state, arcane.team, candidate.pos)
+    ) continue
     const candidateDistanceSquared = distanceSquared(arcane.pos, candidate.pos)
     const reach = getArcaneAttackCenterRange(arcane, candidate)
     if (candidateDistanceSquared > closestDistanceSquared || candidateDistanceSquared > reach * reach) continue
@@ -9504,12 +9538,50 @@ export function getEntityCollisionRadius(entity: { pos: Point }) {
 }
 
 export function isPointVisibleToTeam(state: SimulationState, team: TeamId, point: Point) {
-  return state.arcanes.some((arcane) => (
-    arcane.team === team &&
-    arcane.stats.hp > 0 &&
-    arcane.respawn <= state.time &&
-    distance(arcane.pos, point) <= arcane.visionRange
+  const providers = getTeamVisionProviders(state)
+  return querySpatialGrid(providers.grids[team], point, providers.maxRanges[team]).some((provider) => (
+    distance(provider.pos, point) <= provider.range
   ))
+}
+
+export function getTeamVisionProviders(state: SimulationState) {
+  const cached = teamVisionProviderCache.get(state)
+  if (cached && cached.time === state.time && cached.arcanes === state.arcanes && cached.creeps === state.creeps) return cached
+  const buildingVision = worldVisionToMapRadius(currentVision(1800, 800, state.time))
+  const makeProviders = (team: TeamId): TeamVisionProvider[] => [
+    ...state.arcanes
+      .filter((arcane) => arcane.team === team && arcane.stats.hp > 0 && arcane.respawn <= state.time)
+      .map((arcane) => ({ pos: arcane.pos, range: arcane.visionRange })),
+    ...state.creeps
+      .filter((creep) => creep.team === team && creep.hp > 0)
+      .map((creep) => ({ pos: creep.pos, range: getCreepVisionRange(creep) })),
+    ...state.towers
+      .filter((tower) => tower.team === team && tower.hp > 0)
+      .map((tower) => ({ pos: tower.pos, range: buildingVision })),
+    ...state.structures
+      .filter((structure) => structure.team === team && structure.hp > 0)
+      .map((structure) => ({ pos: structure.pos, range: buildingVision })),
+    ...state.bases
+      .filter((base) => base.team === team && base.hp > 0)
+      .map((base) => ({ pos: base.pos, range: buildingVision })),
+  ]
+  const dawn = makeProviders('dawn')
+  const dusk = makeProviders('dusk')
+  const next = {
+    time: state.time,
+    arcanes: state.arcanes,
+    creeps: state.creeps,
+    grids: {
+      dawn: buildSpatialGrid(dawn, proximityGridCellSize),
+      dusk: buildSpatialGrid(dusk, proximityGridCellSize),
+    },
+    maxRanges: {
+      dawn: Math.max(0, ...dawn.map((provider) => provider.range)),
+      dusk: Math.max(0, ...dusk.map((provider) => provider.range)),
+    },
+  }
+  teamVisionProviderCache.set(state, next)
+  return next
 }
 
 export function getTeamMemoryDanger(state: SimulationState, team: TeamId, point: Point) {

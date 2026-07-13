@@ -23,6 +23,7 @@ import {
   getCombatTargetTowerExposure,
   getBountyRuneSide,
   getArcanePassiveCombatModifiers,
+  getArcaneDefinitionVisionRange,
   getCampClearAssessment,
   getHeroDefinition,
   getItemPurchasePlan,
@@ -50,6 +51,7 @@ import {
   hasTimedEffect,
   healArcaneDirectly,
   isPositiveSimpleSkill,
+  isPointVisibleToTeam,
   loadGameData,
   materializeMatchRenderFrame,
   matchPreparationStartSeconds,
@@ -59,6 +61,7 @@ import {
   resolveDeaths,
   resolveCombat,
   simulationFrameSeconds,
+  spawnWave,
   shopCatalog,
   tryCastSimpleSkill,
   tick,
@@ -111,6 +114,77 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   assert.ok(getArcaneEconomyNeed(core, 20 * 60) > 40, 'a core far below the pro GPM curve should seek farm')
   core.earnedGold = 13_000
   assert.equal(getArcaneEconomyNeed(core, 20 * 60), 0, 'a core above its GPM curve should not receive recovery pressure')
+}
+
+{
+  const visionState = createInitialState('vision-scale-test')
+  visionState.time = 120
+  visionState.creeps = []
+  visionState.towers = visionState.towers.map((tower) => ({ ...tower, hp: 0 }))
+  visionState.structures = visionState.structures.map((structure) => ({ ...structure, hp: 0 }))
+  visionState.bases = visionState.bases.map((base) => ({ ...base, hp: 0 }))
+  const observer = visionState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  assert.equal(
+    observer.visionRange,
+    getArcaneDefinitionVisionRange(observer.heroDefinitionId, 'night'),
+    'the -01:00 preparation phase should initialize with night vision',
+  )
+  observer.pos = { x: 50, y: 50 }
+  observer.visionRange = getArcaneDefinitionVisionRange(observer.heroDefinitionId, 'day')
+  visionState.arcanes = visionState.arcanes.map((arcane) => (
+    arcane.id === observer.id ? arcane : { ...arcane, stats: { ...arcane.stats, hp: 0 } }
+  ))
+  assert.ok(observer.visionRange > 12 && observer.visionRange < 14, '1800 day vision should use the shared world-to-map scale')
+  assert.equal(isPointVisibleToTeam(visionState, 'dawn', { x: 62.5, y: 50 }), true)
+  assert.equal(isPointVisibleToTeam(visionState, 'dawn', { x: 64, y: 50 }), false)
+
+  observer.visionRange = getArcaneDefinitionVisionRange(observer.heroDefinitionId, 'night')
+  visionState.arcanes = [...visionState.arcanes]
+  assert.ok(observer.visionRange > 5 && observer.visionRange < 9)
+  assert.equal(isPointVisibleToTeam(visionState, 'dawn', { x: 55, y: 50 }), true)
+  assert.equal(isPointVisibleToTeam(visionState, 'dawn', { x: 60, y: 50 }), false)
+
+  const alliedCreep = spawnWave(createInitialState('vision-creep-provider-test')).find((creep) => creep.team === 'dawn')!
+  alliedCreep.pos = { x: 50, y: 50 }
+  visionState.creeps = [alliedCreep]
+  assert.equal(isPointVisibleToTeam(visionState, 'dawn', { x: 55, y: 50 }), true, 'allied creeps should provide team vision')
+
+  const buildingState = createInitialState('vision-building-provider-test')
+  const alliedTower = buildingState.towers.find((tower) => tower.team === 'dawn')!
+  alliedTower.pos = { x: 50, y: 50 }
+  buildingState.arcanes = buildingState.arcanes.map((arcane) => ({ ...arcane, stats: { ...arcane.stats, hp: 0 } }))
+  buildingState.creeps = []
+  buildingState.structures = buildingState.structures.map((structure) => ({ ...structure, hp: 0 }))
+  buildingState.bases = buildingState.bases.map((base) => ({ ...base, hp: 0 }))
+  buildingState.towers = buildingState.towers.map((tower) => tower.id === alliedTower.id ? tower : { ...tower, hp: 0 })
+  buildingState.time = 120
+  assert.equal(isPointVisibleToTeam(buildingState, 'dawn', { x: 62.5, y: 50 }), true, 'allied buildings should provide day vision')
+  buildingState.time = 420
+  assert.equal(isPointVisibleToTeam(buildingState, 'dawn', { x: 57, y: 50 }), false, 'building vision should shrink at night')
+}
+
+{
+  const fogState = createInitialState('combat-fog-focus-test')
+  fogState.time = 420
+  fogState.creeps = []
+  fogState.towers = fogState.towers.map((tower) => ({ ...tower, hp: 0 }))
+  fogState.structures = fogState.structures.map((structure) => ({ ...structure, hp: 0 }))
+  fogState.bases = fogState.bases.map((base) => ({ ...base, hp: 0 }))
+  const observer = fogState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const hiddenEnemy = fogState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  observer.pos = { x: 50, y: 50 }
+  observer.visionRange = getArcaneDefinitionVisionRange(observer.heroDefinitionId, 'night')
+  hiddenEnemy.pos = { x: 58, y: 50 }
+  fogState.arcanes = fogState.arcanes.map((arcane) => (
+    arcane.id === observer.id || arcane.id === hiddenEnemy.id ? arcane : { ...arcane, stats: { ...arcane.stats, hp: 0 } }
+  ))
+  const hiddenCombat = updateCombatAiFoundation(fogState)
+  assert.ok(hiddenCombat.combatBlackboards.dawn[0], 'nearby hidden enemies may still delimit spatial encounter context')
+  assert.equal(hiddenCombat.combatBlackboards.dawn[0].primaryTargetId, undefined, 'hidden enemies must not become shared focus')
+
+  hiddenEnemy.pos = { x: 54, y: 50 }
+  const revealedCombat = updateCombatAiFoundation(fogState)
+  assert.equal(revealedCombat.combatBlackboards.dawn[0].primaryTargetId, hiddenEnemy.id, 'entering allied vision should reveal the focus target')
 }
 
 {

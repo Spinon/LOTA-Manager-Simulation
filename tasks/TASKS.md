@@ -456,6 +456,13 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 **Critérios**: nenhum campo de `HeroCalculatedStats` é descartado sem decisão documentada; atributos e modificadores possuem testes runtime; replay continua determinístico; testes, lint, build e benchmark verdes.
 
+**Progresso de visão (2026-07-12)**:
+- Corrigida a escala comum para 140 unidades importadas por unidade do mapa: visão padrão 1800/800 agora corresponde a 12,86/5,71, em vez de 18/8 para heróis e 11,43 para creeps.
+- A preparação em `-01:00` passa a iniciar realmente com visão noturna e troca para visão diurna em `00:00`.
+- Fog de equipe inclui Arcanes, creeps, torres, estruturas e base aliados. Foco coletivo, ataques, skills, itens e perseguição não podem adquirir ou atualizar a posição de um Arcane fora da visão.
+- Testes cobrem limite dentro/fora do raio, diferença dia/noite, provedores aliados e bloqueio/liberação de foco pelo fog.
+- Pendente para paridade avançada: árvores/obstrução, diferença de elevação no highground, wards e efeitos específicos que concedem visão aérea ou True Sight.
+
 ---
 
 ## Histórico (não retrabalhar)

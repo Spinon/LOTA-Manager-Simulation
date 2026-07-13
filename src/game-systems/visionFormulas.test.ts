@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { currentVision, isDay, smokeBreaks, visionScore } from './visionFormulas.ts'
+import { currentVision, isDay, smokeBreaks, visionScore, worldVisionToMapRadius } from './visionFormulas.ts'
 
 {
   assert.equal(isDay(0), true)
@@ -18,6 +18,9 @@ import { currentVision, isDay, smokeBreaks, visionScore } from './visionFormulas
     { importance: 10, visible: false },
     { importance: 2, visible: true },
   ]), 5)
+  assert.equal(worldVisionToMapRadius(0), 0)
+  assert.equal(worldVisionToMapRadius(1800), 1800 / 140)
+  assert.equal(worldVisionToMapRadius(800), 800 / 140)
 }
 
 console.log('visionFormulas tests passed')

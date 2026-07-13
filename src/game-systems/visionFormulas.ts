@@ -1,6 +1,12 @@
+export const WORLD_UNITS_PER_MAP_UNIT = 140
+
 export function isDay(gameTimeSeconds: number): boolean {
   const cycle = 600
   return positiveModulo(gameTimeSeconds, cycle) < 300
+}
+
+export function worldVisionToMapRadius(worldVision: number): number {
+  return Math.max(0, worldVision) / WORLD_UNITS_PER_MAP_UNIT
 }
 
 export function currentVision(dayVision: number, nightVision: number, gameTimeSeconds: number): number {

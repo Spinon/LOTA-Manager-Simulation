@@ -6,6 +6,7 @@ import {
   type CampTier,
   type UnitSeed,
 } from '../data/unitSeeds.ts'
+import { worldVisionToMapRadius } from './visionFormulas.ts'
 
 export type LaneCreepKind = 'melee' | 'mage' | 'siege' | 'flagbearer'
 
@@ -170,7 +171,7 @@ function convertRange(seedRange: number) {
 }
 
 function convertVision(seedVision: number) {
-  return Math.max(8, seedVision / 70)
+  return worldVisionToMapRadius(seedVision)
 }
 
 function convertStructureRange(seedRange: number) {
