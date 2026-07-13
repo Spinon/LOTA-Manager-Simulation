@@ -71,6 +71,7 @@ import {
   honorsCombatReservations,
   healArcaneDirectly,
   isPositiveSimpleSkill,
+  isCreepRouteTargetValid,
   isUltimateSkill,
   isPointVisibleToTeam,
   loadGameData,
@@ -912,6 +913,43 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   contestSupport.pos = { x: enemyCamp.pos.x - 8, y: enemyCamp.pos.y }
   const contest = getEnemyPullContestPlan(pullState, contestSupport, [enemyPuller])
   assert.equal(contest?.puller.id, enemyPuller.id, 'the opposing greedy support should recognize and contest an exposed pull')
+}
+
+{
+  const retentionState = createInitialState('creep-target-retention-test')
+  retentionState.time = 120
+  const retentionWave = spawnWave(retentionState)
+  const creep = retentionWave.find((candidate) => candidate.team === 'dawn' && candidate.lane === 'mid')!
+  const enemyCreep = retentionWave.find((candidate) => candidate.team === 'dusk' && candidate.lane === 'mid')!
+  const enemyArcane = retentionState.arcanes.find((candidate) => candidate.team === 'dusk')!
+  creep.pos = { x: 50, y: 50 }
+  enemyCreep.pos = { x: 51, y: 50 }
+  enemyArcane.pos = { x: 50.8, y: 50 }
+  retentionState.arcanes.forEach((arcane) => {
+    if (arcane.id !== enemyArcane.id) arcane.stats.hp = 0
+  })
+  retentionState.creeps = [creep, enemyCreep]
+
+  const acquired = updateCreepMovement(creep, retentionState, simulationFrameSeconds, createTickFrameContext())
+  assert.equal(acquired.routeTargetId, enemyCreep.id, 'a lane creep should retain the target acquired in its perception window')
+  assert.ok((acquired.nextRouteTargetEvaluationAt ?? 0) > retentionState.time)
+
+  retentionState.time += simulationFrameSeconds
+  retentionState.creeps = [acquired, enemyCreep]
+  const retained = updateCreepMovement(acquired, retentionState, simulationFrameSeconds, createTickFrameContext())
+  assert.equal(retained.routeTargetId, enemyCreep.id, 'the target should remain stable between perception windows')
+
+  retained.aggroTargetId = enemyArcane.id
+  retained.aggroUntil = retentionState.time + 2
+  assert.equal(isCreepRouteTargetValid(retained, enemyCreep, retentionState, 'vision'), false, 'new hero aggro must invalidate the previous lane target')
+  retentionState.creeps = [retained, enemyCreep]
+  const aggroed = updateCreepMovement(retained, retentionState, simulationFrameSeconds, createTickFrameContext())
+  assert.equal(aggroed.routeTargetId, enemyArcane.id, 'aggro changes should force immediate target acquisition')
+
+  enemyArcane.stats.hp = 0
+  retentionState.creeps = [aggroed, enemyCreep]
+  const afterDeath = updateCreepMovement(aggroed, retentionState, simulationFrameSeconds, createTickFrameContext())
+  assert.notEqual(afterDeath.routeTargetId, enemyArcane.id, 'dead retained targets must be discarded immediately')
 }
 
 {

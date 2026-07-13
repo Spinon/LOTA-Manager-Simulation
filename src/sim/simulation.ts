@@ -205,6 +205,8 @@ export type Creep = {
   goldReward: number
   xpReward: number
   lastAttack: number
+  routeTargetId?: string
+  nextRouteTargetEvaluationAt?: number
   lastHitBy?: CombatSource
   aggroTargetId?: string
   aggroUntil?: number
@@ -567,6 +569,7 @@ export const itemResaleRate = 0.5
 export const simulationFrameSeconds = 1 / 30
 export const decisionGateSeconds = 0.1
 export const arcaneCombatEvaluationIntervalSeconds = 0.1
+export const creepTargetEvaluationIntervalSeconds = 0.1
 export const maxDecisionHoldSeconds = 6
 export const teamDecisionIntervalSeconds = 1.2
 export const fortificationDurationSeconds = 7
@@ -1621,6 +1624,8 @@ export function spawnWave(state: SimulationState): Creep[] {
           goldReward: seedReward.gold,
           xpReward: seedReward.xp,
           lastAttack: -10,
+          routeTargetId: undefined,
+          nextRouteTargetEvaluationAt: state.time,
         }
       }),
     ),
@@ -6932,6 +6937,8 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
       ...creep,
       pos: nextPos,
       pullCampId: pullCamp.id,
+      routeTargetId: pullCamp.id,
+      nextRouteTargetEvaluationAt: state.time + creepTargetEvaluationIntervalSeconds,
       pullUntil: creep.pullUntil && creep.pullUntil > state.time
         ? creep.pullUntil
         : state.time + lanePullDurationSeconds,
@@ -6943,13 +6950,35 @@ export function updateCreepMovement(creep: Creep, state: SimulationState, delta:
       pathIndex: syncLanePathIndex(creep.pos, lanePaths[creep.team][creep.lane], creep.pathIndex),
       pullCampId: undefined,
       pullUntil: undefined,
+      routeTargetId: undefined,
+      nextRouteTargetEvaluationAt: state.time,
     }
   }
-  if (getCachedRouteCreepTarget(creep, state, 'attack', frameContext)) {
+
+  const retainedTarget = creep.routeTargetId ? getCombatTargetById(state, creep.routeTargetId) : undefined
+  const retainedAttackTarget = retainedTarget && isCreepRouteTargetValid(creep, retainedTarget, state, 'attack') ? retainedTarget : undefined
+  const retainedVisionTarget = retainedTarget && isCreepRouteTargetValid(creep, retainedTarget, state, 'vision') ? retainedTarget : undefined
+  const evaluationDue = state.time + 0.0001 >= (creep.nextRouteTargetEvaluationAt ?? state.time)
+  let attackTarget = !evaluationDue ? retainedAttackTarget : undefined
+  let visibleTarget = !evaluationDue ? retainedVisionTarget : undefined
+
+  if (evaluationDue || (creep.routeTargetId && !retainedVisionTarget)) {
+    attackTarget = getCachedRouteCreepTarget(creep, state, 'attack', frameContext)
+    visibleTarget = attackTarget ?? getCachedRouteCreepTarget(creep, state, 'vision', frameContext)
+    creep = {
+      ...creep,
+      routeTargetId: (attackTarget ?? visibleTarget)?.id,
+      nextRouteTargetEvaluationAt: state.time + creepTargetEvaluationIntervalSeconds,
+    }
+  } else {
+    frameContext.routeCreepTargetCache.attack.set(creep.id, attackTarget ?? null)
+    frameContext.routeCreepTargetCache.vision.set(creep.id, visibleTarget ?? null)
+  }
+
+  if (attackTarget) {
     return creep
   }
 
-  const visibleTarget = getCachedRouteCreepTarget(creep, state, 'vision', frameContext)
   if (visibleTarget) {
     const moveTarget = getCreepMoveDestination(creep, visibleTarget)
     const nextPos = moveToward(creep.pos, moveTarget, 4.2 * delta)
@@ -7069,6 +7098,10 @@ export function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: 
 }
 
 export function isCachedRouteCreepAttackTargetValid(creep: Creep, target: CombatTarget, state: SimulationState) {
+  return isCreepRouteTargetValid(creep, target, state, 'attack')
+}
+
+export function isCreepRouteTargetValid(creep: Creep, target: CombatTarget, state: SimulationState, mode: RouteCreepTargetMode) {
   if ('team' in target && target.team === creep.team) return false
   if ('lane' in target && 'type' in target && target.lane !== creep.lane) return false
   if ('player' in target && (target.stats.hp <= 0 || target.respawn > state.time)) return false
@@ -7076,6 +7109,18 @@ export function isCachedRouteCreepAttackTargetValid(creep: Creep, target: Combat
   if ('tier' in target && target.hp <= 0) return false
   if ('kind' in target && 'hp' in target && target.hp <= 0) return false
   if ('maxHp' in target && !('player' in target) && !('type' in target) && !('tier' in target) && target.hp <= 0) return false
+  if (isBoss(target)) return false
+  if ('strength' in target && target.id !== creep.pullCampId) return false
+  if (creep.aggroUntil && creep.aggroUntil > state.time && creep.aggroTargetId && target.id !== creep.aggroTargetId) return false
+  if ('player' in target && !isNearRoute(target.pos, lanePaths[creep.team][creep.lane], 12)) return false
+  if ('tier' in target && !isTowerUnlocked(state, creep.team, target as Tower)) return false
+  if ('kind' in target && !isStructureUnlocked(state, creep.team, target as Structure)) return false
+  if ('maxHp' in target && !('player' in target) && !('type' in target) && !('tier' in target) && !('kind' in target) && !('strength' in target) && !isEnemyBaseUnlocked(state, creep.team)) return false
+
+  if (mode === 'vision') {
+    const visionRange = getCreepVisionRange(creep)
+    return distanceSquared(creep.pos, target.pos) <= visionRange * visionRange
+  }
 
   const attackRange = isStructureLikeTarget(target)
     ? isMeleeCreep(creep) ? 3.2 : creep.range

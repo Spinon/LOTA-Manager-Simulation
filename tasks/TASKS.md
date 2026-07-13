@@ -605,7 +605,9 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T22 - Percepção persistente das creeps
+### [x] T22 - Percepção persistente das creeps
+
+> Concluída em 2026-07-13 - Movimento permanece em 30Hz, enquanto percepção e grade espacial são atualizadas em janelas de 0,1s ou por invalidação imediata.
 
 **Objetivo**: manter movimento em 30Hz sem refazer aquisição de alvo e consultas espaciais completas em todo tick.
 
@@ -615,6 +617,8 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Invalidar imediatamente em morte, saída de alcance, pull, troca de aggro ou desbloqueio de objetivo.
 
 **Critérios**: movimento e ataques visualmente idênticos; pulls e aggro preservados; redução mensurável de `updateCreepMovement/getRouteCreepTarget`.
+
+**Medição**: A/B no mesmo runtime e seed até 06:00 reduziu a mediana de 12,61s para 10,25s, ganho de 23,0% (`33,3x -> 41,0x`) sobre o estado já otimizado pela T21. Alvo morto, mudança de aggro, pull e desbloqueio de objetivo furam a janela e reavaliam imediatamente; testes cobrem retenção, aggro e descarte por morte.
 
 ---
 
