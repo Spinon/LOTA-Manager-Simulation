@@ -12,13 +12,16 @@ import {
   createMatchRenderFrame,
   createMatchStaticData,
   damageEntity,
+  distance,
   enrichTeamPlanWithMapTarget,
   formatMatchTime,
   getGamePhase,
+  getBountyRuneSide,
   getArcanePassiveCombatModifiers,
   getCampClearAssessment,
   getHeroDefinition,
   getItemPurchasePlan,
+  getPregameBountyRunePlan,
   getJungleStackChance,
   getHigherPriorityFarmAlly,
   getCreepXpShare,
@@ -42,6 +45,7 @@ import {
   materializeMatchRenderFrame,
   matchPreparationStartSeconds,
   resetDisengagedNeutralCamps,
+  runeSpawnPoints,
   processJungleStacks,
   resolveDeaths,
   resolveCombat,
@@ -102,7 +106,7 @@ await loadGameData()
   const openingGold = openingArcane.stats.gold
   const preparationTick = tick(openingState, 1, true)
   assert.equal(preparationTick.time, -59)
-  assert.equal(preparationTick.arcanes[0].macroDecision, 'Preparar rota')
+  assert.equal(preparationTick.arcanes[0].macroDecision, 'Defender runa de ouro')
   assert.notDeepEqual(preparationTick.arcanes[0].pos, openingPosition, 'Arcanes should move toward lane during preparation')
   assert.equal(preparationTick.arcanes[0].stats.gold, openingGold, 'passive gold must not accrue before 00:00')
   assert.equal(preparationTick.creeps.length, 0)
@@ -116,8 +120,44 @@ await loadGameData()
   zeroState.time = -0.01
   const atZero = tick(zeroState, 0.02, true)
   assert.ok(atZero.creeps.length > 0, 'the first lane wave should spawn at 00:00')
-  assert.equal(atZero.runes.filter((rune) => rune.kind === 'bounty').length, 4, 'gold runes should spawn at 00:00')
+  const bountyRunes = atZero.runes.filter((rune) => rune.kind === 'bounty')
+  assert.equal(bountyRunes.length, 6, 'six gold runes should spawn at 00:00')
+  assert.equal(bountyRunes.filter((rune) => rune.side === 'dawn').length, 3)
+  assert.equal(bountyRunes.filter((rune) => rune.side === 'dusk').length, 3)
   assert.equal(atZero.runes.some((rune) => rune.kind === 'power'), false)
+
+  for (const point of runeSpawnPoints.bounty) {
+    assert.ok(runeSpawnPoints.bounty.some((mirror) => mirror.x === 100 - point.x && mirror.y === 100 - point.y), 'every bounty point should have an exact mirror')
+  }
+  assert.equal(runeSpawnPoints.bounty.filter((point) => getBountyRuneSide(point) === 'dawn').length, 3)
+
+  assert.ok(preparationTick.arcanes.some((arcane) => arcane.macroDecision === 'Defender runa de ouro'))
+  assert.ok(preparationTick.arcanes.some((arcane) => arcane.macroDecision === 'Invadir runa de ouro'))
+  const dawnMid = preparationTick.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Mid')!
+  const dawnMidRune = runeSpawnPoints.bounty
+    .filter((point) => getBountyRuneSide(point) === 'dawn')
+    .sort((a, b) => distance(a, { x: 50, y: 50 }) - distance(b, { x: 50, y: 50 }))[0]
+  assert.deepEqual(dawnMid.target, dawnMidRune, 'the mid should cover the allied river bounty rune')
+
+  const noCombatState = createInitialState('opening-no-combat-test')
+  noCombatState.time = -30
+  noCombatState.arcanes[0].pos = { x: 50, y: 50 }
+  noCombatState.arcanes[5].pos = { x: 50, y: 50 }
+  const hpBeforePreparationFight = noCombatState.arcanes.map((arcane) => arcane.stats.hp)
+  const noCombatTick = tick(noCombatState, 1, true)
+  assert.deepEqual(noCombatTick.arcanes.map((arcane) => arcane.stats.hp), hpBeforePreparationFight, 'pregame positioning must not deal combat damage')
+
+  const threatenedState = createInitialState('opening-rune-response-test')
+  threatenedState.time = -30
+  const reactingSupport = threatenedState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Greedy Support')!
+  const threatenedPoint = runeSpawnPoints.bounty.find((point) => getBountyRuneSide(point) === 'dawn')!
+  reactingSupport.pos = { x: threatenedPoint.x + 4, y: threatenedPoint.y }
+  const invader = threatenedState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  invader.pos = { ...threatenedPoint }
+  const responsePlan = getPregameBountyRunePlan(threatenedState, reactingSupport)
+  assert.equal(responsePlan.kind, 'defend', 'a nearby support should answer pressure on an allied rune')
+  assert.equal(responsePlan.threatened, true)
+  assert.deepEqual(responsePlan.point, threatenedPoint)
 
   const jungleState = createInitialState('opening-jungle-test')
   jungleState.time = 59.99

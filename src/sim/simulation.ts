@@ -530,10 +530,12 @@ export const bossPath: Point[] = [
 ]
 export const runeSpawnPoints = {
   bounty: [
-    { x: 18, y: 76 },
-    { x: 82, y: 24 },
-    { x: 24, y: 28 },
-    { x: 76, y: 72 },
+    { x: 13, y: 70 },
+    { x: 87, y: 30 },
+    { x: 34, y: 86 },
+    { x: 66, y: 14 },
+    { x: 38, y: 44 },
+    { x: 62, y: 56 },
   ],
   power: [
     { x: 43, y: 47 },
@@ -1957,10 +1959,15 @@ export function createBountyRunes(spawnIndex: number, time: number): MapRune[] {
     id: `rune-bounty-${spawnIndex}-${index}`,
     kind: 'bounty',
     pos,
+    side: getBountyRuneSide(pos),
     spawnedAt: time,
     expiresAt: time + NON_COMBAT_RULES.map.bountyRuneIntervalSeconds,
     spawnIndex,
   }))
+}
+
+export function getBountyRuneSide(point: Point): TeamId {
+  return distance(point, teamInfo.dawn.base) <= distance(point, teamInfo.dusk.base) ? 'dawn' : 'dusk'
 }
 
 export function createPowerRunes(spawnIndex: number, time: number): MapRune[] {
@@ -3953,26 +3960,24 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
   const ownBase = teamInfo[arcane.team].base
   const path = lanePaths[arcane.team][arcane.lane]
   if (state.time < 0) {
-    const stagingStart = path[Math.min(1, path.length - 1)]
-    const stagingEnd = path[Math.min(2, path.length - 1)]
-    const stagingAnchor = {
-      x: stagingStart.x + (stagingEnd.x - stagingStart.x) * 0.72,
-      y: stagingStart.y + (stagingEnd.y - stagingStart.y) * 0.72,
-    }
-    const stagingPoint = formationPoint(stagingAnchor, arcane.id)
-    const nextPos = moveToward(arcane.pos, stagingPoint, getEffectiveArcaneMoveSpeed(state, arcane) * delta)
+    const runePlan = getPregameBountyRunePlan(state, arcane)
+    const nextPos = moveToward(arcane.pos, runePlan.point, getEffectiveArcaneMoveSpeed(state, arcane) * delta)
     return {
       ...arcane,
-      target: stagingPoint,
+      target: runePlan.point,
       pathIndex: Math.min(2, path.length - 1),
-      macroDecision: 'Preparar rota',
-      microDecision: 'Posicionando antes da partida',
-      aiMode: 'push_lane',
-      aiReason: 'pre_game_positioning',
+      macroDecision: runePlan.kind === 'invade' ? 'Invadir runa de ouro' : 'Defender runa de ouro',
+      microDecision: runePlan.kind === 'invade'
+        ? `Avancando para runa inimiga (${laneNames[arcane.lane]})`
+        : runePlan.threatened
+          ? 'Respondendo invasao na runa aliada'
+          : `Protegendo runa aliada (${laneNames[arcane.lane]})`,
+      aiMode: runePlan.kind === 'invade' ? 'finish_enemy' : 'push_lane',
+      aiReason: runePlan.threatened ? 'pre_game_rune_defense, enemy_pressure' : `pre_game_rune_${runePlan.kind}`,
       nextDecisionAt: 0,
       forceDecision: state.time + delta >= 0,
       lastDecisionPos: nextPos,
-      decision: 'Posicionando antes da partida',
+      decision: runePlan.kind === 'invade' ? 'Disputando runa inimiga' : 'Protegendo runa aliada',
       pos: nextPos,
     }
   }
@@ -4485,6 +4490,57 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     pos: nextPos,
     stats: nextStats,
   }
+}
+
+export type PregameBountyRunePlan = {
+  point: Point
+  kind: 'defend' | 'invade'
+  threatened: boolean
+}
+
+export function getPregameBountyRunePlan(state: SimulationState, arcane: Arcane): PregameBountyRunePlan {
+  const ownedPoints = runeSpawnPoints.bounty.filter((point) => getBountyRuneSide(point) === arcane.team)
+  const enemyPoints = runeSpawnPoints.bounty.filter((point) => getBountyRuneSide(point) !== arcane.team)
+  const lanePath = lanePaths[arcane.team][arcane.lane]
+  const closestToLane = (points: Point[]) => [...points].sort((a, b) => {
+    if (arcane.lane === 'mid') {
+      return distance(a, { x: 50, y: 50 }) - distance(b, { x: 50, y: 50 })
+    }
+    return distance(a, nearestLanePoint(a, lanePath)) - distance(b, nearestLanePoint(b, lanePath)) ||
+      distance(arcane.pos, a) - distance(arcane.pos, b)
+  })[0]
+  const ownLanePoint = closestToLane(ownedPoints) ?? ownedPoints[0]
+  const enemyLanePoint = closestToLane(enemyPoints) ?? enemyPoints[0]
+  const enemies = state.arcanes.filter((candidate) => (
+    candidate.team !== arcane.team &&
+    candidate.stats.hp > 0 &&
+    candidate.respawn <= state.time
+  ))
+  const allies = state.arcanes.filter((candidate) => (
+    candidate.team === arcane.team &&
+    candidate.id !== arcane.id &&
+    candidate.stats.hp > 0 &&
+    candidate.respawn <= state.time
+  ))
+  const threatenedPoint = ownedPoints
+    .map((point) => {
+      const enemyCount = enemies.filter((enemy) => distance(enemy.pos, point) <= 16).length
+      const allyCount = allies.filter((ally) => distance(ally.pos, point) <= 14).length
+      return { point, enemyCount, allyCount, score: enemyCount * 30 - allyCount * 14 - distance(arcane.pos, point) * 0.2 }
+    })
+    .filter(({ enemyCount, allyCount }) => enemyCount > 0 && enemyCount >= allyCount)
+    .sort((a, b) => b.score - a.score)[0]
+  const assignedInvader = arcane.role === 'Greedy Support' || arcane.role === 'Dedicated Support'
+  const threatOnAssignedRune = threatenedPoint && distance(threatenedPoint.point, ownLanePoint) < 1
+  const canReactToThreat = threatenedPoint && (threatOnAssignedRune || distance(arcane.pos, threatenedPoint.point) <= 22)
+
+  if (canReactToThreat && threatenedPoint) {
+    return { point: threatenedPoint.point, kind: 'defend', threatened: true }
+  }
+  if (assignedInvader) {
+    return { point: enemyLanePoint, kind: 'invade', threatened: false }
+  }
+  return { point: ownLanePoint, kind: 'defend', threatened: false }
 }
 
 export function buyAtBase(state: SimulationState, arcane: Arcane): Arcane {

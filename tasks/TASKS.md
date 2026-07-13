@@ -308,6 +308,25 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
+### [x] T14.4 - Disputa de runas no pré-jogo
+
+> Concluída em 2026-07-12 - Reposicionei quatro runas laterais, adicionei o par do rio e implementei defesa/invasão pré-jogo por role, lane e pressão inimiga local.
+
+**Objetivo**: transformar `-01:00 → 00:00` em uma fase ativa de posicionamento, defesa e invasão das runas de ouro.
+
+**Escopo**:
+- Reposicionar os quatro pontos de ouro das side lanes em áreas mais defensivas, mantendo simetria exata entre Dawn e Dusk.
+- Adicionar duas runas de ouro próximas ao mid, uma de cada lado da lane e acompanhando a direção do rio.
+- Atribuir lado a cada runa e criar planos pré-jogo por role/rota: cores cobrem pontos aliados e supports buscam invasões coordenadas.
+- Detectar inimigos pressionando runas aliadas e permitir reação defensiva antes do spawn em `00:00`.
+- Preservar ausência de combate antes de `00:00`; a disputa é por posição e a coleta ocorre no spawn.
+
+**Critérios**: seis pontos em três pares espelhados, três por lado; IA produz defensores e invasores, reage a ameaça próxima e chega às áreas antes do spawn; testes, lint e build verdes.
+
+**Medição**: os dez Arcanes chegaram a até 2,2 unidades de um ponto de ouro antes de `00:00`; as seis runas foram coletadas no spawn e a seed de auditoria produziu divisão 4/2 entre os times, confirmando roubos. Testes cobrem simetria, três runas por lado, cobertura do mid, invasores, reação defensiva e ausência de dano pré-jogo; testes, lint e build verdes.
+
+---
+
 ### [ ] T15 - Auditoria e implementação integral de skills
 
 **Objetivo**: verificar todas as skills importadas e garantir que cada uma possua execução funcional, incluindo dano, targeting, cooldown, mana, scaling, passivas, summons e todos os efeitos favoráveis/adversos e status effects descritos.
