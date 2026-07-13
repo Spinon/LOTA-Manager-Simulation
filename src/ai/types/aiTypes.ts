@@ -89,10 +89,15 @@ export interface PlayerAiProfile {
   farmPriority: number
   farmingEfficiency: number
   gpmDecisionBias: number
+  mechanics: number
+  laning: number
+  mapAwareness: number
   teamfight: number
   positioning: number
   communication: number
   discipline: number
+  clutch: number
+  heroMastery: number
   aggression: number
   personality: {
     riskTolerance: number
@@ -119,6 +124,17 @@ export type ExecutionFailureType =
   | 'panic_retreat'
   | 'wrong_target'
   | 'late_reaction'
+  | 'late_cast'
+  | 'missed_skillshot'
+  | 'control_overlap'
+  | 'save_overlap'
+  | 'bad_position'
+  | 'premature_retreat'
+  | 'chase_too_far'
+  | 'failed_aggro_drop'
+  | 'delayed_teleport'
+  | 'no_follow_up'
+  | 'panic_item_use'
 
 export interface ExecutionOutcome {
   intendedMode: PlayerModeType
@@ -143,6 +159,10 @@ export interface PlayerContext {
     itemTimingUrgency: number
     developmentNeed: number
     economyNeed: number
+    fatigue: number
+    tilt: number
+    pressure: number
+    informationUncertainty: number
   }
   local: {
     enemyNumbersAdvantage: number

@@ -6,6 +6,7 @@ import {
   formatCompactGold,
   formatMatchTime,
   getArcaneBarrierAmount,
+  getArcaneCoordinationReliability,
   getArcaneDamageRangeLabel,
   getArcaneNetWorth,
   getArcaneSlowPercent,
@@ -27,6 +28,8 @@ import {
   getItemTimingUrgency,
   getLaneWinAssessment,
   getLevelProgress,
+  getPlayerAiProfile,
+  getPlayerMentalState,
   loadGameData,
   materializeMatchRenderFrame,
   matchPreparationStartSeconds,
@@ -2211,6 +2214,8 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
       ? state.arcanes.find((arcane) => arcane.id === combatBoard.primaryTargetId)
       : undefined
     const activeEffects = getActiveEffectLabels(state, entity)
+    const playerProfile = getPlayerAiProfile(entity)
+    const mentalState = getPlayerMentalState(state, entity)
     const hpPercent = Math.round((entity.stats.hp / Math.max(1, entity.stats.maxHp * auraMultiplier)) * 100)
     const manaPercent = Math.round((entity.stats.mana / Math.max(1, entity.stats.maxMana * auraMultiplier)) * 100)
     return (
@@ -2295,6 +2300,23 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
               ['Conf.', combatBoard ? `${combatBoard.targetFocusConfidence}%` : '-'],
               ['Risco', combatBoard?.primaryTargetDanger !== undefined ? `${Math.round(combatBoard.primaryTargetDanger)}` : '-'],
               ['Razao', entity.aiReason],
+            ]}
+          />
+          <MetricGroup
+            title="Jogador"
+            items={[
+              ['Mecanica', `${playerProfile.mechanics}`],
+              ['Laning', `${playerProfile.laning}`],
+              ['Mapa', `${playerProfile.mapAwareness}`],
+              ['Teamfight', `${playerProfile.teamfight}`],
+              ['Posicao', `${playerProfile.positioning}`],
+              ['Comunic.', `${playerProfile.communication}`],
+              ['Disciplina', `${playerProfile.discipline}`],
+              ['Clutch', `${playerProfile.clutch}`],
+              ['Maestria', `${playerProfile.heroMastery}`],
+              ['Fadiga', `${Math.round(mentalState.fatigue)}`],
+              ['Tilt', `${Math.round(mentalState.tilt)}`],
+              ['Coord.', `${Math.round(getArcaneCoordinationReliability(state, entity) * 100)}%`],
             ]}
           />
         </section>
@@ -3165,6 +3187,17 @@ function getExecutionFailureLabel(failure: ExecutionFailureType) {
   if (failure === 'overcommit') return 'Overcommit'
   if (failure === 'panic_retreat') return 'Panico'
   if (failure === 'wrong_target') return 'Alvo ruim'
+  if (failure === 'late_cast') return 'Cast atrasado'
+  if (failure === 'missed_skillshot') return 'Skill errada'
+  if (failure === 'control_overlap') return 'CC sobreposto'
+  if (failure === 'save_overlap') return 'Save sobreposto'
+  if (failure === 'bad_position') return 'Posicao ruim'
+  if (failure === 'premature_retreat') return 'Recuo precoce'
+  if (failure === 'chase_too_far') return 'Chase longo'
+  if (failure === 'failed_aggro_drop') return 'Falha de aggro'
+  if (failure === 'delayed_teleport') return 'TP atrasado'
+  if (failure === 'no_follow_up') return 'Sem follow-up'
+  if (failure === 'panic_item_use') return 'Item em panico'
   return 'Atraso'
 }
 

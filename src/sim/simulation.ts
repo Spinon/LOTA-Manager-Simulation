@@ -1,7 +1,7 @@
 import type { ItemSeed } from '../data/itemSeeds.ts'
 import { analyzeGameState } from '../ai/analysis/gameStateAnalyzer.ts'
 import { DEFAULT_TEAM_AI_PROFILES } from '../ai/config/aiConstants.ts'
-import { resolvePlayerExecution } from '../ai/execution/executionModel.ts'
+import { getCoordinationReliability, resolvePlayerExecution } from '../ai/execution/executionModel.ts'
 import { addAiMemoryEvent, areaDangerFromMemory, pruneAiMemory } from '../ai/memory/memorySystem.ts'
 import { selectPlayerMode } from '../ai/player/playerAgent.ts'
 import { selectTeamPlan } from '../ai/team/teamBrain.ts'
@@ -3794,6 +3794,7 @@ export function createPlayerAiContext(input: {
   const estimatedLaneFarmGpm = getEstimatedLaneFarmGpm(input.state, input.arcane, input.safeEnemyCreeps.filter((creep) => creep.lane === input.arcane.lane))
   const estimatedJungleFarmGpm = input.economyCamp ? getEstimatedJungleFarmGpm(input.state, input.arcane, input.economyCamp) : 0
   const estimatedLanePushGpm = getEstimatedLanePushGpm(input.arcane, input.safeEnemyCreeps)
+  const mentalState = getPlayerMentalState(input.state, input.arcane, input.dangerScore, Math.max(0, -localNumbers.advantage))
 
   return {
     gameTime: analyzed.gameTime,
@@ -3809,6 +3810,7 @@ export function createPlayerAiContext(input: {
       itemTimingUrgency,
       developmentNeed: getArcaneDevelopmentNeed(input.arcane, input.state.time),
       economyNeed: getArcaneEconomyNeed(input.arcane, input.state.time),
+      ...mentalState,
     },
     local: {
       enemyNumbersAdvantage: Math.max(0, -localNumbers.advantage),
@@ -3830,7 +3832,7 @@ export function createPlayerAiContext(input: {
 }
 
 export function getPlayerAiProfile(arcane: Arcane) {
-  const cacheKey = `${arcane.id}:${arcane.role}:${arcane.aggression}:${arcane.shotcalling}`
+  const cacheKey = `${arcane.id}:${arcane.heroDefinitionId}:${arcane.role}:${arcane.aggression}:${arcane.shotcalling}`
   const cached = playerAiProfileCache.get(cacheKey)
   if (cached) return cached
   const profile = buildPlayerAiProfile(arcane)
@@ -3840,20 +3842,44 @@ export function getPlayerAiProfile(arcane: Arcane) {
 
 export function buildPlayerAiProfile(arcane: Arcane) {
   const role = getPlayerAiRole(arcane.role)
-  const support = arcane.role.includes('Support')
-  const discipline = arcane.role === 'Dedicated Support' ? 76 : arcane.role === 'Safe Lane' ? 66 : 58
+  const baselines = getPlayerSkillBaselines(arcane.role)
+  const mechanics = getStablePlayerSkill(arcane.id, 'mechanics', baselines.mechanics)
+  const laning = getStablePlayerSkill(arcane.id, 'laning', baselines.laning)
+  const mapAwareness = getStablePlayerSkill(arcane.id, 'map_awareness', baselines.mapAwareness)
+  const teamfight = getStablePlayerSkill(arcane.id, 'teamfight', baselines.teamfight)
+  const positioning = getStablePlayerSkill(arcane.id, 'positioning', baselines.positioning)
+  const communication = Math.round(clampNumber(
+    arcane.shotcalling * 0.55 + getStablePlayerSkill(arcane.id, 'communication', baselines.communication) * 0.45,
+    20,
+    96,
+  ))
+  const discipline = getStablePlayerSkill(arcane.id, 'discipline', baselines.discipline)
+  const clutch = getStablePlayerSkill(arcane.id, 'clutch', baselines.clutch)
+  const hero = getHeroDefinition(arcane.heroDefinitionId)
+  const roleFit = getHeroRoleMasteryFit(arcane.role, hero.roles)
+  const heroMastery = getStablePlayerSkill(
+    `${arcane.id}:${arcane.heroDefinitionId}`,
+    'hero_mastery',
+    80 - (hero.complexity - 1) * 5 + roleFit,
+    10,
+  )
   const farmPriority = getRoleFarmPriority(arcane.role)
   const greed = arcane.role === 'Safe Lane' ? 84 : arcane.role === 'Mid' ? 66 : arcane.role === 'Offlane' ? 46 : arcane.role === 'Greedy Support' ? 30 : 14
   return {
     playerId: arcane.id,
     role,
     farmPriority,
-    farmingEfficiency: arcane.role === 'Safe Lane' ? 86 : arcane.role === 'Mid' ? 72 : arcane.role === 'Offlane' ? 56 : arcane.role === 'Greedy Support' ? 36 : 20,
+    farmingEfficiency: getStablePlayerSkill(arcane.id, 'farming', arcane.role === 'Safe Lane' ? 86 : arcane.role === 'Mid' ? 76 : arcane.role === 'Offlane' ? 60 : arcane.role === 'Greedy Support' ? 44 : 34, 6),
     gpmDecisionBias: getRoleGpmDecisionBias(arcane.role),
-    teamfight: arcane.role === 'Offlane' ? 76 : arcane.role === 'Mid' ? 68 : support ? 62 : 56,
-    positioning: discipline,
-    communication: arcane.shotcalling,
+    mechanics,
+    laning,
+    mapAwareness,
+    teamfight,
+    positioning,
+    communication,
     discipline,
+    clutch,
+    heroMastery,
     aggression: arcane.aggression,
     personality: {
       riskTolerance: arcane.aggression,
@@ -3866,6 +3892,65 @@ export function buildPlayerAiProfile(arcane: Arcane) {
       tiltLevel: 0,
     },
   } as const
+}
+
+export function getPlayerSkillBaselines(role: string) {
+  if (role === 'Safe Lane') return { mechanics: 82, laning: 84, mapAwareness: 68, teamfight: 72, positioning: 74, communication: 62, discipline: 70, clutch: 76 }
+  if (role === 'Mid') return { mechanics: 86, laning: 86, mapAwareness: 76, teamfight: 80, positioning: 75, communication: 70, discipline: 68, clutch: 78 }
+  if (role === 'Offlane') return { mechanics: 74, laning: 78, mapAwareness: 76, teamfight: 86, positioning: 80, communication: 76, discipline: 76, clutch: 80 }
+  if (role === 'Greedy Support') return { mechanics: 76, laning: 72, mapAwareness: 86, teamfight: 82, positioning: 78, communication: 84, discipline: 74, clutch: 76 }
+  return { mechanics: 70, laning: 72, mapAwareness: 90, teamfight: 80, positioning: 84, communication: 92, discipline: 82, clutch: 80 }
+}
+
+export function getStablePlayerSkill(playerId: string, skill: string, baseline: number, spread = 8) {
+  const variation = (seededRandomUnit(playerId, `player-skill:${skill}`) * 2 - 1) * spread
+  return Math.round(clampNumber(baseline + variation, 20, 98))
+}
+
+export function getHeroRoleMasteryFit(role: string, heroRoles: HeroRole[]) {
+  if (role === 'Safe Lane') return heroRoles.includes('carry') ? 5 : heroRoles.includes('pusher') ? 2 : -3
+  if (role === 'Mid') return heroRoles.some((heroRole) => heroRole === 'nuker' || heroRole === 'escape' || heroRole === 'carry') ? 4 : -2
+  if (role === 'Offlane') return heroRoles.some((heroRole) => heroRole === 'durable' || heroRole === 'initiator' || heroRole === 'disabler') ? 5 : -3
+  return heroRoles.some((heroRole) => heroRole === 'support' || heroRole === 'disabler') ? 5 : -3
+}
+
+export function getPlayerMentalState(
+  state: SimulationState,
+  arcane: Arcane,
+  danger = getDangerScore(state, arcane),
+  enemyNumbersAdvantage = 0,
+) {
+  const team = getAnalyzedGameState(state).teams[arcane.team]
+  const minutes = Math.max(0, state.time) / 60
+  const statusFatigue = arcane.decisionStatus === 'hesitant' ? 8 : arcane.decisionStatus === 'tilted' ? 12 : arcane.decisionStatus === 'sharp' ? -4 : 0
+  const fatigue = clampNumber(
+    Math.max(0, minutes - 22) * 1.05 + Math.max(0, minutes - 45) * 0.75 + statusFatigue,
+    0,
+    68,
+  )
+  const netWorthDeficitPct = Math.max(0, -team.netWorthLead) / Math.max(1, team.netWorth) * 100
+  const statusTilt = arcane.decisionStatus === 'tilted' ? 34 : arcane.decisionStatus === 'hesitant' ? 8 : arcane.decisionStatus === 'sharp' ? -5 : 0
+  const tilt = clampNumber(
+    arcane.deaths * 3.4 - arcane.kills * 1.25 - arcane.assists * 0.22 + netWorthDeficitPct * 0.75 + team.throwRisk * 0.12 + statusTilt,
+    0,
+    82,
+  )
+  const pressure = clampNumber(
+    danger * 0.48 + enemyNumbersAdvantage * 12 + (1 - arcane.stats.hp / Math.max(1, arcane.stats.maxHp)) * 28 + team.baseThreat * 0.18 + (minutes >= 40 ? 8 : 0),
+    0,
+    100,
+  )
+  const informationUncertainty = clampNumber(
+    (100 - team.visionControl) * 0.66 + (team.deadHeroes > 0 ? team.deadHeroes * 5 : 0) + (state.time < 0 ? 8 : 0),
+    0,
+    100,
+  )
+  return { fatigue, tilt, pressure, informationUncertainty }
+}
+
+export function getArcaneCoordinationReliability(state: SimulationState, arcane: Arcane) {
+  const mentalState = getPlayerMentalState(state, arcane)
+  return getCoordinationReliability(getPlayerAiProfile(arcane), mentalState.fatigue, mentalState.tilt)
 }
 
 export function getPlayerAiRole(role: string) {
@@ -7449,9 +7534,10 @@ export function canCommitCoordinatedSkill(
   const board = getArcaneCombatBlackboard(state, arcane)
   if (!board) return true
   const sourceId = `${arcane.id}-${skill.id}`
+  const honorsReservations = honorsCombatReservations(state, arcane, skill.id, target.id)
   if (target.team === arcane.team) {
     const isSave = isSimpleHealingSkill(skill) || profile.isSave || profile.barrier > 0 || hasAnySimpleSkillTag(skill, ['save', 'shield', 'barrier', 'cleanse', 'dispel'])
-    return !isSave || canReserveSave(
+    return !isSave || !honorsReservations || canReserveSave(
       (board.saveReservations ?? []).filter((reservation) => reservation.sourceId !== sourceId),
       target.id,
       state.time,
@@ -7460,7 +7546,7 @@ export function canCommitCoordinatedSkill(
   }
 
   const controlDuration = getSimpleSkillControlDuration(skill, profile)
-  if (controlDuration > 0 && !canReserveControl(
+  if (controlDuration > 0 && honorsReservations && !canReserveControl(
     (board.controlReservations ?? []).filter((reservation) => reservation.sourceId !== sourceId),
     target.id,
     state.time,
@@ -7468,13 +7554,24 @@ export function canCommitCoordinatedSkill(
   )) return false
 
   const damage = getSimpleSkillDamage(arcane, skill, level)
-  return damage <= 0 || canReserveDamage(
+  return damage <= 0 || !honorsReservations || canReserveDamage(
     (board.damageReservations ?? []).filter((reservation) => reservation.sourceId !== sourceId),
     target.id,
     target.stats.hp,
     state.time,
     isUltimateSkill(skill),
   )
+}
+
+export function honorsCombatReservations(
+  state: SimulationState,
+  arcane: Arcane,
+  sourceId: string,
+  targetId: string,
+) {
+  const reliability = getArcaneCoordinationReliability(state, arcane)
+  const window = Math.floor(state.time * 2)
+  return seededRandomUnit(state.matchSeed, `combat-coordination:${arcane.id}:${sourceId}:${targetId}:${window}`) <= reliability
 }
 
 export function registerCombatSkillReservation(

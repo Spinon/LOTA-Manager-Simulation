@@ -356,7 +356,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T15 - Integração da IA de combate coletivo
+### [x] T15 - Integração da IA de combate coletivo
 
 **Fonte**: `Game Systems/moba_teamfight_skirmish_laning_ai_codex.txt`.
 
@@ -373,7 +373,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - [x] **Cérebro básico**: máquina de fases `pre_contact -> opening -> commit/sustain -> chase/disengage`, score de alvo, foco compartilhado, stickiness e troca de alvo.
 - [x] **Coordenação**: papéis dinâmicos, formação, reservas de CC/dano/save/interrupt, anti-overkill e uso contextual de ultimates.
 - [x] **Cenários**: skirmishes/reforços, trades de lane, level timings, influência da wave, runas/camps/pulls, dive, counter-dive e transferência de aggro.
-- [ ] **Humanização e tuning**: integrar mechanics, laning, map awareness, teamfight, positioning, communication, discipline, clutch, mastery, fatigue e tilt ao modelo de execução.
+- [x] **Humanização e tuning**: integrar mechanics, laning, map awareness, teamfight, positioning, communication, discipline, clutch, mastery, fatigue e tilt ao modelo de execução.
 
 **Progresso da fundação (2026-07-12)**:
 - Detector espacial agrupa participantes e classifica trade/all-in de lane, runa, campo, boss, dive, teamfight e highground.
@@ -422,6 +422,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Inimigos locais fora da visão deixaram de vazar poder para a análise do cenário. O inspetor mostra chase, formação e oportunidade/risco de counter sem ampliar os frames compactos do replay.
 - A matriz automatizada agora supera 30 casos comportamentais entre detecção, cenários, ciclo de vida, foco e coordenação; há regressão runtime específica para fim de chase sem alvo visível. Testes, lint e build verdes.
 - Benchmark determinístico: 50,7x wall / 45,6x CPU, digest `fb9c6b45dee0bc55`. Uma partida de auditoria terminou organicamente em 58,1min (53-34), sem watchdog; o volume alto de kills desta seed permanece para o rebalance geral.
+
+**Conclusão da humanização e tuning (2026-07-13)**:
+- Cada jogador ganhou perfil determinístico de mechanics, laning, map awareness, teamfight, positioning, communication, discipline e clutch. `heroMastery` varia pela combinação jogador + Arcane, complexidade do kit e aderência à role; trocar o herói invalida corretamente o cache do perfil.
+- O modelo escolhe a habilidade relevante por ação: laning/mechanics pesam no farm, teamfight/communication no follow-up, positioning/map awareness no recuo, e discipline/communication nos objetivos. Clutch reduz a perda sob pressão.
+- Fadiga, tilt, pressão e incerteza são derivados de tempo, status de decisão, KDA, desvantagem, perigo, visão e estado da base. Esses valores não são persistidos nem serializados, preservando frames compactos e uma única fonte de verdade.
+- Falhas deixaram de ser quatro resultados genéricos: casts/TPs atrasados, skillshot perdido, alvo errado, overlap de CC/save, posição ruim, recuo precoce, chase longo, falha de aggro, ausência de follow-up e uso de item em pânico possuem afinidade com as deficiências do jogador e continuam determinísticos por seed.
+- Reservas coletivas agora têm confiabilidade de 68–97% conforme comunicação, teamfight, disciplina, fadiga e tilt. Uma falha de comunicação pode produzir overlap real sem remover a coordenação predominante dos times profissionais.
+- O inspetor mostra os nove atributos, fadiga, tilt e confiabilidade de coordenação. Testes cobrem especialização contextual, clutch, degradação mental, taxonomia de falhas, cache de mastery e determinismo; testes, lint e build verdes.
+- Comparação A/B na mesma estação e seed: commit anterior 37,4x, versão humanizada 38,1x, sem regressão mensurável; digest novo `b51a7547e7d62408` estável. A auditoria terminou organicamente em 41,7min (6-52), sem watchdog; o placar unilateral permanece registrado para amostragem de balanceamento, não como falha de término.
 
 **Restrições**:
 - O arquivo-fonte é especificação/pseudocódigo; funções simbólicas devem ser adaptadas aos tipos, fórmulas, skills, itens e status já existentes, sem criar uma segunda resolução de combate.

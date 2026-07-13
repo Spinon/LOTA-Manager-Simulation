@@ -27,6 +27,8 @@ import {
   getCampClearAssessment,
   getHeroDefinition,
   getItemPurchasePlan,
+  getPlayerAiProfile,
+  getPlayerMentalState,
   getPregameBountyRunePlan,
   getPregameRuneContestAssessment,
   getJungleStackChance,
@@ -55,9 +57,11 @@ import {
   getRoleFarmPriority,
   getRoleGpmTarget,
   getArcaneEconomyNeed,
+  getArcaneCoordinationReliability,
   getTowerTankAssessment,
   getTowerTankCandidate,
   hasTimedEffect,
+  honorsCombatReservations,
   healArcaneDirectly,
   isPositiveSimpleSkill,
   isUltimateSkill,
@@ -461,6 +465,36 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   assert.equal(upgraded.items.includes(plan!.soldItemName!), false)
   assert.equal(upgraded.items.includes(plan!.item.name), true)
   assert.equal(upgraded.stats.gold, goldBefore - plan!.netCost, 'the purchase should credit resale gold before buying the upgrade')
+}
+
+{
+  const humanState = createInitialState('humanized-execution-runtime')
+  const player = humanState.arcanes[0]
+  const profile = getPlayerAiProfile(player)
+  assert.ok(profile.mechanics >= 20 && profile.mechanics <= 98)
+  assert.ok(profile.mapAwareness >= 20 && profile.mapAwareness <= 98)
+  assert.ok(profile.heroMastery >= 20 && profile.heroMastery <= 98)
+  assert.deepEqual(getPlayerAiProfile(player), profile, 'player profiles should be stable and cached')
+
+  const alternateHero = humanState.arcanes.find((arcane) => arcane.heroDefinitionId !== player.heroDefinitionId)!
+  const alternateProfile = getPlayerAiProfile({ ...player, heroDefinitionId: alternateHero.heroDefinitionId })
+  assert.notStrictEqual(alternateProfile, profile, 'hero mastery cache must include the selected Arcane')
+
+  humanState.time = 10 * 60
+  const fresh = getPlayerMentalState(humanState, player, 20, 0)
+  humanState.time = 60 * 60
+  player.deaths = 7
+  player.decisionStatus = 'tilted'
+  const exhausted = getPlayerMentalState(humanState, player, 74, 2)
+  assert.ok(exhausted.fatigue > fresh.fatigue)
+  assert.ok(exhausted.tilt > fresh.tilt)
+  assert.ok(exhausted.pressure > fresh.pressure)
+  assert.ok(getArcaneCoordinationReliability(humanState, player) >= 0.68)
+  assert.equal(
+    honorsCombatReservations(humanState, player, 'test-control', 'enemy-target'),
+    honorsCombatReservations(humanState, player, 'test-control', 'enemy-target'),
+    'coordination mistakes must be deterministic inside the same decision window',
+  )
 }
 
 {

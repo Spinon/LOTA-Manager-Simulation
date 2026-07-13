@@ -219,7 +219,14 @@ function applyRoleAndPersonality(context: PlayerContext, score: PlayerModeScore)
     : 0
   const weightedScore = score.score > 0 ? score.score * roleWeight : score.score
   const decisionWindow = Math.floor(context.gameTime.seconds / AI_RULES.noise.decisionWindowSeconds)
-  const tiltNoise = getDeterministicDecisionNoise(context.profile.playerId, score.mode, decisionWindow, context.profile.discipline, context.profile.personality.tiltLevel, context.matchSeed)
+  const tiltNoise = getDeterministicDecisionNoise(
+    context.profile.playerId,
+    score.mode,
+    decisionWindow,
+    context.profile.discipline,
+    Math.max(context.profile.personality.tiltLevel, context.self.tilt),
+    context.matchSeed,
+  )
 
   return {
     ...score,
