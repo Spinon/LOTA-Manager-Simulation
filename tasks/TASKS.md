@@ -722,7 +722,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ### [!] T28 - Ilhas táticas e timing wheel de eventos
 
-> Bloqueada - A arquitetura e os buckets determinísticos foram entregues com ganho de 44,0%, mas o alvo de 3x exige remover as passadas orientadas a objetos (T29) e desacoplar os snapshots de replay do relógio global (T30) sem perder fidelidade.
+> Bloqueada - A arquitetura, o estado SoA, o replay por trajetórias e os campos de ameaça chegaram a 2,56x o baseline T24, mas o critério desta task exige 3x.
 
 **Objetivo**: reservar 30Hz para regiões realmente contestadas e saltar períodos sem interação relevante.
 
@@ -739,7 +739,8 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Ilhas táticas identificam combate, estruturas, campos, boss e trajetórias convergentes; ataques intermediários são processados apenas para atores agendados.
 - Worker, simulação headless e benchmark usam o mesmo runtime; modo `fixed` permanece disponível para auditoria A/B.
 - Benchmark completo (`performance-reference`): `fixed` 100,2x wall / 79,3x CPU; `event` 144,3x wall / 116,1x CPU, com 77,0% menos ticks globais.
-- Ganho normalizado: +44,0% wall e +46,4% CPU. O candidato alcançou 1,26x o baseline T24 (114,2x), ainda abaixo do alvo de 3x; o critério permanece bloqueado pelas T29/T30.
+- Ganho normalizado da primeira entrega: +44,0% wall e +46,4% CPU. Naquele estágio, o candidato alcançou 1,26x o baseline T24 (114,2x) e abriu as T29/T30.
+- Após T29-T31, a comparação controlada alcançou 291,9x wall, ou 2,56x o baseline T24. O próximo custo relevante está nas passadas de combate/blackboard e no targeting de rota; ainda faltam 17,4% sobre a taxa atual para atingir 342,6x.
 - Soltar o relógio da cadência do replay chegou a 172,8x, porém alterou a partida de 56:13/29-48 para 41:50/7-59; a variante foi mantida apenas como opção de benchmark e não foi adotada no Worker.
 - Testes, lint, build, digest determinístico curto e smoke test visual aprovados. Dados completos em `reports/timing-wheel-audit.json`.
 
@@ -786,6 +787,28 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - A mediana de três partidas completas foi 9,56s wall / 12,08s CPU para 42:43 simulados: 268,0x wall / 212,2x CPU, digest `0870297d913be664`. Contra a T29, o ganho normalizado foi 64,6%; isolando o relógio no encoder novo, 207,3x -> 268,0x (+29,3%).
 - Replays completos são salvos no IndexedDB por fingerprint estável de versão do motor/regras, seed, escalações e estratégias. A seed ativa permanece na sessão: reload da mesma partida reutilizou 17.320 keyframes e abriu o replay completo em menos de dois segundos. Mudanças de conteúdo ou compatibilidade produzem outra chave; o cache retém no máximo três partidas/220 MB.
 - Navegador validado com seek ao resultado, vencedor correto, pós-jogo e retorno ao replay, sem erros de console. Testes cobrem fingerprint, incompatibilidade de regras, round-trip binário, deduplicação e interpolação de trajetórias. Dados completos em `reports/trajectory-replay-audit.json`.
+
+---
+
+### [x] T31 - Campos de ameaça sem alocações intermediárias
+
+> Concluída em 2026-07-13 - Os cálculos de segurança dos Arcanes deixaram de criar arrays temporários para cada candidato avaliado.
+
+**Objetivo**: reduzir o custo da IA dos Arcanes sem alterar decisões, resultados ou a cadência do simulador.
+
+**Escopo**:
+- Perfilar uma partida completa e localizar o custo dominante dentro de `updateArcaneMovement`.
+- Remover cadeias `filter().reduce()` dos campos de perigo e ameaça sem mudar a ordem dos cálculos.
+- Auditar índices e memoização por frame antes de adotá-los.
+- Medir a partida canônica sem render e comparar digest, vencedor, placar e duração.
+
+**Critérios**: ganho mensurável no benchmark completo; digest canônico preservado; testes, lint e build verdes.
+
+**Resultado (2026-07-13)**:
+- O perfil apontou `updateArcaneMovement` com 29,2% do tempo inclusivo e `getEnemyActionThreatScore` entre os principais custos próprios. Os dois campos de segurança agora percorrem torres, Arcanes, creeps, campos e aliados diretamente, sem arrays intermediários; a ordem de soma e todas as fórmulas foram preservadas.
+- Índices compartilhados de Arcanes foram rejeitados porque atualizações transitórias durante o `.map` tornam referências anteriores obsoletas. Um índice persistente de creeps também foi rejeitado porque a coleção pode trocar membros mantendo referência e tamanho. Ambos foram removidos após o digest detectar a diferença.
+- Em comparação A/B de três partidas no mesmo ambiente, a mediana caiu de 9,34s para 8,78s wall (-6,0%) e de 12,31s para 10,63s CPU (-13,6%). A taxa subiu de 274,4x para 291,9x wall e de 208,1x para 241,2x CPU.
+- Os dois lados terminaram em 42:43, vitória Dusk, placar 14-50 e digest `0870297d913be664`. Dados completos em `reports/arcane-threat-hotpath-audit.json`.
 
 ---
 

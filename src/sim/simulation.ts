@@ -12051,49 +12051,56 @@ export function getArcaneOffensiveThreat(state: SimulationState, arcane: Arcane)
   return threat
 }
 
-export function getDangerScore(state: SimulationState, arcane: Arcane, visibleEnemies = state.arcanes.filter((enemy) => (
-  enemy.team !== arcane.team &&
-  enemy.stats.hp > 0 &&
-  enemy.respawn <= state.time &&
-  isPointVisibleToTeam(state, arcane.team, enemy.pos)
-))) {
+export function getDangerScore(
+  state: SimulationState,
+  arcane: Arcane,
+  visibleEnemies = state.arcanes.filter((enemy) => (
+    enemy.team !== arcane.team &&
+    enemy.stats.hp > 0 &&
+    enemy.respawn <= state.time &&
+    isPointVisibleToTeam(state, arcane.team, enemy.pos)
+  )),
+) {
   const nearbyEnemyCreeps = queryCreepSpatialGrid(state, arcane.pos, 8)
-  const enemyHeroPressure = visibleEnemies.reduce((score, enemy) => {
+  let enemyHeroPressure = 0
+  for (const enemy of visibleEnemies) {
     const range = 16
     const proximity = Math.max(0, 1 - distance(arcane.pos, enemy.pos) / range)
-    return score + proximity * (enemy.stats.damage / Math.max(1, arcane.stats.maxHp)) * 180
-  }, 0)
-  const towerPressure = state.towers
-    .filter((tower) => tower.team !== arcane.team && tower.hp > 0)
-    .reduce((score, tower) => {
-      const radius = tower.range + 2
-      const distanceSq = distanceSquared(arcane.pos, tower.pos)
-      if (distanceSq > radius * radius) return score
-      const proximity = 1 - Math.sqrt(distanceSq) / radius
-      return score + proximity * 38
-    }, 0)
-  const creepPressure = nearbyEnemyCreeps
-    .filter((creep) => creep.team !== arcane.team)
-    .reduce((score, creep) => {
-      const proximity = Math.max(0, 1 - distance(arcane.pos, creep.pos) / 8)
-      return score + proximity * 5
-    }, 0)
-  const neutralPressure = state.camps
-    .filter((camp) => camp.hp > 0)
-    .reduce((score, camp) => {
-      const radius = camp.range + 3
-      const distanceSq = distanceSquared(arcane.pos, camp.pos)
-      if (distanceSq > radius * radius) return score
-      const proximity = 1 - Math.sqrt(distanceSq) / radius
-      return score + proximity * (camp.strength === 'strong' ? 16 : camp.strength === 'medium' ? 11 : 7)
-    }, 0)
+    enemyHeroPressure += proximity * (enemy.stats.damage / Math.max(1, arcane.stats.maxHp)) * 180
+  }
+  let towerPressure = 0
+  for (const tower of state.towers) {
+    if (tower.team === arcane.team || tower.hp <= 0) continue
+    const radius = tower.range + 2
+    const distanceSq = distanceSquared(arcane.pos, tower.pos)
+    if (distanceSq > radius * radius) continue
+    const proximity = 1 - Math.sqrt(distanceSq) / radius
+    towerPressure += proximity * 38
+  }
+  let creepPressure = 0
+  for (const creep of nearbyEnemyCreeps) {
+    if (creep.team === arcane.team) continue
+    const proximity = Math.max(0, 1 - distance(arcane.pos, creep.pos) / 8)
+    creepPressure += proximity * 5
+  }
+  let neutralPressure = 0
+  for (const camp of state.camps) {
+    if (camp.hp <= 0) continue
+    const radius = camp.range + 3
+    const distanceSq = distanceSquared(arcane.pos, camp.pos)
+    if (distanceSq > radius * radius) continue
+    const proximity = 1 - Math.sqrt(distanceSq) / radius
+    neutralPressure += proximity * (camp.strength === 'strong' ? 16 : camp.strength === 'medium' ? 11 : 7)
+  }
   const bossPressure = state.boss.hp > 0 && state.boss.aggroTargetId === arcane.id && state.boss.aggroUntil && state.boss.aggroUntil > state.time
     ? Math.max(0, 1 - distance(arcane.pos, state.boss.pos) / (state.boss.range + 5)) * 26
     : 0
   const actionRadiusPressure = getEnemyActionThreatScore(state, arcane, arcane.pos, visibleEnemies) * 0.38
-  const allyRelief = state.arcanes
-    .filter((ally) => ally.team === arcane.team && ally.id !== arcane.id && ally.stats.hp > 0 && ally.respawn <= state.time)
-    .reduce((score, ally) => score + Math.max(0, 1 - distance(arcane.pos, ally.pos) / 12) * 9, 0)
+  let allyRelief = 0
+  for (const ally of state.arcanes) {
+    if (ally.team !== arcane.team || ally.id === arcane.id || ally.stats.hp <= 0 || ally.respawn > state.time) continue
+    allyRelief += Math.max(0, 1 - distance(arcane.pos, ally.pos) / 12) * 9
+  }
 
   return Math.max(0, Math.round(Math.min(100, enemyHeroPressure + towerPressure + creepPressure + neutralPressure + bossPressure + actionRadiusPressure - allyRelief)))
 }
@@ -12110,45 +12117,44 @@ export function getEnemyActionThreatScore(
   )),
 ) {
   const nearbyEnemyCreeps = queryCreepSpatialGrid(state, point, 20)
-  const towerThreat = state.towers
-    .filter((tower) => tower.team !== arcane.team && tower.hp > 0)
-    .reduce((score, tower) => {
-      const radius = tower.range + 1.2
-      if (distanceSquared(point, tower.pos) > radius * radius) return score
-      return score + 42
-    }, 0)
-  const visibleArcaneThreat = visibleEnemies.reduce((score, enemy) => {
+  let towerThreat = 0
+  for (const tower of state.towers) {
+    if (tower.team === arcane.team || tower.hp <= 0) continue
+    const radius = tower.range + 1.2
+    if (distanceSquared(point, tower.pos) <= radius * radius) towerThreat += 42
+  }
+  let visibleArcaneThreat = 0
+  for (const enemy of visibleEnemies) {
     const threat = getArcaneOffensiveThreat(state, enemy)
     const radius = Math.max(enemy.stats.range + 2.2, threat.range + 1.4)
-    if (distance(point, enemy.pos) > radius) return score
+    if (distance(point, enemy.pos) > radius) continue
     const attackPressure = enemy.stats.hp / enemy.stats.maxHp > 0.45 ? 18 : 11
     const spellPressure = Math.min(44, (threat.readyDamage / Math.max(1, arcane.stats.maxHp)) * 65)
     const lethalPressure = threat.readyDamage >= arcane.stats.hp * 0.7 ? 24 : 0
-    return score + attackPressure + spellPressure + lethalPressure
-  }, 0)
-  const creepThreat = nearbyEnemyCreeps
-    .filter((creep) => creep.team !== arcane.team)
-    .reduce((score, creep) => {
-      const radius = getCreepVisionRange(creep)
-      if (distance(point, creep.pos) > radius) return score
-      return score + getCreepLaneValue(creep)
-    }, 0)
-  const neutralThreat = state.camps
-    .filter((camp) => camp.hp > 0)
-    .reduce((score, camp) => {
-      const radius = camp.range + 1.5
-      if (distanceSquared(point, camp.pos) > radius * radius) return score
-      return score + (camp.strength === 'strong' ? 22 : camp.strength === 'medium' ? 15 : 9)
-    }, 0)
+    visibleArcaneThreat += attackPressure + spellPressure + lethalPressure
+  }
+  let creepThreat = 0
+  for (const creep of nearbyEnemyCreeps) {
+    if (creep.team === arcane.team) continue
+    const radius = getCreepVisionRange(creep)
+    if (distance(point, creep.pos) <= radius) creepThreat += getCreepLaneValue(creep)
+  }
+  let neutralThreat = 0
+  for (const camp of state.camps) {
+    if (camp.hp <= 0) continue
+    const radius = camp.range + 1.5
+    if (distanceSquared(point, camp.pos) <= radius * radius) {
+      neutralThreat += camp.strength === 'strong' ? 22 : camp.strength === 'medium' ? 15 : 9
+    }
+  }
   const bossThreat = state.boss.hp > 0 && state.boss.aggroTargetId === arcane.id && state.boss.aggroUntil && state.boss.aggroUntil > state.time && distance(point, state.boss.pos) <= state.boss.range + 2
     ? 32
     : 0
-  const nearbyAllyRelief = state.arcanes
-    .filter((ally) => ally.team === arcane.team && ally.id !== arcane.id && ally.stats.hp > 0 && ally.respawn <= state.time)
-    .reduce((score, ally) => {
-      if (distance(point, ally.pos) > 8) return score
-      return score + 4
-    }, 0)
+  let nearbyAllyRelief = 0
+  for (const ally of state.arcanes) {
+    if (ally.team !== arcane.team || ally.id === arcane.id || ally.stats.hp <= 0 || ally.respawn > state.time) continue
+    if (distance(point, ally.pos) <= 8) nearbyAllyRelief += 4
+  }
 
   return Math.max(0, Math.min(100, towerThreat + visibleArcaneThreat + creepThreat + neutralThreat + bossThreat - nearbyAllyRelief))
 }

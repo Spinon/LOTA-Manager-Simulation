@@ -1,0 +1,39 @@
+{
+  "task": "T31",
+  "date": "2026-07-13",
+  "seed": "performance-reference",
+  "mode": "full-match-event-clock-replay-off",
+  "runs": 3,
+  "baseline": {
+    "wallSecondsMedian": 9.34,
+    "wallRateMedian": 274.4,
+    "cpuSecondsMedian": 12.31,
+    "cpuRateMedian": 208.1,
+    "heapPeakMbMedian": 144.7
+  },
+  "candidate": {
+    "wallSecondsMedian": 8.78,
+    "wallRateMedian": 291.9,
+    "cpuSecondsMedian": 10.63,
+    "cpuRateMedian": 241.2,
+    "heapPeakMbMedian": 140.4
+  },
+  "improvement": {
+    "wallTimePercent": 6.0,
+    "wallRatePercent": 6.4,
+    "cpuTimePercent": 13.6,
+    "cpuRatePercent": 15.9,
+    "heapPeakPercent": 3.0
+  },
+  "determinism": {
+    "simulatedSeconds": 2562.5,
+    "winner": "dusk",
+    "kills": "14-50",
+    "digest": "0870297d913be664",
+    "preserved": true
+  },
+  "rejectedExperiments": [
+    "shared living-arcane references across the map update",
+    "persistent creep membership index without an explicit collection revision"
+  ]
+}
