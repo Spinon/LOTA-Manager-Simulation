@@ -61,6 +61,7 @@ import {
   getSimpleSkillRange,
   getRoleFarmPriority,
   getRoleGpmTarget,
+  grantRingmasterSouvenir,
   getArcaneEconomyNeed,
   getArcaneCoordinationReliability,
   getTowerTankAssessment,
@@ -75,6 +76,7 @@ import {
   materializeMatchRenderFrame,
   matchPreparationStartSeconds,
   resetDisengagedNeutralCamps,
+  respawnArcaneIfReady,
   runeSpawnPoints,
   processJungleStacks,
   resolveDeaths,
@@ -97,7 +99,7 @@ import {
   type TickFrameContext,
 } from './simulation.ts'
 import { getSkillEffectProfile } from '../game-systems/skillRuntime.ts'
-import { parentSkillStateKey } from '../game-systems/skillUnlocks.ts'
+import { parentSkillStateKey, ringmasterSouvenirAbilityIds, ringmasterSouvenirStateKey } from '../game-systems/skillUnlocks.ts'
 import type { HeroSkillDefinition } from '../game-systems/heroAttributes.ts'
 import { ReplayChunkEncoder, ReplayFrameStore } from './replayStore.ts'
 
@@ -392,6 +394,89 @@ await loadGameData()
   const replayFrame = createMatchRenderFrame(stanceState)
   const replayState = materializeMatchRenderFrame(replayFrame, createMatchStaticData(stanceState), replayFrame.details)
   assert.equal(replayState.arcanes[0].skillStates[parentSkillStateKey(1497)].mode, 'sai', 'the selected stance should survive replay materialization')
+}
+
+{
+  const souvenirState = createInitialState('ringmaster-souvenir-runtime-test')
+  souvenirState.time = 10 * 60
+  let ringmaster = souvenirState.arcanes[0]
+  let ally = souvenirState.arcanes[1]
+  let enemy = souvenirState.arcanes.find((candidate) => candidate.team !== ringmaster.team)!
+  ringmaster.heroDefinitionId = 'h118_circus_controller'
+  ringmaster.skillStates = {}
+  ringmaster.stats.level = 12
+  ringmaster.stats.maxMana = 1_000
+  ringmaster.stats.mana = 1_000
+  ringmaster.pos = { x: 50, y: 50 }
+  ally.pos = { x: 51, y: 50 }
+  enemy.pos = { x: 52, y: 50 }
+  enemy.stats.hp = 0
+  enemy.respawn = 0
+  enemy.lastHitBy = { id: ally.id, label: ally.player, team: ally.team }
+
+  resolveDeaths(souvenirState)
+  ringmaster = souvenirState.arcanes.find((candidate) => candidate.id === ringmaster.id)!
+  ally = souvenirState.arcanes.find((candidate) => candidate.id === ally.id)!
+  enemy = souvenirState.arcanes.find((candidate) => candidate.id === enemy.id)!
+  const collectedCharges = ringmasterSouvenirAbilityIds.reduce((total, sourceAbilityId) => (
+    total + (ringmaster.skillStates[ringmasterSouvenirStateKey(sourceAbilityId)]?.charges ?? 0)
+  ), 0)
+  assert.equal(collectedCharges, 1, 'a nearby enemy hero death should grant exactly one deterministic souvenir')
+  assert.equal(getArcaneRuntimeSkills(ringmaster).filter((skill) => ringmasterSouvenirAbilityIds.includes(skill.sourceAbilityId as typeof ringmasterSouvenirAbilityIds[number])).length, 1, 'only the acquired souvenir should appear in the runtime kit')
+  assert.ok(souvenirState.skillMarkers.some((marker) => marker.label.startsWith('Souvenir +')), 'souvenir acquisition should be visible on the map')
+
+  ringmaster.skillStates = {}
+  grantRingmasterSouvenir(souvenirState, ringmaster, 389)
+  grantRingmasterSouvenir(souvenirState, ringmaster, 389)
+  const mirror = getArcaneRuntimeSkills(ringmaster).find((skill) => skill.sourceAbilityId === 389)!
+  assert.equal(getSimpleSkillLevel(ringmaster, mirror), 1)
+  assert.equal(castSimpleSkill(souvenirState, ringmaster, mirror, 1, enemy), true)
+  assert.equal(ringmaster.skillStates[ringmasterSouvenirStateKey(389)].charges, 1, 'using a stacked souvenir should consume one charge')
+  assert.ok(souvenirState.timedEffects.some((effect) => effect.targetId === ringmaster.id && effect.sourceId.endsWith('-illusion')), 'the mirror should create temporary illusion pressure')
+
+  ringmaster.skillStates = {}
+  grantRingmasterSouvenir(souvenirState, ringmaster, 392)
+  ally.stats.hp = ally.stats.maxHp * 0.35
+  const tonic = getArcaneRuntimeSkills(ringmaster).find((skill) => skill.sourceAbilityId === 392)!
+  assert.equal(castSimpleSkill(souvenirState, ringmaster, tonic, 1, ally), true)
+  assert.equal(ringmaster.skillStates[ringmasterSouvenirStateKey(392)], undefined)
+  assert.ok(souvenirState.timedEffects.some((effect) => effect.targetId === ally.id && effect.sourceId.endsWith('-strength') && effect.kind === 'barrier'), 'the tonic should grant level-scaled strength durability')
+
+  ringmaster.skillStates = {}
+  ringmaster.pos = { x: 50, y: 50 }
+  ringmaster.target = { x: 40, y: 40 }
+  ringmaster.aiMode = 'retreat'
+  ringmaster.macroDecision = 'Recuar para seguranca'
+  enemy.stats.hp = enemy.stats.maxHp
+  enemy.respawn = -60
+  enemy.pos = { x: 50.8, y: 50 }
+  grantRingmasterSouvenir(souvenirState, ringmaster, 390)
+  const cushionStart = { ...ringmaster.pos }
+  assert.equal(tryCastSimpleSkill(souvenirState, ringmaster, enemy), true, 'the AI should use its only escape souvenir while retreating')
+  assert.ok(distance(ringmaster.pos, cushionStart) > 2.5, 'the cushion should perform its imported 400-unit leap')
+  assert.ok(souvenirState.timedEffects.some((effect) => effect.targetId === enemy.id && effect.sourceId.endsWith('-cloud') && effect.kind === 'slow'), 'the cushion should leave a slowing cloud at its origin')
+
+  ringmaster.skillStates = {}
+  grantRingmasterSouvenir(souvenirState, ringmaster, 196)
+  const unicycle = getArcaneRuntimeSkills(ringmaster).find((skill) => skill.sourceAbilityId === 196)!
+  assert.equal(castSimpleSkill(souvenirState, ringmaster, unicycle, 1, enemy), true)
+  assert.ok(souvenirState.timedEffects.some((effect) => effect.targetId === ringmaster.id && effect.sourceId.endsWith('-mount') && effect.modifiers?.moveSpeedPct === 0.6), 'the unicycle should grant its ten-second mobility state')
+
+  const deathState = createInitialState('ringmaster-death-souvenir-test')
+  deathState.time = 15 * 60
+  let doomedRingmaster = deathState.arcanes[0]
+  doomedRingmaster.heroDefinitionId = 'h118_circus_controller'
+  doomedRingmaster.skillStates = {}
+  doomedRingmaster.stats.hp = 0
+  doomedRingmaster.respawn = 0
+  resolveDeaths(deathState)
+  doomedRingmaster = deathState.arcanes.find((candidate) => candidate.id === doomedRingmaster.id)!
+  const deathGiftCharges = ringmasterSouvenirAbilityIds.reduce((total, sourceAbilityId) => (
+    total + (doomedRingmaster.skillStates[ringmasterSouvenirStateKey(sourceAbilityId)]?.charges ?? 0)
+  ), 0)
+  assert.equal(deathGiftCharges, 1, 'dying without a souvenir should grant one from the innate')
+  const respawnedRingmaster = respawnArcaneIfReady(doomedRingmaster, doomedRingmaster.respawn, 0)
+  assert.deepEqual(respawnedRingmaster.skillStates, doomedRingmaster.skillStates, 'souvenir charges should persist through death and respawn')
 }
 
 assert.equal(getRoleGpmTarget('Safe Lane', 40 * 60), 760)

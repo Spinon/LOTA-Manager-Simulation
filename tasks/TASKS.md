@@ -499,6 +499,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Ativação atual: 716 completas, 14 aproximadas e 4 ausentes. Restam apenas os quatro souvenirs com aquisição e charges. Auditoria geral: 4 completas, 635 parciais, 15 aproximações intencionais e 80 ausentes.
 - Testes, lint e build verdes. Benchmark determinístico: 52,5x wall / 48,8x CPU, digest `9ebd3080f5fadc7e` estável.
 
+**Progresso dos Souvenirs do Carnaval Sombrio (2026-07-13)**:
+- A inata do controlador circense agora concede deterministicamente um dos quatro souvenirs quando um herói inimigo morre dentro das 925 unidades importadas. Mortes múltiplas acumulam até 99 cargas por tipo; somente prêmios possuídos aparecem no kit e cada cast consome exatamente uma carga.
+- Cargas são recursos persistentes: sobrevivem à morte, respawn e replay detalhado. Se o próprio controlador morrer sem nenhum prêmio, a inata concede um imediatamente, conforme a regra oficial. Aquisições também recebem marcador visual com o tipo obtido.
+- Espelho Distorcido cria pressão temporária da ilusão por 18s; Tônico do Homem-Forte converte o ganho de força escalado pelo nível em durabilidade e dano; Almofada Surpresa executa o salto de 400 unidades e deixa a nuvem de slow; Monociclo concede o estado de mobilidade por 10s. As abstrações de ilusão, força e colisão continuam declaradas como parciais/aproximadas até as respectivas famílias ganharem runtime dedicado.
+- A IA avalia cada prêmio por contexto: tônico para save/teamfight, almofada e monociclo para retreat/mobilidade, espelho para luta, push e objetivo. Testes cobrem aquisição por alcance, kit condicionado à posse, stacking, consumo, quatro efeitos, escolha de fuga pela IA, concessão na própria morte e persistência no respawn.
+- Todas as 734 skills agora possuem caminho de ativação declarado: 720 completas, 14 aproximações intencionais e 0 ausentes. Auditoria geral: 4 completas, 639 parciais, 15 aproximações intencionais e 76 ausentes por mecânicas internas ainda não executadas integralmente.
+- Testes, lint e build verdes. Benchmark determinístico: 52,4x wall / 48,1x CPU, digest `9ebd3080f5fadc7e` estável. Próxima rodada da T16: concluir efeitos no término de channeling; depois materializar summons como entidades reais.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

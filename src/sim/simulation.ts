@@ -51,12 +51,15 @@ import {
   getContextualSkillLevel,
   getGrantedSkillLevel,
   getPreferredTwinBladeStance,
+  getRingmasterSouvenirCharges,
   hasAutomaticContextualSkillSelection,
   getRuntimeHeroSkills,
   getSkillRuntimeUnlockRule,
   getTwinBladePairedAbilityId,
   getTwinBladeStance,
   parentSkillStateKey,
+  ringmasterSouvenirAbilityIds,
+  ringmasterSouvenirStateKey,
   twinBladeStanceStateKey,
   type AbilityUpgradeSlot,
   type RuntimeParentSkillState,
@@ -2641,7 +2644,7 @@ export function respawnArcaneIfReady(arcane: Arcane, time: number, index: number
     pathIndex: 1,
     respawn: aliveRespawnTimestamp,
     lastHitBy: undefined,
-    skillStates: {},
+    skillStates: getPersistentSkillStatesAfterDeath(arcane),
     macroDecision: 'Avancar rota',
     microDecision: 'Renasceu na base',
     aiMode: 'push_lane',
@@ -7578,6 +7581,9 @@ export function castSimpleSkill(
   fallbackTarget: CombatTarget | undefined,
   preferFallbackTarget = false,
 ) {
+  if (ringmasterSouvenirAbilityIds.includes(skill.sourceAbilityId as typeof ringmasterSouvenirAbilityIds[number])) {
+    return castRingmasterSouvenirSkill(state, arcane, skill, level, fallbackTarget)
+  }
   if (skill.sourceAbilityId === 1497) return castTwinBladeStanceSwitch(state, arcane, skill, level)
   if (skill.sourceAbilityId === 5607) return castStoredRemnantSkill(state, arcane, skill, level, fallbackTarget)
   if (isConfirmedGlobalSkill(skill) && !shouldCastGlobalSkill(state, arcane, skill)) return false
@@ -8054,6 +8060,7 @@ export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, sk
   }
   liveArcane.decision = `Castou ${skill.key}`
   updateParentSkillStateAfterCast(state, liveArcane, skill, target)
+  consumeRingmasterSouvenirCharge(liveArcane, skill.sourceAbilityId ?? 0)
   syncTwinBladePairedCooldown(state, liveArcane, skill)
   if (skill.sourceAbilityId !== 1497) consumeTwinBladeKatanaSwapBuff(state, liveArcane)
   state.skillMarkers = [
@@ -8233,6 +8240,119 @@ function syncTwinBladePairedCooldown(state: SimulationState, arcane: Arcane, ski
     pairedCooldown,
     state.time + getSimpleSkillCooldown(skill, level),
   ))
+}
+
+export function castRingmasterSouvenirSkill(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+  fallbackTarget?: CombatTarget,
+) {
+  const sourceAbilityId = skill.sourceAbilityId ?? 0
+  if (getRingmasterSouvenirCharges(arcane.skillStates, sourceAbilityId) <= 0) return false
+  const manaCost = getSimpleSkillManaCost(arcane, skill, level)
+  if (arcane.stats.mana < manaCost) return false
+
+  if (sourceAbilityId === 389) {
+    const duration = getSimpleSkillNumericValue(skill, 'illusion_duration', level, 18)
+    addTimedEffect(state, arcane, {
+      sourceId: `${arcane.id}-${skill.id}-illusion`,
+      sourceName: skill.name,
+      sourceTeam: arcane.team,
+      kind: 'buff',
+      polarity: 'positive',
+      value: 1,
+      modifiers: {
+        damagePct: arcane.stats.attackType === 'ranged' ? 0.55 : 0.24,
+        attackSpeedPct: 0.08,
+      },
+      duration,
+    })
+    finishSimpleSkillCast(state, arcane, skill, manaCost, arcane)
+    return true
+  }
+
+  if (sourceAbilityId === 392) {
+    const target = getSimpleSkillTarget(state, arcane, skill, level, fallbackTarget)
+    if (!target || !('player' in target) || target.team !== arcane.team) return false
+    const strengthBonus = getSimpleSkillNumericValue(skill, 'strength_bonus_base', level, 5) +
+      getSimpleSkillNumericValue(skill, 'strength_bonus_per_level', level, 1) * arcane.stats.level
+    const duration = getSimpleSkillNumericValue(skill, 'duration', level, 8)
+    addTimedEffect(state, target, {
+      sourceId: `${arcane.id}-${skill.id}-strength`,
+      sourceName: skill.name,
+      sourceTeam: arcane.team,
+      kind: 'barrier',
+      polarity: 'positive',
+      value: strengthBonus * 22,
+      modifiers: { damagePct: Math.min(0.15, strengthBonus * 0.004) },
+      duration,
+    })
+    finishSimpleSkillCast(state, arcane, skill, manaCost, target)
+    return true
+  }
+
+  if (sourceAbilityId === 390) {
+    const origin = { ...arcane.pos }
+    const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
+    const situation = getPrimarySkillUsageSituation({
+      phase: arcane.stats.level <= 8 ? 'early' : arcane.stats.level <= 18 ? 'mid' : 'late',
+      aiMode: arcane.aiMode,
+      macroDecision: arcane.macroDecision,
+      hpRatio,
+    })
+    const destination = situation === 'retreat' || situation === 'save'
+      ? teamInfo[arcane.team].base
+      : distance(arcane.pos, arcane.target) > 0.5 ? arcane.target : teamInfo[arcane.team].base
+    const travel = getSimpleSkillNumericValue(skill, 'leap_distance', level, 400) / 140
+    arcane.pos = clampToMapBounds(moveToward(arcane.pos, destination, travel))
+    arcane.target = destination
+    const cloudRadius = Math.max(1.5, getSimpleSkillNumericValue(skill, 'fart_cloud_radius', level, 250) / 140)
+    const cloudDuration = getSimpleSkillNumericValue(skill, 'fart_cloud_duration', level, 3)
+    state.arcanes
+      .filter((candidate) => candidate.team !== arcane.team && candidate.stats.hp > 0 && candidate.respawn <= state.time && distance(candidate.pos, origin) <= cloudRadius)
+      .forEach((enemy) => addTimedEffect(state, enemy, {
+        sourceId: `${arcane.id}-${skill.id}-cloud`,
+        sourceName: skill.name,
+        sourceTeam: arcane.team,
+        kind: 'slow',
+        polarity: 'negative',
+        value: 0.3,
+        duration: cloudDuration,
+      }))
+    finishSimpleSkillCast(state, arcane, skill, manaCost, arcane)
+    return true
+  }
+
+  if (sourceAbilityId === 196) {
+    const duration = getSimpleSkillNumericValue(skill, 'mount_duration', level, 10)
+    addTimedEffect(state, arcane, {
+      sourceId: `${arcane.id}-${skill.id}-mount`,
+      sourceName: skill.name,
+      sourceTeam: arcane.team,
+      kind: 'buff',
+      polarity: 'positive',
+      value: 1,
+      modifiers: { moveSpeedPct: 0.6 },
+      duration,
+    })
+    finishSimpleSkillCast(state, arcane, skill, manaCost, arcane)
+    return true
+  }
+
+  return false
+}
+
+function consumeRingmasterSouvenirCharge(arcane: Arcane, sourceAbilityId: number) {
+  if (!ringmasterSouvenirAbilityIds.includes(sourceAbilityId as typeof ringmasterSouvenirAbilityIds[number])) return
+  const key = ringmasterSouvenirStateKey(sourceAbilityId)
+  const current = arcane.skillStates[key]
+  if (!current?.charges) return
+  const skillStates = { ...arcane.skillStates }
+  if (current.charges <= 1) delete skillStates[key]
+  else skillStates[key] = { ...current, charges: current.charges - 1 }
+  arcane.skillStates = skillStates
 }
 
 function isParentSkillStateCreator(skill: HeroSkillDefinition) {
@@ -9491,6 +9611,81 @@ export function getAssistRecipients(state: SimulationState, victim: Arcane, kill
   ))
 }
 
+export function getPersistentSkillStatesAfterDeath(arcane: Pick<Arcane, 'heroDefinitionId' | 'skillStates'>) {
+  if (arcane.heroDefinitionId !== 'h118_circus_controller') return {}
+  return Object.fromEntries(Object.entries(arcane.skillStates).filter(([key, skillState]) => (
+    key.startsWith('souvenir:') && (skillState.charges ?? 0) > 0
+  )))
+}
+
+export function grantRingmasterSouvenir(
+  state: SimulationState,
+  arcane: Arcane,
+  sourceAbilityId: typeof ringmasterSouvenirAbilityIds[number],
+) {
+  const key = ringmasterSouvenirStateKey(sourceAbilityId)
+  const current = arcane.skillStates[key]
+  const charges = Math.min(99, (current?.charges ?? 0) + 1)
+  arcane.skillStates = {
+    ...arcane.skillStates,
+    [key]: {
+      activeUntil: Number.MAX_SAFE_INTEGER,
+      charges,
+    },
+  }
+  const labels: Record<typeof ringmasterSouvenirAbilityIds[number], string> = {
+    389: 'Espelho Distorcido',
+    392: 'Tonico do Homem-Forte',
+    390: 'Almofada Surpresa',
+    196: 'Monociclo',
+  }
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `souvenir-${arcane.id}-${sourceAbilityId}-${charges}-${state.time}`,
+      team: arcane.team,
+      pos: arcane.pos,
+      label: `Souvenir + ${labels[sourceAbilityId]}`,
+      createdAt: state.time,
+      expiresAt: state.time + 1.6,
+    },
+  ]
+}
+
+export function collectRingmasterSouvenirsFromDeaths(state: SimulationState, deadArcanes: Arcane[]) {
+  const collectionRange = worldVisionToMapRadius(925)
+  deadArcanes.forEach((victim) => {
+    state.arcanes
+      .filter((candidate) => (
+        candidate.heroDefinitionId === 'h118_circus_controller' &&
+        candidate.team !== victim.team &&
+        candidate.stats.hp > 0 &&
+        candidate.respawn <= state.time &&
+        distance(candidate.pos, victim.pos) <= collectionRange
+      ))
+      .forEach((collector) => {
+        const roll = seededRandomUnit(state.matchSeed, `souvenir:${collector.id}:${victim.id}:${state.time.toFixed(3)}`)
+        const sourceAbilityId = ringmasterSouvenirAbilityIds[Math.min(
+          ringmasterSouvenirAbilityIds.length - 1,
+          Math.floor(roll * ringmasterSouvenirAbilityIds.length),
+        )]
+        grantRingmasterSouvenir(state, collector, sourceAbilityId)
+      })
+  })
+
+  deadArcanes
+    .filter((arcane) => arcane.heroDefinitionId === 'h118_circus_controller')
+    .filter((arcane) => ringmasterSouvenirAbilityIds.every((sourceAbilityId) => getRingmasterSouvenirCharges(arcane.skillStates, sourceAbilityId) <= 0))
+    .forEach((arcane) => {
+      const roll = seededRandomUnit(state.matchSeed, `souvenir-on-death:${arcane.id}:${state.time.toFixed(3)}`)
+      const sourceAbilityId = ringmasterSouvenirAbilityIds[Math.min(
+        ringmasterSouvenirAbilityIds.length - 1,
+        Math.floor(roll * ringmasterSouvenirAbilityIds.length),
+      )]
+      grantRingmasterSouvenir(state, arcane, sourceAbilityId)
+    })
+}
+
 export function resolveDeaths(state: SimulationState): SimulationState {
   const next = state
   const deadCreeps = next.creeps.filter((creep) => creep.hp <= 0)
@@ -9644,6 +9839,7 @@ export function resolveDeaths(state: SimulationState): SimulationState {
   }
 
   if (deadArcanes.length) {
+    collectRingmasterSouvenirsFromDeaths(next, deadArcanes)
     const arcaneRewards = new Map<string, { gold: number; xp: number }>()
     const kdaChanges = new Map<string, { kills: number; deaths: number; assists: number }>()
     const addArcaneReward = (arcaneId: string, gold: number, xp: number) => {
@@ -9750,7 +9946,7 @@ export function resolveDeaths(state: SimulationState): SimulationState {
         respawn: next.time + getArcaneRespawnDuration(arcane.stats.level),
         lastHitBy: undefined,
         channeling: undefined,
-        skillStates: {},
+        skillStates: getPersistentSkillStatesAfterDeath(arcane),
         tpScrolls: Math.min(teleportScrollMaxCharges, arcane.tpScrolls + 1),
         macroDecision: 'Fora de combate',
         microDecision: 'Aguardando respawn',

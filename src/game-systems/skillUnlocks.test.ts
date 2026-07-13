@@ -6,10 +6,12 @@ import {
   getContextualSkillLevel,
   getGrantedSkillLevel,
   getPreferredTwinBladeStance,
+  getRingmasterSouvenirCharges,
   getRuntimeHeroSkills,
   getSkillRuntimeUnlockRule,
   getTwinBladeStance,
   parentSkillStateKey,
+  ringmasterSouvenirStateKey,
 } from './skillUnlocks.ts'
 
 const baseSkill: HeroSkillDefinition = {
@@ -135,5 +137,36 @@ assert.equal(getTwinBladeStance(), 'katana', 'Katana should be the default stanc
 assert.equal(getTwinBladeStance(saiState), 'sai')
 assert.equal(getPreferredTwinBladeStance({ situation: 'gank', hpRatio: 0.9 }), 'sai')
 assert.equal(getPreferredTwinBladeStance({ situation: 'objective', hpRatio: 0.4 }), 'katana')
+
+const souvenirSkills = [389, 392, 390, 196].map((sourceAbilityId, index) => ({
+  ...baseSkill,
+  id: `h118_circus_controller_standard_${index + 5}_${sourceAbilityId}`,
+  key: `S${index + 1}`,
+  sourceAbilityId,
+  category: 'standard' as const,
+  learnable: false,
+  maxLevel: 1,
+})) satisfies HeroSkillDefinition[]
+const ringmasterDefinition = {
+  id: 'h118_circus_controller',
+  skills: [baseSkill],
+  supplementalSkills: souvenirSkills,
+} as HeroDefinition
+const souvenirStates = {
+  [ringmasterSouvenirStateKey(389)]: { activeUntil: Number.MAX_SAFE_INTEGER, charges: 2 },
+  [ringmasterSouvenirStateKey(390)]: { activeUntil: Number.MAX_SAFE_INTEGER, charges: 1 },
+}
+const heldSouvenirIds = getContextualSkillIds(ringmasterDefinition, {
+  skillLevels: { Q: 1 },
+  skillStates: souvenirStates,
+  situation: 'retreat',
+  hpRatio: 0.5,
+})
+assert.deepEqual(heldSouvenirIds, [souvenirSkills[0].id, souvenirSkills[2].id], 'only acquired souvenir types should enter the runtime kit')
+assert.equal(getRingmasterSouvenirCharges(souvenirStates, 389), 2)
+assert.equal(getRingmasterSouvenirCharges(souvenirStates, 392), 0)
+const souvenirKit = getRuntimeHeroSkills(ringmasterDefinition, new Set(), heldSouvenirIds)
+assert.deepEqual(souvenirKit.slice(1).map((skill) => skill.id), heldSouvenirIds)
+assert.ok(souvenirKit.slice(1).every((skill) => getContextualSkillLevel(skill, {}) === 1), 'souvenirs should be usable at level one without skill points')
 
 console.log('skillUnlocks tests passed')

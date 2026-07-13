@@ -43,7 +43,8 @@ const ringmasterHeroId = 'h118_circus_controller'
 const stanceHeroId = 'h119_twin_blade_duelist'
 const songHeroId = 'h120_heavy_artillery_commander'
 const parentStateHeroIds = ['h082_light_keeper', 'h083_spirit_tether', 'h098_ember_duelist', 'h124_stone_giant']
-const automaticContextualHeroIds = new Set([invokerHeroId, songHeroId, monkeyHeroId, stanceHeroId, ...parentStateHeroIds])
+const automaticContextualHeroIds = new Set([invokerHeroId, songHeroId, monkeyHeroId, ringmasterHeroId, stanceHeroId, ...parentStateHeroIds])
+export const ringmasterSouvenirAbilityIds = [389, 392, 390, 196] as const
 const twinBladeSwitchAbilityId = 1497
 const twinBladeAlternateAbilityIds = [1502, 1503, 1504, 1506]
 const twinBladeKeyByAbilityId: Record<number, HeroSkillDefinition['key']> = {
@@ -117,6 +118,7 @@ export function getContextualSkillIds(
       ?.filter((skill) => skill.sourceAbilityId === 1627)
       .map((skill) => skill.id) ?? []
   }
+  if (definition.id === ringmasterHeroId) return getRingmasterSouvenirLoadout(definition, input)
   if (definition.id === stanceHeroId) return getTwinBladeStanceLoadout(definition, input)
   if (parentStateHeroIds.includes(definition.id)) return getParentStateLoadout(definition, input)
   return []
@@ -181,6 +183,7 @@ export function getContextualSkillLevel(
   }
   if (rule === 'song_loadout') return Math.max(0, skillLevels.R ?? 0)
   if (rule === 'situational_utility') return 1
+  if (rule === 'souvenir_resource') return 1
   if (rule === 'alternate_stance') {
     const levelKey = twinBladeKeyByAbilityId[skill.sourceAbilityId ?? 0]
     return levelKey ? Math.max(0, skillLevels[levelKey] ?? 0) : 0
@@ -252,6 +255,24 @@ function getTwinBladeStanceLoadout(definition: HeroDefinition, input: Contextual
     .map((skill) => skill.id) ?? []
 }
 
+function getRingmasterSouvenirLoadout(definition: HeroDefinition, input: ContextualSkillSelectionInput) {
+  return definition.supplementalSkills
+    ?.filter((skill) => ringmasterSouvenirAbilityIds.includes(skill.sourceAbilityId as typeof ringmasterSouvenirAbilityIds[number]))
+    .filter((skill) => getRingmasterSouvenirCharges(input.skillStates, skill.sourceAbilityId ?? 0) > 0)
+    .map((skill) => skill.id) ?? []
+}
+
+export function ringmasterSouvenirStateKey(sourceAbilityId: number) {
+  return `souvenir:${sourceAbilityId}`
+}
+
+export function getRingmasterSouvenirCharges(
+  skillStates: Record<string, RuntimeParentSkillState> | undefined,
+  sourceAbilityId: number,
+) {
+  return Math.max(0, skillStates?.[ringmasterSouvenirStateKey(sourceAbilityId)]?.charges ?? 0)
+}
+
 export function getTwinBladeStance(skillStates?: Record<string, RuntimeParentSkillState>): TwinBladeStance {
   return skillStates?.[parentSkillStateKey(twinBladeSwitchAbilityId)]?.mode === 'sai' ? 'sai' : 'katana'
 }
@@ -292,6 +313,8 @@ export function getRuntimeNormalizedSkill(skill: HeroSkillDefinition) {
     normalized = normalizeInvokedSkill(skill, sourceAbilityId)
   } else if (skill.id.startsWith(`${songHeroId}_`)) {
     normalized = normalizeSongSkill(skill, sourceAbilityId)
+  } else if (skill.id.startsWith(`${ringmasterHeroId}_`)) {
+    normalized = normalizeRingmasterSkill(skill, sourceAbilityId)
   } else if (skill.id.startsWith(`${stanceHeroId}_`)) {
     normalized = normalizeTwinBladeSkill(skill, sourceAbilityId)
   } else if (skill.id.startsWith(`${monkeyHeroId}_`) && sourceAbilityId === 1627) {
@@ -311,6 +334,65 @@ export function getRuntimeNormalizedSkill(skill: HeroSkillDefinition) {
 
   normalizedSkillCache.set(skill, normalized)
   return normalized
+}
+
+function normalizeRingmasterSkill(skill: HeroSkillDefinition, sourceAbilityId: number): HeroSkillDefinition {
+  const names: Record<number, string> = {
+    388: 'Arauto do Carnaval Sombrio',
+    389: 'Espelho Distorcido',
+    392: 'Tonico do Homem-Forte',
+    390: 'Almofada Surpresa',
+    196: 'Monociclo',
+  }
+  const base = { ...skill, name: names[sourceAbilityId] ?? skill.name }
+  if (sourceAbilityId === 389) {
+    return {
+      ...base,
+      target: 'self',
+      tags: withTags(skill, ['summon', 'damage_buff']),
+      values: {
+        ...skill.values,
+        duration: skill.values.illusion_duration,
+        summons: skill.values.images_count,
+        summonDuration: skill.values.illusion_duration,
+      },
+      aiUsage: withAiUsage(skill, { teamfight: 82, push: 70, objective: 64, farming: 48 }),
+    }
+  }
+  if (sourceAbilityId === 392) {
+    return {
+      ...base,
+      tags: withTags(skill, ['ally_target', 'save', 'durable', 'damage_buff', 'barrier']),
+      aiUsage: withAiUsage(skill, { save: 96, teamfight: 72, gank: 42 }),
+    }
+  }
+  if (sourceAbilityId === 390) {
+    return {
+      ...base,
+      target: 'self',
+      tags: withTags(skill, ['mobility', 'escape', 'slow']),
+      values: {
+        ...skill.values,
+        duration: skill.values.fart_cloud_duration,
+        slow: 30,
+      },
+      aiUsage: withAiUsage(skill, { retreat: 100, save: 70, gank: 38 }),
+    }
+  }
+  if (sourceAbilityId === 196) {
+    return {
+      ...base,
+      target: 'self',
+      tags: withTags(skill, ['mobility', 'haste', 'escape']),
+      values: {
+        ...skill.values,
+        duration: skill.values.mount_duration,
+        moveSpeedBonusPct: 60,
+      },
+      aiUsage: withAiUsage(skill, { retreat: 90, gank: 62, push: 54, objective: 46 }),
+    }
+  }
+  return base
 }
 
 function normalizeTwinBladeSkill(skill: HeroSkillDefinition, sourceAbilityId: number): HeroSkillDefinition {
@@ -504,6 +586,19 @@ function normalizeSongSkill(skill: HeroSkillDefinition, sourceAbilityId: number)
 
 function withTags(skill: HeroSkillDefinition, tags: string[]) {
   return [...new Set([...skill.tags, ...tags])]
+}
+
+function withAiUsage(skill: HeroSkillDefinition, overrides: Partial<Record<SkillUsageSituation, number>>) {
+  return {
+    laning: overrides.laning ?? skill.aiUsage?.laning ?? 0,
+    farming: overrides.farming ?? skill.aiUsage?.farming ?? 0,
+    gank: overrides.gank ?? skill.aiUsage?.gank ?? 0,
+    teamfight: overrides.teamfight ?? skill.aiUsage?.teamfight ?? 0,
+    retreat: overrides.retreat ?? skill.aiUsage?.retreat ?? 0,
+    push: overrides.push ?? skill.aiUsage?.push ?? 0,
+    save: overrides.save ?? skill.aiUsage?.save ?? 0,
+    objective: overrides.objective ?? skill.aiUsage?.objective ?? 0,
+  }
 }
 
 function scaleNumericValue(value: HeroSkillDefinition['values'][string], multiplier: number) {

@@ -324,7 +324,7 @@ function getUnlockEvidence(rule: ReturnType<typeof getSkillRuntimeUnlockRule>) {
   if (rule === 'invoked_loadout') return 'up to two invoked spells are selected from learned orb recipes and the current AI situation'
   if (rule === 'song_loadout') return 'one song is selected from ultimate level, health, and the current AI situation'
   if (rule === 'situational_utility') return 'utility action becomes available in its matching AI situation'
-  if (rule === 'souvenir_resource') return 'souvenir requires a dedicated acquisition and charge resource'
+  if (rule === 'souvenir_resource') return 'nearby hero deaths grant deterministic persistent charges; only held souvenirs enter the kit and each cast consumes one'
   if (rule === 'alternate_stance') return 'persistent Katana/Sai state replaces Q/W/E/R, mirrors levels, and shares paired cooldowns'
   if (rule === 'parent_state') return 'subskill is unlocked and consumed by its serialized parent ability state'
   return 'imported contextual/subskill action without a dedicated activation state machine'
@@ -332,7 +332,8 @@ function getUnlockEvidence(rule: ReturnType<typeof getSkillRuntimeUnlockRule>) {
 
 function getActivationStatus(rule: ReturnType<typeof getSkillRuntimeUnlockRule>): SkillSupportStatus {
   if (rule === 'invoked_loadout' || rule === 'song_loadout' || rule === 'situational_utility') return 'approximate'
+  if (rule === 'souvenir_resource') return 'complete'
   if (rule === 'alternate_stance') return 'complete'
-  if (rule === 'souvenir_resource' || rule === 'unsupported_contextual') return 'missing'
+  if (rule === 'unsupported_contextual') return 'missing'
   return 'complete'
 }
