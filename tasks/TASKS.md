@@ -406,7 +406,16 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - A intenção ganhou autoridade de movimento: participantes esperam reforços, reforços viajam ao encontro e um `disengage` coletivo interrompe a aproximação. O inspetor mostra intenção, poder atual/projetado, wave e reforços.
 - Dez cenários puros e integrações runtime cobrem fog, reforços, custo do HC, wave inimiga, level timing, dive, counter-dive e troca de tank. Uma partida de auditoria terminou organicamente em 41,9min (36-27), sem watchdog.
 - Benchmark determinístico: 66,0x wall / 60,2x CPU, digest `8e32e8bb28c2bccb` estável em três rodadas; baseline da rodada era 53,3x / 46,5x.
-- Ainda pendente nesta fase: pulls/contest de pull, ranged creep como objetivo explícito, teleporte de reforço e cenários completos de chase/counter-initiation.
+- O primeiro recorte deixou pendentes pulls/contest de pull, ranged creep como objetivo explícito, teleporte de reforço e cenários completos de chase/counter-initiation; os três primeiros entram na rodada abaixo.
+
+**Progresso dos cenários de lane e reforço (2026-07-13)**:
+- Pull passou a existir como mecânica: o Dedicated Support avalia janela, equilíbrio, segurança do core, campo e contestação; a wave desvia temporariamente, luta com os neutros e sincroniza novamente seu waypoint ao retornar para a lane.
+- Campos respondem ao ataque de creeps puxados. Quando a wave finaliza o campo, aliados próximos recebem o XP neutro; o Greedy Support adversário reconhece pulls expostos e pode contestá-los.
+- Ranged creeps ganharam prioridade explícita sobre melees quando ambos são finalizáveis, tanto em last hit quanto deny. Cores podem usar uma skill simples não-ultimate para garantir o ranged em timing de nível, preservando uma reserva de mana e respeitando alcance, custo e cooldown.
+- Reforços aprovados pelo blackboard podem usar TP quando canal + trecho final economizam pelo menos dois segundos sobre caminhar. Rotação rejeitada pelo custo econômico continua sem autoridade para teleportar.
+- Auditoria headless de 12min produziu pull real com quatro creeps desviados. Testes cobrem planejamento, desvio, combate bilateral, retorno à lane, contestação, ranged last hit/deny, spell secure e canal de TP.
+- Benchmark determinístico: 62,9x wall / 60,3x CPU, digest `88d5b9ccd239aba0` estável; uma partida terminou organicamente em 49,4min, sem watchdog. O placar 9-63 desta única seed fica registrado como outlier para a próxima amostra de balanceamento.
+- Pendente para concluir os cenários: chase com limite de formação/fog/reforços, counter-initiation e ampliar a matriz para os 30 casos da especificação.
 
 **Restrições**:
 - O arquivo-fonte é especificação/pseudocódigo; funções simbólicas devem ser adaptadas aos tipos, fórmulas, skills, itens e status já existentes, sem criar uma segunda resolução de combate.

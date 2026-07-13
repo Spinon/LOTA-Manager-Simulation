@@ -33,6 +33,7 @@ import {
   getHigherPriorityFarmAlly,
   getCreepXpShare,
   getDenyTarget,
+  getDenyCandidateFromCreeps,
   getEffectiveArcaneAttackCooldown,
   getEffectiveArcaneDamage,
   getShopItemsForInventory,
@@ -43,6 +44,14 @@ import {
   getSimpleSkillDamage,
   getLastHitTarget,
   getLastHitCandidateFromCreeps,
+  getLanePullCamp,
+  getLanePullPlan,
+  getEnemyPullContestPlan,
+  getActivePullCampForCreep,
+  getBestTeleportTarget,
+  getRangedCreepSkillSecureTarget,
+  getRouteCreepTarget,
+  getSimpleSkillRange,
   getRoleFarmPriority,
   getRoleGpmTarget,
   getArcaneEconomyNeed,
@@ -51,6 +60,7 @@ import {
   hasTimedEffect,
   healArcaneDirectly,
   isPositiveSimpleSkill,
+  isUltimateSkill,
   isPointVisibleToTeam,
   loadGameData,
   materializeMatchRenderFrame,
@@ -62,9 +72,12 @@ import {
   resolveCombat,
   simulationFrameSeconds,
   spawnWave,
+  startTeleportIfUseful,
   shopCatalog,
   tryCastSimpleSkill,
+  tryCastRangedCreepSecureSkill,
   tick,
+  updateCreepMovement,
   updateCombatAiFoundation,
   updateBoss,
   type Arcane,
@@ -419,6 +432,140 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   assert.equal(upgraded.items.includes(plan!.soldItemName!), false)
   assert.equal(upgraded.items.includes(plan!.item.name), true)
   assert.equal(upgraded.stats.gold, goldBefore - plan!.netCost, 'the purchase should credit resale gold before buying the upgrade')
+}
+
+{
+  const pullState = createInitialState('lane-pull-runtime-test')
+  pullState.time = 104
+  const support = pullState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Dedicated Support')!
+  const core = pullState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Safe Lane')!
+  const camp = getLanePullCamp(pullState, 'dawn') ?? pullState.camps.find((candidate) => candidate.id === 'camp-outer-grove-dawn')!
+  camp.hp = camp.maxHp
+  camp.respawn = 0
+  camp.lastAttack = -10
+  support.pos = { x: camp.pos.x - 6, y: camp.pos.y }
+  core.stats.hp = core.stats.maxHp
+  const waveCreep = {
+    ...spawnWave(pullState).find((creep) => creep.team === 'dawn' && creep.lane === support.lane && creep.type === 'melee')!,
+    pos: { x: camp.pos.x - 8, y: camp.pos.y },
+  }
+  pullState.creeps = [waveCreep]
+
+  const plan = getLanePullPlan(pullState, support, [])
+  assert.ok(plan?.commit, 'the safelane support should commit a valuable pull in the 44-second window')
+  assert.equal(plan?.camp.id, camp.id)
+  support.microDecision = 'Puxando wave no campo'
+  support.target = { ...camp.pos }
+  support.pos = { x: camp.pos.x - 7.5, y: camp.pos.y }
+  assert.equal(getActivePullCampForCreep(pullState, waveCreep)?.id, camp.id)
+  const movedCreep = updateCreepMovement(waveCreep, pullState, 0.2, createTickFrameContext())
+  assert.equal(movedCreep.pullCampId, camp.id)
+  assert.ok(distance(movedCreep.pos, camp.pos) < distance(waveCreep.pos, camp.pos), 'the pulled wave should leave its lane path toward the camp')
+  support.microDecision = 'Retornando para a lane'
+  const returnedCreep = updateCreepMovement({ ...movedCreep, pullUntil: pullState.time - 0.1 }, pullState, 0.2, createTickFrameContext())
+  assert.equal(returnedCreep.pullCampId, undefined, 'an expired pull should release the creep back to its synchronized lane path')
+  support.microDecision = 'Puxando wave no campo'
+
+  const fightingCreep = {
+    ...movedCreep,
+    pos: { x: camp.pos.x - 1, y: camp.pos.y },
+    hp: Math.max(movedCreep.hp, 300),
+    maxHp: Math.max(movedCreep.maxHp, 300),
+    pullUntil: pullState.time + 10,
+    lastAttack: -10,
+  }
+  pullState.creeps = [fightingCreep]
+  assert.equal(getRouteCreepTarget(fightingCreep, pullState, 'attack')?.id, camp.id, 'a pulled creep in range should attack the neutral camp')
+  const campHpBeforePullCombat = camp.hp
+  const creepHpBeforePullCombat = fightingCreep.hp
+  resolveCombat(pullState, createTickFrameContext())
+  assert.ok(pullState.camps.find((candidate) => candidate.id === camp.id)!.hp < campHpBeforePullCombat, 'lane creeps should damage the pulled camp')
+  assert.ok(pullState.creeps.find((creep) => creep.id === fightingCreep.id)!.hp < creepHpBeforePullCombat, 'neutral camps should retaliate against pulled lane creeps')
+
+  const enemyPuller = pullState.arcanes.find((arcane) => arcane.team === 'dusk' && arcane.role === 'Dedicated Support')!
+  const contestSupport = pullState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Greedy Support')!
+  const enemyCamp = pullState.camps.find((candidate) => candidate.id === 'camp-outer-grove-dusk')!
+  enemyCamp.hp = enemyCamp.maxHp
+  enemyCamp.respawn = 0
+  enemyPuller.microDecision = 'Puxando wave no campo'
+  enemyPuller.pos = { ...enemyCamp.pos }
+  contestSupport.pos = { x: enemyCamp.pos.x - 8, y: enemyCamp.pos.y }
+  const contest = getEnemyPullContestPlan(pullState, contestSupport, [enemyPuller])
+  assert.equal(contest?.puller.id, enemyPuller.id, 'the opposing greedy support should recognize and contest an exposed pull')
+}
+
+{
+  const creepPriorityState = createInitialState('ranged-creep-priority-test')
+  creepPriorityState.time = 240
+  const core = creepPriorityState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Safe Lane')!
+  creepPriorityState.arcanes.forEach((arcane) => {
+    if (arcane.id !== core.id) arcane.pos = { x: 1, y: 1 }
+  })
+  core.pos = { x: 50, y: 50 }
+  const baseCreeps = spawnWave(creepPriorityState)
+  const melee = { ...baseCreeps.find((creep) => creep.team === 'dusk' && creep.lane === core.lane && creep.type === 'melee')!, pos: { x: 51, y: 50 }, hp: 1 }
+  const ranged = { ...baseCreeps.find((creep) => creep.team === 'dusk' && creep.lane === core.lane && creep.type === 'mage')!, pos: { x: 51.2, y: 50 }, hp: Math.max(2, getEffectiveArcaneDamage(creepPriorityState, core) * 0.9) }
+  assert.equal(getLastHitCandidateFromCreeps(creepPriorityState, core, [melee, ranged], 1.06)?.id, ranged.id, 'a killable ranged creep should outrank a lower-health melee creep')
+  const alliedMelee = { ...melee, id: 'deny-melee', team: 'dawn' as const, hp: melee.maxHp * 0.2 }
+  const alliedRanged = { ...ranged, id: 'deny-ranged', team: 'dawn' as const, hp: ranged.maxHp * 0.49 }
+  assert.equal(getDenyCandidateFromCreeps(core, [alliedMelee, alliedRanged])?.id, alliedRanged.id, 'ranged creep timing should also be explicit for denies')
+}
+
+{
+  const secureState = createInitialState('ranged-creep-spell-secure-test')
+  secureState.time = 300
+  const caster = secureState.arcanes.find((arcane) => {
+    if (arcane.role.includes('Support')) return false
+    arcane.stats.level = 6
+    const skill = (getHeroDefinition(arcane.heroDefinitionId).skills ?? []).find((candidate) => {
+      arcane.skillLevels = { [candidate.key]: 1 }
+      return candidate.kind !== 'passive' && !isUltimateSkill(candidate) && !isPositiveSimpleSkill(candidate) && getSimpleSkillDamage(arcane, candidate, 1) > 0
+    })
+    if (!skill) return false
+    arcane.skillLevels = { [skill.key]: 1 }
+    return true
+  })!
+  assert.ok(caster, 'the imported test roster should contain a core with a simple damage skill')
+  secureState.arcanes.forEach((arcane) => {
+    if (arcane.id !== caster.id) arcane.stats.hp = 0
+  })
+  const secureSkill = (getHeroDefinition(caster.heroDefinitionId).skills ?? []).find((skill) => (
+    (caster.skillLevels[skill.key] ?? 0) > 0 && getSimpleSkillDamage(caster, skill, 1) > 0
+  ))!
+  caster.stats.mana = caster.stats.maxMana
+  caster.pos = { x: 50, y: 50 }
+  const skillDamage = getSimpleSkillDamage(caster, secureSkill, 1)
+  const skillRange = getSimpleSkillRange(caster, secureSkill, 1)
+  const rangedCreep = {
+    ...spawnWave(secureState).find((creep) => creep.team !== caster.team && creep.lane === caster.lane && creep.type === 'mage')!,
+    pos: { x: 50 + Math.max(1, skillRange * 0.75), y: 50 },
+    hp: Math.max(1, skillDamage - 1),
+  }
+  secureState.creeps = [rangedCreep]
+  assert.equal(getRangedCreepSkillSecureTarget(secureState, caster, [rangedCreep])?.id, rangedCreep.id)
+  const manaBeforeSecure = caster.stats.mana
+  assert.equal(tryCastRangedCreepSecureSkill(secureState, caster, rangedCreep), true)
+  assert.equal(secureState.creeps[0].hp, 0, 'the selected simple skill should secure the ranged creep')
+  assert.ok(secureState.arcanes.find((arcane) => arcane.id === caster.id)!.stats.mana < manaBeforeSecure)
+  assert.ok((secureState.arcanes.find((arcane) => arcane.id === caster.id)!.itemCooldowns[secureSkill.id] ?? 0) > secureState.time)
+}
+
+{
+  const teleportState = createInitialState('combat-reinforcement-teleport-test')
+  teleportState.time = 600
+  const arcane = teleportState.arcanes.find((candidate) => candidate.team === 'dawn' && candidate.role === 'Greedy Support')!
+  const farTower = teleportState.towers
+    .filter((tower) => tower.team === arcane.team && tower.hp > 0)
+    .sort((left, right) => distance(right.pos, arcane.pos) - distance(left.pos, arcane.pos))[0]
+  arcane.pos = { ...teleportState.bases.find((base) => base.team === arcane.team)!.pos }
+  const reinforcementTeleport = getBestTeleportTarget(teleportState, arcane, farTower.pos, 'Reforcar luta', 'Chegando em skirmish', true)
+  assert.ok(reinforcementTeleport, 'a reinforcement should teleport when it materially beats walking to the encounter')
+  arcane.stats.mana = arcane.stats.maxMana
+  arcane.tpScrolls = 1
+  arcane.tpCooldownUntil = 0
+  const channelingReinforcement = startTeleportIfUseful(teleportState, arcane, farTower.pos, 'Reforcar luta', 'Chegando em skirmish', true, false)
+  assert.equal(channelingReinforcement?.channeling?.kind, 'teleport', 'a qualified reinforcement should start the teleport channel')
+  assert.equal(getBestTeleportTarget(teleportState, arcane, { x: arcane.pos.x + 5, y: arcane.pos.y }, 'Reforcar luta', 'Chegando em skirmish', true), undefined)
 }
 
 assert.ok(getRoleFarmPriority('Safe Lane') > getRoleFarmPriority('Mid'))

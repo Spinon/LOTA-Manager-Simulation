@@ -184,6 +184,8 @@ export type Creep = {
   lastHitBy?: CombatSource
   aggroTargetId?: string
   aggroUntil?: number
+  pullCampId?: string
+  pullUntil?: number
 }
 export type Tower = {
   id: string
@@ -530,6 +532,10 @@ export const teleportNearbyPenaltyRadius = 10
 export const teleportNearbyPenaltySeconds = 25
 export const teleportArrivalOffset = 2.8
 export const teleportManaCost = 75
+export const lanePullStartSecond = 38
+export const lanePullCommitSecond = 43
+export const lanePullEndSecond = 55
+export const lanePullDurationSeconds = 14
 export const itemResaleRate = 0.5
 // 30Hz é suficiente para a física da sim: o playback consome frames a 5Hz com
 // interpolação visual, e as decisões de IA já são gated a 0.1s (decisionGateSeconds).
@@ -4389,8 +4395,9 @@ export function getBestTeleportTarget(
     macroDecision.startsWith('Recuar') ||
     macroDecision.startsWith('Recuperar') ||
     macroDecision.startsWith('Defender base')
+  const reinforcesFight = macroDecision.startsWith('Reforcar luta')
   const distanceToDesired = distance(arcane.pos, desiredTarget)
-  const travelThreshold = atBase ? 28 : wantsFountain ? 24 : 34
+  const travelThreshold = reinforcesFight ? 24 : atBase ? 28 : wantsFountain ? 24 : 34
   if (distanceToDesired < travelThreshold) return undefined
 
   const candidates = getAlliedTeleportTargets(state, arcane)
@@ -4404,7 +4411,13 @@ export function getBestTeleportTarget(
 
   if (!selected) return undefined
   if (distance(arcane.pos, selected.arrival) < travelThreshold) return undefined
-  if (!wantsFountain && distance(selected.buildingPos, desiredTarget) > 42 && !macroDecision.startsWith('Juntar') && !macroDecision.startsWith('Fazer objetivo')) return undefined
+  if (!wantsFountain && distance(selected.buildingPos, desiredTarget) > 42 && !macroDecision.startsWith('Juntar') && !macroDecision.startsWith('Fazer objetivo') && !reinforcesFight) return undefined
+  if (reinforcesFight) {
+    const moveSpeed = Math.max(0.6, getEffectiveArcaneMoveSpeed(state, arcane))
+    const walkSeconds = distanceToDesired / moveSpeed
+    const teleportSeconds = getTeleportChannelDuration(state, arcane.team, selected) + distance(selected.arrival, desiredTarget) / moveSpeed
+    if (teleportSeconds + 2 >= walkSeconds) return undefined
+  }
   if (microDecision.includes('Regenerando') || microDecision.includes('Comprando')) return undefined
   return selected
 }
@@ -4461,6 +4474,96 @@ export function getTeleportChannelDuration(state: SimulationState, team: TeamId,
   if (recentCount <= 0) return teleportChannelSeconds
   if (recentCount === 1) return 5
   return 5 + (recentCount - 1) * 0.5
+}
+
+export type LanePullPlan = {
+  camp: Camp
+  score: number
+  commit: boolean
+}
+
+export function getLanePullCamp(state: SimulationState, team: TeamId) {
+  return state.camps.find((camp) => camp.id === `camp-outer-grove-${team}` && camp.hp > 0 && camp.respawn <= state.time)
+}
+
+export function getLanePullPlan(
+  state: SimulationState,
+  arcane: Arcane,
+  visibleEnemies = state.arcanes.filter((enemy) => enemy.team !== arcane.team && enemy.stats.hp > 0 && enemy.respawn <= state.time && isPointVisibleToTeam(state, arcane.team, enemy.pos)),
+): LanePullPlan | undefined {
+  if (arcane.role !== 'Dedicated Support' || state.time < 60 || state.time > 11 * 60) return undefined
+  const second = ((state.time % 60) + 60) % 60
+  if (second < lanePullStartSecond || second > lanePullEndSecond) return undefined
+  const camp = getLanePullCamp(state, arcane.team)
+  if (!camp) return undefined
+  const core = state.arcanes.find((ally) => (
+    ally.team === arcane.team &&
+    ally.role === 'Safe Lane' &&
+    ally.lane === arcane.lane &&
+    ally.stats.hp > ally.stats.maxHp * 0.38 &&
+    ally.respawn <= state.time
+  ))
+  if (!core) return undefined
+  const wave = state.creeps.filter((creep) => (
+    creep.team === arcane.team &&
+    creep.lane === arcane.lane &&
+    creep.hp > 0 &&
+    distance(creep.pos, camp.pos) <= 18
+  ))
+  if (wave.length === 0) return undefined
+  const combatBoard = getArcaneCombatBlackboard(state, arcane)
+  const committedFight = combatBoard &&
+    (combatBoard.phase === 'commit' || combatBoard.phase === 'sustain' || combatBoard.phase === 'chase') &&
+    combatBoard.scenario?.intent === 'engage'
+  if (committedFight) return undefined
+  const contestingEnemies = visibleEnemies.filter((enemy) => distance(enemy.pos, camp.pos) <= 13)
+  const averageWaveProgress = average(wave.map((creep) => laneProgress(creep.pos, lanePaths[arcane.team][arcane.lane])))
+  const coreSafety = core.stats.hp / Math.max(1, core.stats.maxHp) >= 0.58 ? 12 : -18
+  const score = 38 + averageWaveProgress * 34 + camp.stackCount * 9 + coreSafety - contestingEnemies.length * 22
+  if (score < 48) return undefined
+  return {
+    camp,
+    score: Math.round(score),
+    commit: second >= lanePullCommitSecond || distance(arcane.pos, camp.pos) <= 7,
+  }
+}
+
+export function getEnemyPullContestPlan(
+  state: SimulationState,
+  arcane: Arcane,
+  visibleEnemies = state.arcanes.filter((enemy) => enemy.team !== arcane.team && enemy.stats.hp > 0 && enemy.respawn <= state.time && isPointVisibleToTeam(state, arcane.team, enemy.pos)),
+) {
+  if (arcane.role !== 'Greedy Support' || state.time < 60 || state.time > 11 * 60) return undefined
+  const puller = visibleEnemies.find((enemy) => (
+    enemy.role === 'Dedicated Support' &&
+    enemy.lane === arcane.lane &&
+    enemy.microDecision.startsWith('Puxando wave')
+  ))
+  if (!puller) return undefined
+  const camp = getLanePullCamp(state, puller.team)
+  if (!camp || distance(arcane.pos, camp.pos) > 30) return undefined
+  const localNumbers = getLocalNumbers(state, arcane.team, camp.pos, 13, visibleEnemies)
+  const score = 54 + camp.stackCount * 10 + Math.max(0, localNumbers.advantage) * 14 - Math.max(0, -localNumbers.advantage) * 20
+  return score >= 42 ? { camp, puller, score: Math.round(score) } : undefined
+}
+
+export function getActivePullCampForCreep(state: SimulationState, creep: Creep) {
+  if (creep.pullCampId && (creep.pullUntil ?? 0) > state.time) {
+    const active = state.camps.find((camp) => camp.id === creep.pullCampId && camp.hp > 0 && camp.respawn <= state.time)
+    if (active) return active
+  }
+  const camp = getLanePullCamp(state, creep.team)
+  if (!camp || distance(creep.pos, camp.pos) > 15) return undefined
+  const puller = state.arcanes.find((arcane) => (
+    arcane.team === creep.team &&
+    arcane.role === 'Dedicated Support' &&
+    arcane.lane === creep.lane &&
+    arcane.stats.hp > 0 &&
+    arcane.respawn <= state.time &&
+    arcane.microDecision.startsWith('Puxando wave') &&
+    distance(arcane.pos, camp.pos) <= 8
+  ))
+  return puller ? camp : undefined
 }
 
 export function updateArcaneMovement(arcane: Arcane, state: SimulationState, delta: number, shouldDecide: boolean): Arcane {
@@ -4654,12 +4757,12 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
     const prepareLastHitCreep = getLastHitCandidateFromCreeps(state, arcane, claimableLaneCreeps, 1.85) ?? getWavePushTarget(arcane, claimableLaneCreeps)
     const wavePushCreep = getWavePushTarget(arcane, claimableLaneCreeps)
     const distantLaneCreep = nearest(arcane.pos, safeEnemyCreeps.filter((creep) => canArcaneClaimFarmAt(state, arcane, creep.pos)), phase === 'early' ? 18 : phase === 'mid' ? 28 : 34)
-    const denyCreep = nearest(arcane.pos, state.creeps.filter((creep) => (
+    const denyCreep = getDenyCandidateFromCreeps(arcane, state.creeps.filter((creep) => (
       creep.team === arcane.team &&
       creep.lane === arcane.lane &&
       creep.hp > 0 &&
       creep.hp <= creep.maxHp * 0.5
-    )), phase === 'early' ? 14 : 9)
+    )).filter((creep) => distance(arcane.pos, creep.pos) <= (phase === 'early' ? 14 : 9)))
     const attackableLaneTowers = getAttackableEnemyTowers(state, arcane.team).filter((tower) => tower.lane === arcane.lane)
     const enemyTower = nearest(arcane.pos, attackableLaneTowers, Math.max(18, arcane.stats.range + 8))
     const blockingTower = getNextEnemyTowerInLane(state, arcane.team, arcane.lane)
@@ -4689,6 +4792,8 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
         : undefined
     const weakCamp = getBestJungleCampForArcane(state, arcane, phase === 'early' ? isSupport ? 10 : 7.5 : isSupport ? 10 : 14, visibleEnemies)
     const economyCamp = getBestJungleCampForArcane(state, arcane, phase === 'early' ? isSupport ? 17 : 11 : isSupport ? 17 : 24, visibleEnemies)
+    const lanePullPlan = getLanePullPlan(state, arcane, visibleEnemies)
+    const enemyPullContest = getEnemyPullContestPlan(state, arcane, visibleEnemies)
     const committedCamp = isJungleFarmMicroDecision(arcane.microDecision)
       ? nearest(arcane.target, state.camps.filter((camp) => camp.hp > 0), 7)
       : undefined
@@ -4928,6 +5033,11 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
           : farFromGroup
             ? `Movendo para agrupamento: ${teamCall.targetName}`
             : `Executando objetivo: ${teamCall.targetName}`
+    } else if (enemyPullContest && hpRatio > 0.58 && effectiveDanger < 58) {
+      target = enemyPullContest.puller.pos
+      macroDecision = 'Contestar pull'
+      microDecision = `Contestando pull de ${enemyPullContest.puller.player}`
+      aiReason = `${aiReason}${aiReason ? ', ' : ''}contest_pull, value_${enemyPullContest.score}`
     } else if (gankTarget && economyNeed < 34 && hpRatio > 0.68 && effectiveDanger < 56) {
       target = gankTarget.pos
       macroDecision = 'Criar vantagem'
@@ -4940,6 +5050,11 @@ export function updateArcaneMovement(arcane: Arcane, state: SimulationState, del
       target = nearbyEnemy.pos
       macroDecision = 'Pressionar inimigo'
       microDecision = `Pressionando ${nearbyEnemy.name}`
+    } else if (lanePullPlan && effectiveDanger < 48) {
+      target = lanePullPlan.camp.pos
+      macroDecision = lanePullPlan.commit ? 'Executar pull' : 'Preparar pull'
+      microDecision = lanePullPlan.commit ? 'Puxando wave no campo' : 'Preparando pull da safelane'
+      aiReason = `${aiReason}${aiReason ? ', ' : ''}lane_pull, value_${lanePullPlan.score}`
     } else if (lastHitCreep && isLaningPhase && (!modeWantsJungle || modeWantsLaneFarm) && effectiveDanger < 62) {
       target = lastHitCreep.pos
       macroDecision = 'Controlar wave'
@@ -6039,7 +6154,7 @@ export function getCombatMoveTargetNearPoint(state: SimulationState, arcane: Arc
     )), 5)
   }
 
-  if (isJungleFarmMicroDecision(microDecision)) {
+  if (isJungleFarmMicroDecision(microDecision) || isLanePullMicroDecision(microDecision)) {
     return nearest(target, state.camps.filter((camp) => camp.hp > 0), 6)
   }
 
@@ -6061,6 +6176,10 @@ export function getCombatMoveTargetNearPoint(state: SimulationState, arcane: Arc
 
 export function isJungleFarmMicroDecision(microDecision: string) {
   return microDecision.startsWith('Limpando campo') || microDecision.startsWith('Acumulando patrimonio na selva')
+}
+
+export function isLanePullMicroDecision(microDecision: string) {
+  return microDecision.startsWith('Puxando wave') || microDecision.startsWith('Preparando pull')
 }
 
 export function getFocusedObjectiveTarget(state: SimulationState, arcane: Arcane): Tower | Structure | Base | undefined {
@@ -6486,6 +6605,27 @@ export function absorbDamageWithBarriers(state: SimulationState, targetId: strin
 }
 
 export function updateCreepMovement(creep: Creep, state: SimulationState, delta: number, frameContext: TickFrameContext): Creep {
+  const pullCamp = getActivePullCampForCreep(state, creep)
+  if (pullCamp) {
+    const moveTarget = getCreepMoveDestination(creep, pullCamp)
+    const nextPos = moveToward(creep.pos, moveTarget, 4.2 * delta)
+    return {
+      ...creep,
+      pos: nextPos,
+      pullCampId: pullCamp.id,
+      pullUntil: creep.pullUntil && creep.pullUntil > state.time
+        ? creep.pullUntil
+        : state.time + lanePullDurationSeconds,
+    }
+  }
+  if (creep.pullCampId || creep.pullUntil) {
+    creep = {
+      ...creep,
+      pathIndex: syncLanePathIndex(creep.pos, lanePaths[creep.team][creep.lane], creep.pathIndex),
+      pullCampId: undefined,
+      pullUntil: undefined,
+    }
+  }
   if (getCachedRouteCreepTarget(creep, state, 'attack', frameContext)) {
     return creep
   }
@@ -6566,6 +6706,11 @@ export function getRouteCreepTarget(creep: Creep, state: SimulationState, mode: 
   )
   const creepGrid = getCreepSpatialGrid(state)
   const nearbyCreeps = querySpatialGrid(creepGrid, creep.pos, unitRange + 2.5)
+  const pullCamp = getActivePullCampForCreep(state, creep)
+  if (pullCamp) {
+    const pullTarget = selectTarget([pullCamp], unitRange)
+    if (pullTarget) return pullTarget
+  }
   const aggroTarget = creep.aggroUntil && creep.aggroUntil > state.time
     ? selectTarget(state.arcanes.filter((arcane) => (
         arcane.id === creep.aggroTargetId &&
@@ -6866,6 +7011,70 @@ export function tryCastSimpleSkill(state: SimulationState, arcane: Arcane, fallb
   return false
 }
 
+export function getRangedCreepSkillSecureTarget(state: SimulationState, arcane: Arcane, creeps: Creep[]) {
+  if (state.time > 12 * 60 || arcane.role.includes('Support')) return undefined
+  const timingValue = arcane.stats.level <= 6 || getLevelProgress(arcane.stats.xp) >= 0.72
+  if (!timingValue) return undefined
+  const skills = getHeroDefinition(arcane.heroDefinitionId).skills ?? []
+  const availableDamageSkills = skills
+    .filter((skill) => skill.kind !== 'passive' && !isUltimateSkill(skill) && !isPositiveSimpleSkill(skill))
+    .map((skill) => ({ skill, level: getSimpleSkillLevel(arcane, skill) }))
+    .filter(({ skill, level }) => (
+      level > 0 &&
+      getSimpleSkillDamage(arcane, skill, level) > 0 &&
+      arcane.stats.mana >= getSimpleSkillManaCost(arcane, skill, level) &&
+      (arcane.itemCooldowns[skill.id] ?? 0) <= state.time
+    ))
+  if (availableDamageSkills.length === 0) return undefined
+
+  return creeps
+    .filter((creep) => (
+      creep.type === 'mage' &&
+      creep.team !== arcane.team &&
+      creep.lane === arcane.lane &&
+      creep.hp > 0 &&
+      canArcaneClaimFarmAt(state, arcane, creep.pos) &&
+      availableDamageSkills.some(({ skill, level }) => {
+        const manaCost = getSimpleSkillManaCost(arcane, skill, level)
+        const manaReserve = arcane.stats.maxMana * (arcane.role === 'Mid' ? 0.18 : 0.26)
+        return arcane.stats.mana - manaCost >= manaReserve &&
+          getSimpleSkillDamage(arcane, skill, level) >= creep.hp &&
+          canTargetWithSimpleDamageSkill(arcane, skill, creep) &&
+          distance(arcane.pos, creep.pos) <= getSimpleSkillRange(arcane, skill, level) + getEntityCollisionRadius(creep)
+      })
+    ))
+    .sort((left, right) => left.hp - right.hp || distance(arcane.pos, left.pos) - distance(arcane.pos, right.pos))[0]
+}
+
+export function tryCastRangedCreepSecureSkill(state: SimulationState, arcane: Arcane, target: Creep) {
+  if (target.type !== 'mage' || target.team === arcane.team || isArcaneSilenced(state, arcane)) return false
+  const skills = (getHeroDefinition(arcane.heroDefinitionId).skills ?? [])
+    .filter((skill) => skill.kind !== 'passive' && !isUltimateSkill(skill) && !isPositiveSimpleSkill(skill))
+    .map((skill) => ({ skill, level: getSimpleSkillLevel(arcane, skill) }))
+    .filter(({ skill, level }) => {
+      if (level <= 0 || (arcane.itemCooldowns[skill.id] ?? 0) > state.time) return false
+      const manaCost = getSimpleSkillManaCost(arcane, skill, level)
+      const manaReserve = arcane.stats.maxMana * (arcane.role === 'Mid' ? 0.18 : 0.26)
+      return arcane.stats.mana - manaCost >= manaReserve &&
+        getSimpleSkillDamage(arcane, skill, level) >= target.hp &&
+        canTargetWithSimpleDamageSkill(arcane, skill, target) &&
+        distance(arcane.pos, target.pos) <= getSimpleSkillRange(arcane, skill, level) + getEntityCollisionRadius(target)
+    })
+    .sort((left, right) => (
+      getSimpleSkillManaCost(arcane, left.skill, left.level) - getSimpleSkillManaCost(arcane, right.skill, right.level) ||
+      getSimpleSkillCooldown(left.skill, left.level) - getSimpleSkillCooldown(right.skill, right.level)
+    ))
+
+  for (const { skill, level } of skills) {
+    const previousCooldown = arcane.itemCooldowns[skill.id]
+    const cooldownUntil = state.time + getSimpleSkillCooldown(skill, level)
+    setArcaneSkillCooldown(state, arcane, skill.id, cooldownUntil)
+    if (castSimpleSkill(state, arcane, skill, level, target, true)) return true
+    restoreArcaneSkillCooldown(state, arcane, skill.id, previousCooldown)
+  }
+  return false
+}
+
 export function setArcaneSkillCooldown(state: SimulationState, arcane: Arcane, skillId: string, cooldownUntil: number) {
   const liveArcane = state.arcanes.find((candidate) => candidate.id === arcane.id) ?? arcane
   liveArcane.itemCooldowns = {
@@ -7053,9 +7262,10 @@ export function castSimpleSkill(
   skill: HeroSkillDefinition,
   level: number,
   fallbackTarget: CombatTarget | undefined,
+  preferFallbackTarget = false,
 ) {
   if (isConfirmedGlobalSkill(skill) && !shouldCastGlobalSkill(state, arcane, skill)) return false
-  const target = getSimpleSkillTarget(state, arcane, skill, level, fallbackTarget)
+  const target = getSimpleSkillTarget(state, arcane, skill, level, fallbackTarget, preferFallbackTarget)
   if (!target) return false
   if ('player' in target && target.team !== arcane.team && !shouldCommitOffensiveSkill(state, arcane, target, skill)) {
     return false
@@ -7551,12 +7761,21 @@ export function getSimpleSkillTarget(
   skill: HeroSkillDefinition,
   level: number,
   fallbackTarget: CombatTarget | undefined,
+  preferFallbackTarget = false,
 ): CombatTarget | undefined {
   if (isPositiveSimpleSkill(skill)) {
     return getSimplePositiveSkillTarget(state, arcane, skill, level)
   }
 
   const range = getSimpleSkillRange(arcane, skill, level)
+  if (
+    preferFallbackTarget &&
+    fallbackTarget &&
+    canTargetWithSimpleDamageSkill(arcane, skill, fallbackTarget) &&
+    distance(arcane.pos, fallbackTarget.pos) <= range + getEntityCollisionRadius(fallbackTarget)
+  ) {
+    return fallbackTarget
+  }
   const focusTarget = getCombatFocusTarget(state, arcane)
   if (
     focusTarget &&
@@ -8009,7 +8228,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     if (camp.hp <= 0) continue
     if (next.time < camp.lastAttack + 1.35) continue
     const leashRange = Math.max(8, camp.range + 2.5)
-    const aggroTarget = camp.aggroUntil && camp.aggroUntil > next.time
+    const aggroArcane = camp.aggroUntil && camp.aggroUntil > next.time
       ? next.arcanes.find((arcane) => (
           arcane.id === camp.aggroTargetId &&
           arcane.stats.hp > 0 &&
@@ -8017,7 +8236,21 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
           distance(camp.pos, arcane.pos) <= leashRange
         ))
       : undefined
-    const target = aggroTarget
+    const aggroCreep = camp.aggroUntil && camp.aggroUntil > next.time
+      ? next.creeps.find((creep) => (
+          creep.id === camp.aggroTargetId &&
+          creep.hp > 0 &&
+          creep.pullCampId === camp.id &&
+          (creep.pullUntil ?? 0) > next.time &&
+          distance(camp.pos, creep.pos) <= leashRange
+        ))
+      : undefined
+    const pulledCreep = nearest(
+      camp.pos,
+      next.creeps.filter((creep) => creep.hp > 0 && creep.pullCampId === camp.id && (creep.pullUntil ?? 0) > next.time),
+      camp.range,
+    )
+    const target = aggroArcane ?? aggroCreep ?? pulledCreep
       ?? (camp.aggroUntil && camp.aggroUntil > next.time
         ? nearestAliveArcane(camp.pos, next.arcanes, next.time, leashRange)
         : nearestAliveArcane(camp.pos, next.arcanes, next.time, camp.range))
@@ -8041,15 +8274,17 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
         team: target.team === 'dawn' ? 'dusk' : 'dawn',
         damageType: 'physical',
       })
-      addTimedEffect(next, target, {
-        sourceId: camp.id,
-        sourceName: camp.name,
-        sourceTeam: target.team === 'dawn' ? 'dusk' : 'dawn',
-        kind: 'slow',
-        polarity: 'negative',
-        value: camp.strength === 'strong' ? 0.22 : camp.strength === 'medium' ? 0.16 : 0.1,
-        duration: camp.strength === 'strong' ? 1.6 : 1.15,
-      })
+      if ('player' in target) {
+        addTimedEffect(next, target, {
+          sourceId: camp.id,
+          sourceName: camp.name,
+          sourceTeam: target.team === 'dawn' ? 'dusk' : 'dawn',
+          kind: 'slow',
+          polarity: 'negative',
+          value: camp.strength === 'strong' ? 0.22 : camp.strength === 'medium' ? 0.16 : 0.1,
+          duration: camp.strength === 'strong' ? 1.6 : 1.15,
+        })
+      }
     }
   }
 
@@ -8132,10 +8367,18 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
     const bossTarget = canAttackBoss && distance(arcane.pos, next.boss.pos) <= getArcaneAttackCenterRange(arcane, next.boss) ? next.boss : undefined
     const objectiveTarget = pregame ? undefined : getFocusedObjectiveTarget(next, arcane)
     const enemyTeam = arcane.team === 'dawn' ? 'dusk' : 'dawn'
-    const farmingJungle = isJungleFarmMicroDecision(arcane.microDecision)
+    const pullingLane = isLanePullMicroDecision(arcane.microDecision)
+    const farmingJungle = isJungleFarmMicroDecision(arcane.microDecision) || pullingLane
     const lastHitTarget = pregame || farmingJungle ? undefined : getLastHitTarget(next, arcane, creepIndicesByTeamLane[enemyTeam][arcane.lane])
     const denyTarget = pregame || farmingJungle ? undefined : getDenyTarget(next, arcane, creepIndicesByTeamLane[arcane.team][arcane.lane])
     const laneControl = isLaningControlMicroDecision(arcane.microDecision)
+    const rangedCreepSkillTarget = !pregame && laneControl && !lastHitTarget
+      ? getRangedCreepSkillSecureTarget(
+          next,
+          arcane,
+          creepIndicesByTeamLane[enemyTeam][arcane.lane].map((index) => next.creeps[index]),
+        )
+      : undefined
     const focusTarget = getCombatFocusTarget(next, arcane)
     const reachableFocusTarget = focusTarget && distance(arcane.pos, focusTarget.pos) <= getArcaneAttackCenterRange(arcane, focusTarget)
       ? focusTarget
@@ -8166,6 +8409,7 @@ export function resolveCombat(state: SimulationState, frameContext: TickFrameCon
         ...(canAttackBoss ? [next.boss] : []),
       ])
     }
+    if (rangedCreepSkillTarget && tryCastRangedCreepSecureSkill(next, arcane, rangedCreepSkillTarget)) return
     if (!protectsLastHitWindow && tryCastSimpleSkill(next, arcane, target)) return
     if (!target || next.time - arcane.lastAttack < attackCooldown) return
 
@@ -8549,13 +8793,21 @@ export function getDenyTarget(state: SimulationState, arcane: Arcane, creepIndic
   const laneCreeps = creepIndices
     ? creepIndices.map((index) => state.creeps[index])
     : state.creeps.filter((creep) => creep.team === arcane.team && creep.lane === arcane.lane)
-  return nearestReachableByArcane(
-    arcane,
-    laneCreeps.filter((creep) => (
+  return getDenyCandidateFromCreeps(arcane, laneCreeps, true)
+}
+
+export function getDenyCandidateFromCreeps(arcane: Arcane, creeps: Creep[], reachableOnly = false) {
+  return creeps
+    .filter((creep) => (
       creep.hp > 0 &&
-      creep.hp <= creep.maxHp * 0.5
-    )),
-  )
+      creep.hp <= creep.maxHp * 0.5 &&
+      (!reachableOnly || distance(arcane.pos, creep.pos) <= getArcaneAttackCenterRange(arcane, creep))
+    ))
+    .sort((left, right) => (
+      getLaneCreepContestPriority(right) - getLaneCreepContestPriority(left) ||
+      left.hp - right.hp ||
+      distance(arcane.pos, left.pos) - distance(arcane.pos, right.pos)
+    ))[0]
 }
 
 export function getLastHitTarget(state: SimulationState, arcane: Arcane, creepIndices?: number[]) {
@@ -8610,10 +8862,19 @@ export function getLastHitCandidateFromCreeps(
       (!reachableOnly || distance(arcane.pos, creep.pos) <= getArcaneAttackCenterRange(arcane, creep))
     ))
     .sort((a, b) => {
+      const priorityDelta = getLaneCreepContestPriority(b) - getLaneCreepContestPriority(a)
+      if (priorityDelta !== 0) return priorityDelta
       const hpDelta = a.hp - b.hp
       if (Math.abs(hpDelta) > 3) return hpDelta
       return distance(arcane.pos, a.pos) - distance(arcane.pos, b.pos)
     })[0]
+}
+
+export function getLaneCreepContestPriority(creep: Creep) {
+  if (creep.type === 'mage') return 4
+  if (creep.type === 'flagbearer') return 3
+  if (creep.type === 'siege') return 2
+  return 1
 }
 
 export function getWavePushTarget(arcane: Arcane, creeps: Creep[]) {
@@ -8762,8 +9023,21 @@ export function resolveDeaths(state: SimulationState): SimulationState {
         arcane.team === source.team &&
         (arcane.id === source.id || source.id.startsWith(`${arcane.id}-`))
       ))
-      if (!killer) return
       const reward = getCampRewards(camp, next.time)
+      if (!killer) {
+        const killerCreep = next.creeps.find((creep) => creep.id === source.id && creep.team === source.team)
+        if (!killerCreep) return
+        const nearbyRecipients = next.arcanes.filter((arcane) => (
+          arcane.team === killerCreep.team &&
+          arcane.stats.hp > 0 &&
+          arcane.respawn <= next.time &&
+          distance(arcane.pos, camp.pos) <= 14
+        ))
+        if (nearbyRecipients.length === 0) return
+        const sharedXp = Math.ceil(reward.xp / nearbyRecipients.length)
+        nearbyRecipients.forEach((recipient) => addCampReward(recipient.id, 0, sharedXp))
+        return
+      }
       const nearbyRecipients = next.arcanes.filter((arcane) => (
         arcane.team === killer.team &&
         arcane.stats.hp > 0 &&
@@ -9138,7 +9412,7 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
       ...targetCamp,
       hp: hit(targetCamp.hp),
       lastHitBy: source,
-      aggroTargetId: sourceArcane?.id,
+      aggroTargetId: sourceArcane?.id ?? source.id,
       aggroUntil: state.time + 8,
       lastDamagedAt: state.time,
     }
