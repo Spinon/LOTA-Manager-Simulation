@@ -96,11 +96,13 @@ import {
   XP_TO_REACH_LEVEL
 } from './sim/simulation'
 import type { MatchWorkerResponse } from './sim/matchWorker'
+import { loadCachedReplay, saveCachedReplay } from './sim/replayCache'
 import { ReplayFrameStore } from './sim/replayStore'
 import './App.css'
 
 type PlaybackStatus = 'loading' | 'ready' | 'buffering' | 'ended' | 'error'
 const softMatchDurationSeconds = 60 * 60
+const activeMatchSeedStorageKey = 'lota-active-match-seed'
 
 // Partida standby: enquanto o jogador assiste a atual, um segundo worker
 // pré-simula a próxima seed até o teto de buffer. No restart, o worker e os
@@ -190,6 +192,14 @@ function createBrowserMatchSeed() {
   return `lota-${values[0].toString(36)}-${values[1].toString(36)}`
 }
 
+function getInitialBrowserMatchSeed() {
+  try {
+    return sessionStorage.getItem(activeMatchSeedStorageKey) ?? createBrowserMatchSeed()
+  } catch {
+    return createBrowserMatchSeed()
+  }
+}
+
 function getFrameKey(frame: MatchRenderFrame) {
   return `${frame.matchSeed}:${frame.time}:${frame.effects.length}:${frame.winner ?? 'playing'}`
 }
@@ -219,7 +229,7 @@ function App() {
   const [loadingError, setLoadingError] = useState<string | undefined>(undefined)
   const [running, setRunning] = useState(true)
   const [speed, setSpeed] = useState(1)
-  const [matchSeed, setMatchSeed] = useState(() => createBrowserMatchSeed())
+  const [matchSeed, setMatchSeed] = useState(getInitialBrowserMatchSeed)
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('loading')
   const [uiDataReady, setUiDataReady] = useState(false)
   const [startupWaitDone, setStartupWaitDone] = useState(false)
@@ -287,8 +297,17 @@ function App() {
   }, [])
 
   useEffect(() => {
+    try {
+      sessionStorage.setItem(activeMatchSeedStorageKey, matchSeed)
+    } catch {
+      // Session storage is optional; simulation and cache still work without it.
+    }
+  }, [matchSeed])
+
+  useEffect(() => {
     const standby = standbyRef.current
     let completionTimer: number | undefined
+    let cacheLookupCancelled = false
     const adopting = standby && standby.seed === matchSeed ? standby : undefined
     if (standby) {
       standbyRef.current = undefined
@@ -297,6 +316,8 @@ function App() {
 
     const worker = adopting ? adopting.worker : new Worker(new URL('./sim/matchWorker.ts', import.meta.url), { type: 'module' })
     const runId = adopting ? adopting.runId : (runSeqRef.current += 1)
+    let workerStarted = Boolean(adopting)
+    let workerTerminated = false
     runIdRef.current = runId
     workerDoneRef.current = adopting?.workerDone ?? false
     frameBufferRef.current = adopting?.frames ?? new ReplayFrameStore()
@@ -491,11 +512,72 @@ function App() {
       completionTimer = window.setTimeout(() => {
         setPlaybackStatus((status) => status === 'loading' || status === 'buffering' ? 'ready' : status)
       }, 450)
+      const staticData = staticDataRef.current
+      if (staticData) {
+        void saveCachedReplay(
+          { seed: matchSeed },
+          {
+            byteLength: frameBufferRef.current.estimatedByteLength,
+            staticData,
+            chunks: frameBufferRef.current.getChunks(),
+            winner: message.winner,
+            simTime: message.simTime,
+            frameCount: message.frameCount,
+          },
+        ).catch(() => undefined)
+      }
       startStandbyPrefetch()
     }
 
     if (!adopting) {
-      worker.postMessage({ type: 'start', seed: matchSeed, runId })
+      const startWorker = () => {
+        if (cacheLookupCancelled || workerStarted || workerTerminated) return
+        workerStarted = true
+        worker.postMessage({ type: 'start', seed: matchSeed, runId })
+      }
+      void loadCachedReplay({ seed: matchSeed })
+        .then((cached) => {
+          if (cacheLookupCancelled || !cached) {
+            startWorker()
+            return
+          }
+          const frames = new ReplayFrameStore()
+          for (const chunk of cached.chunks) frames.appendChunk(chunk)
+          if (frames.length === 0) {
+            startWorker()
+            return
+          }
+          frameBufferRef.current = frames
+          staticDataRef.current = cached.staticData
+          workerDoneRef.current = true
+          const firstFrame = frames.get(0)
+          activeDetailsRef.current = firstFrame.details
+          const firstState = materializeFrame(firstFrame, cached.staticData, activeDetailsRef.current)
+          activeTransportFrameRef.current = firstFrame
+          activeFrameRevisionRef.current = 1
+          stateRef.current = firstState
+          currentFrameKeyRef.current = getFrameKey(firstFrame)
+          setState(firstState)
+          setTeamState(firstState)
+          setInspectorState(firstState)
+          setMatchWinner(cached.winner)
+          setPrecomputeDone(true)
+          setPlaybackStatus('ready')
+          setStartupWaitDone(true)
+          setStartupWaitProgress(1)
+          setBufferInfo({
+            simTime: cached.simTime,
+            frameCount: frames.length,
+            bufferAhead: cached.simTime - matchPreparationStartSeconds,
+          })
+          window.clearTimeout(startupTimer)
+          window.clearInterval(startupProgressTimer)
+          worker.terminate()
+          workerTerminated = true
+          if (workerRef.current === worker) workerRef.current = undefined
+          startStandbyPrefetch()
+        })
+        .catch(startWorker)
     } else if (adoptedReady) {
       // O worker standby terminou de simular? Então não haverá mais mensagens
       // de progresso; dispara a pré-simulação da próxima já na adoção.
@@ -503,11 +585,14 @@ function App() {
     }
 
     return () => {
+      cacheLookupCancelled = true
       window.clearTimeout(startupTimer)
       window.clearInterval(startupProgressTimer)
       window.clearTimeout(completionTimer)
-      worker.postMessage({ type: 'cancel', runId })
-      worker.terminate()
+      if (!workerTerminated) {
+        if (workerStarted) worker.postMessage({ type: 'cancel', runId })
+        worker.terminate()
+      }
       if (workerRef.current === worker) workerRef.current = undefined
     }
   }, [matchSeed])
@@ -570,7 +655,7 @@ function App() {
               frameIndexRef.current += 1
             }
 
-            const currentFrame = frames.get(frameIndexRef.current)
+            const currentFrame = frames.sampleAtTime(playbackCursorRef.current)
             if (currentFrame) {
               if (activeTransportFrameRef.current !== currentFrame) {
                 activeTransportFrameRef.current = currentFrame
@@ -641,7 +726,7 @@ function App() {
     frameIndexRef.current = frameIndex
     playbackCursorRef.current = targetTime
     setWinnerRevealed(targetTime >= latestTime)
-    const frame = frames.get(frameIndex)
+    const frame = frames.sampleAtTime(targetTime)
     activeDetailsRef.current = frames.findDetailsAtOrBefore(frameIndex)
     const nextState = materializeFrame(frame, staticDataRef.current, activeDetailsRef.current)
     activeTransportFrameRef.current = frame

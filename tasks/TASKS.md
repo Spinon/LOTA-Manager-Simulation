@@ -767,7 +767,9 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T30 - Replay por trajetórias e cache endereçado por conteúdo
+### [x] T30 - Replay por trajetórias e cache endereçado por conteúdo
+
+> Concluída em 2026-07-13 - O replay deixou de limitar o scheduler, passou a reconstruir movimento entre keyframes compactos e ganhou cache IndexedDB compatível por conteúdo.
 
 **Objetivo**: reduzir custo e memória do replay e evitar recalcular partidas idênticas.
 
@@ -777,6 +779,13 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Armazenar replays completos em IndexedDB por versão do motor, regras, seed, escalações e estratégias.
 
 **Critérios**: seek e replay completos permanecem determinísticos; cache nunca reutiliza regras incompatíveis; memória fica abaixo do baseline binário atual.
+
+**Resultado (2026-07-13)**:
+- O Worker não oferece mais a próxima amostra visual como deadline da simulação. Keyframes são observacionais e irregulares; o player interpola trajetórias de Arcanes, creeps e chefe no tempo exato do cursor, mantendo eventos e atributos discretos no keyframe anterior.
+- Metadados imutáveis de creeps (time, lane, tipo, HP máximo e alcance) passaram para um dicionário compartilhado. Payloads consecutivos de eventos/detalhes são referenciados sem nova serialização. No mesmo match da T29, o replay caiu de 85,2 MB para 79,3 MB (-6,9%); normalizado por segundo no caminho canônico, caiu 23,5%.
+- A mediana de três partidas completas foi 9,56s wall / 12,08s CPU para 42:43 simulados: 268,0x wall / 212,2x CPU, digest `0870297d913be664`. Contra a T29, o ganho normalizado foi 64,6%; isolando o relógio no encoder novo, 207,3x -> 268,0x (+29,3%).
+- Replays completos são salvos no IndexedDB por fingerprint estável de versão do motor/regras, seed, escalações e estratégias. A seed ativa permanece na sessão: reload da mesma partida reutilizou 17.320 keyframes e abriu o replay completo em menos de dois segundos. Mudanças de conteúdo ou compatibilidade produzem outra chave; o cache retém no máximo três partidas/220 MB.
+- Navegador validado com seek ao resultado, vencedor correto, pós-jogo e retorno ao replay, sem erros de console. Testes cobrem fingerprint, incompatibilidade de regras, round-trip binário, deduplicação e interpolação de trajetórias. Dados completos em `reports/trajectory-replay-audit.json`.
 
 ---
 

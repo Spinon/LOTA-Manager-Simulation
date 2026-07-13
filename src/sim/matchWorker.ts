@@ -89,7 +89,9 @@ async function runMatch(seed: string, runId: number) {
 
       const chunkStartedAt = performance.now()
       for (let step = 0; step < simulationChunkSteps && !state.winner; step += 1) {
-        const advance = advanceSimulationClock(state, simulationClock, nextFrameAt)
+        // Replay keyframes are observational. They must never shorten a simulation
+        // step or alter combat outcomes; the player reconstructs motion between them.
+        const advance = advanceSimulationClock(state, simulationClock)
         state = advanceSimulationState(state, advance)
         if (state.time + 0.0001 >= nextFrameAt) {
           postFrame()

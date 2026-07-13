@@ -23,6 +23,8 @@ export type EncodedReplayChunk = {
   baseCount: number
   campCount: number
   dictionaryAdditions: string[]
+  dictionaryEnums: Uint8Array
+  dictionaryNumbers: Int32Array
   times: Int32Array
   kills: Uint16Array
   winners: Int8Array
@@ -35,8 +37,8 @@ export type EncodedReplayChunk = {
   bosses: Int32Array
   creepOffsets: Uint32Array
   creepIds: Uint32Array
-  creepEnums: Uint8Array
   creepNumbers: Int32Array
+  extrasIndices: Uint32Array
   extrasOffsets: Uint32Array
   extrasBytes: Uint8Array
 }
@@ -44,6 +46,9 @@ export type EncodedReplayChunk = {
 export class ReplayChunkEncoder {
   private readonly stringIds = new Map<string, number>()
   private dictionarySize = 0
+  private extrasDictionarySize = 0
+  private previousExtrasSerialized?: string
+  private previousExtrasId = -1
 
   encode(frames: MatchRenderFrame[]): EncodedReplayChunk {
     if (frames.length === 0) throw new Error('Cannot encode an empty replay chunk')
@@ -55,6 +60,8 @@ export class ReplayChunkEncoder {
     const baseCount = first.baseHp.length
     const campCount = first.camps.length
     const dictionaryAdditions: string[] = []
+    const dictionaryEnums: number[] = []
+    const dictionaryNumbers: number[] = []
     const creepCount = frames.reduce((sum, frame) => sum + frame.creeps.length, 0)
     const times = new Int32Array(frameCount)
     const kills = new Uint16Array(frameCount * 2)
@@ -68,21 +75,33 @@ export class ReplayChunkEncoder {
     const bosses = new Int32Array(frameCount * 5)
     const creepOffsets = new Uint32Array(frameCount + 1)
     const creepIds = new Uint32Array(creepCount)
-    const creepEnums = new Uint8Array(creepCount * 3)
-    const creepNumbers = new Int32Array(creepCount * 5)
-    const extrasOffsets = new Uint32Array(frameCount + 1)
+    const creepNumbers = new Int32Array(creepCount * 3)
+    const extrasIndices = new Uint32Array(frameCount)
     const encodedExtras: Uint8Array[] = []
     const textEncoder = new TextEncoder()
     let creepCursor = 0
-    let extrasLength = 0
 
-    const getStringId = (value: string) => {
+    const getCreepId = (creep: MatchRenderFrame['creeps'][number]) => {
+      const value = creep[0]
       const existing = this.stringIds.get(value)
       if (existing !== undefined) return existing
       const id = this.dictionarySize
       this.dictionarySize += 1
       this.stringIds.set(value, id)
       dictionaryAdditions.push(value)
+      dictionaryEnums.push(teamCodes[creep[1]], laneCodes[creep[2]], creepTypeCodes[creep[3]])
+      dictionaryNumbers.push(packNumber(creep[7]), packNumber(creep[8]))
+      return id
+    }
+
+    const getExtrasId = (extras: FrameExtras) => {
+      const serialized = JSON.stringify(extras)
+      if (serialized === this.previousExtrasSerialized) return this.previousExtrasId
+      const id = this.extrasDictionarySize
+      this.extrasDictionarySize += 1
+      this.previousExtrasSerialized = serialized
+      this.previousExtrasId = id
+      encodedExtras.push(textEncoder.encode(serialized))
       return id
     }
 
@@ -106,11 +125,8 @@ export class ReplayChunkEncoder {
       writeNumbers(bosses, frameIndex * 5, frame.boss)
       creepOffsets[frameIndex] = creepCursor
       frame.creeps.forEach((creep) => {
-        creepIds[creepCursor] = getStringId(creep[0])
-        creepEnums[creepCursor * 3] = teamCodes[creep[1]]
-        creepEnums[creepCursor * 3 + 1] = laneCodes[creep[2]]
-        creepEnums[creepCursor * 3 + 2] = creepTypeCodes[creep[3]]
-        writeNumbers(creepNumbers, creepCursor * 5, creep.slice(4) as number[])
+        creepIds[creepCursor] = getCreepId(creep)
+        writeNumbers(creepNumbers, creepCursor * 3, creep.slice(4, 7) as number[])
         creepCursor += 1
       })
       const extras: FrameExtras = {
@@ -125,13 +141,16 @@ export class ReplayChunkEncoder {
         details: frame.details,
         channels: frame.arcanes.map((arcane) => arcane[8] ?? null),
       }
-      const bytes = textEncoder.encode(JSON.stringify(extras))
-      encodedExtras.push(bytes)
-      extrasOffsets[frameIndex] = extrasLength
-      extrasLength += bytes.byteLength
+      extrasIndices[frameIndex] = getExtrasId(extras)
     })
     creepOffsets[frameCount] = creepCursor
-    extrasOffsets[frameCount] = extrasLength
+    const extrasOffsets = new Uint32Array(encodedExtras.length + 1)
+    let extrasLength = 0
+    encodedExtras.forEach((bytes, index) => {
+      extrasOffsets[index] = extrasLength
+      extrasLength += bytes.byteLength
+    })
+    extrasOffsets[encodedExtras.length] = extrasLength
     const extrasBytes = new Uint8Array(extrasLength)
     let extrasCursor = 0
     for (const bytes of encodedExtras) {
@@ -148,6 +167,8 @@ export class ReplayChunkEncoder {
       baseCount,
       campCount,
       dictionaryAdditions,
+      dictionaryEnums: Uint8Array.from(dictionaryEnums),
+      dictionaryNumbers: Int32Array.from(dictionaryNumbers),
       times,
       kills,
       winners,
@@ -160,8 +181,8 @@ export class ReplayChunkEncoder {
       bosses,
       creepOffsets,
       creepIds,
-      creepEnums,
       creepNumbers,
+      extrasIndices,
       extrasOffsets,
       extrasBytes,
     }
@@ -170,16 +191,40 @@ export class ReplayChunkEncoder {
 
 export class ReplayFrameStore {
   private readonly chunks: Array<{ start: number; chunk: EncodedReplayChunk }> = []
-  private readonly strings: string[] = []
+  private readonly creepDictionary: Array<{
+    id: string
+    team: TeamId
+    lane: typeof lanes[number]
+    type: typeof creepTypes[number]
+    maxHp: number
+    range: number
+  }> = []
+  private readonly extrasPayloads: Uint8Array[] = []
   private readonly detailFrameIndices: number[] = []
   private cachedIndex = -1
   private cachedFrame?: MatchRenderFrame
+  private cachedExtrasIndex = -1
+  private cachedExtras?: FrameExtras
   length = 0
   estimatedByteLength = 0
 
   appendChunk(chunk: EncodedReplayChunk) {
     const start = this.length
-    this.strings.push(...chunk.dictionaryAdditions)
+    chunk.dictionaryAdditions.forEach((id, index) => {
+      const enumOffset = index * 3
+      const numberOffset = index * 2
+      this.creepDictionary.push({
+        id,
+        team: teams[chunk.dictionaryEnums[enumOffset]],
+        lane: lanes[chunk.dictionaryEnums[enumOffset + 1]],
+        type: creepTypes[chunk.dictionaryEnums[enumOffset + 2]],
+        maxHp: unpackNumber(chunk.dictionaryNumbers[numberOffset]),
+        range: unpackNumber(chunk.dictionaryNumbers[numberOffset + 1]),
+      })
+    })
+    for (let index = 0; index < chunk.extrasOffsets.length - 1; index += 1) {
+      this.extrasPayloads.push(chunk.extrasBytes.subarray(chunk.extrasOffsets[index], chunk.extrasOffsets[index + 1]))
+    }
     this.chunks.push({ start, chunk })
     for (let localIndex = 0; localIndex < chunk.frameCount; localIndex += 1) {
       if (chunk.hasDetails[localIndex]) this.detailFrameIndices.push(start + localIndex)
@@ -188,6 +233,10 @@ export class ReplayFrameStore {
     this.estimatedByteLength += getChunkByteLength(chunk)
     this.cachedIndex = -1
     this.cachedFrame = undefined
+  }
+
+  getChunks() {
+    return this.chunks.map(({ chunk }) => chunk)
   }
 
   getTime(index: number) {
@@ -211,12 +260,12 @@ export class ReplayFrameStore {
     const creepEnd = chunk.creepOffsets[localIndex + 1]
     const creeps: MatchRenderFrame['creeps'] = []
     for (let creepIndex = creepStart; creepIndex < creepEnd; creepIndex += 1) {
-      const enumOffset = creepIndex * 3
-      const numberOffset = creepIndex * 5
+      const metadata = this.creepDictionary[chunk.creepIds[creepIndex]]
+      const numberOffset = creepIndex * 3
       creeps.push([
-        this.strings[chunk.creepIds[creepIndex]], teams[chunk.creepEnums[enumOffset]], lanes[chunk.creepEnums[enumOffset + 1]], creepTypes[chunk.creepEnums[enumOffset + 2]],
+        metadata.id, metadata.team, metadata.lane, metadata.type,
         unpackNumber(chunk.creepNumbers[numberOffset]), unpackNumber(chunk.creepNumbers[numberOffset + 1]), unpackNumber(chunk.creepNumbers[numberOffset + 2]),
-        unpackNumber(chunk.creepNumbers[numberOffset + 3]), unpackNumber(chunk.creepNumbers[numberOffset + 4]),
+        metadata.maxHp, metadata.range,
       ])
     }
     const winnerCode = chunk.winners[localIndex]
@@ -245,6 +294,46 @@ export class ReplayFrameStore {
     this.cachedIndex = index
     this.cachedFrame = frame
     return frame
+  }
+
+  sampleAtTime(time: number): MatchRenderFrame {
+    const leftIndex = this.findIndexAtOrBefore(time)
+    const left = this.get(leftIndex)
+    if (leftIndex >= this.length - 1 || time <= left.time + Number.EPSILON) return left
+    const right = this.get(leftIndex + 1)
+    if (time >= right.time - Number.EPSILON) return right
+    const duration = right.time - left.time
+    if (duration <= Number.EPSILON) return left
+    const progress = Math.max(0, Math.min(1, (time - left.time) / duration))
+    const rightCreeps = new Map(right.creeps.map((creep) => [creep[0], creep]))
+    return {
+      ...left,
+      time,
+      arcanes: left.arcanes.map((arcane, index) => {
+        const target = right.arcanes[index]
+        if (!target) return arcane
+        return [
+          interpolate(arcane[0], target[0], progress),
+          interpolate(arcane[1], target[1], progress),
+          ...arcane.slice(2),
+        ] as MatchRenderFrame['arcanes'][number]
+      }),
+      creeps: left.creeps.map((creep) => {
+        const target = rightCreeps.get(creep[0])
+        if (!target) return creep
+        return [
+          creep[0], creep[1], creep[2], creep[3],
+          interpolate(creep[4], target[4], progress),
+          interpolate(creep[5], target[5], progress),
+          ...creep.slice(6),
+        ] as MatchRenderFrame['creeps'][number]
+      }),
+      boss: [
+        interpolate(left.boss[0], right.boss[0], progress),
+        interpolate(left.boss[1], right.boss[1], progress),
+        left.boss[2], left.boss[3], left.boss[4],
+      ] as MatchRenderFrame['boss'],
+    }
   }
 
   findIndexAtOrBefore(time: number) {
@@ -289,19 +378,26 @@ export class ReplayFrameStore {
   }
 
   private decodeExtras(chunk: EncodedReplayChunk, localIndex: number): FrameExtras {
-    const start = chunk.extrasOffsets[localIndex]
-    const end = chunk.extrasOffsets[localIndex + 1]
-    return JSON.parse(textDecoder.decode(chunk.extrasBytes.subarray(start, end))) as FrameExtras
+    const index = chunk.extrasIndices[localIndex]
+    if (index === this.cachedExtrasIndex && this.cachedExtras) return this.cachedExtras
+    const extras = JSON.parse(textDecoder.decode(this.extrasPayloads[index])) as FrameExtras
+    this.cachedExtrasIndex = index
+    this.cachedExtras = extras
+    return extras
   }
 }
 
 export function getReplayChunkTransferables(chunk: EncodedReplayChunk): ArrayBuffer[] {
   return [
-    chunk.times.buffer, chunk.kills.buffer, chunk.winners.buffer, chunk.hasDetails.buffer, chunk.arcanes.buffer,
+    chunk.dictionaryEnums.buffer, chunk.dictionaryNumbers.buffer, chunk.times.buffer, chunk.kills.buffer, chunk.winners.buffer, chunk.hasDetails.buffer, chunk.arcanes.buffer,
     chunk.towerHp.buffer, chunk.structureHp.buffer, chunk.baseHp.buffer, chunk.camps.buffer,
-    chunk.bosses.buffer, chunk.creepOffsets.buffer, chunk.creepIds.buffer, chunk.creepEnums.buffer,
-    chunk.creepNumbers.buffer, chunk.extrasOffsets.buffer, chunk.extrasBytes.buffer,
+    chunk.bosses.buffer, chunk.creepOffsets.buffer, chunk.creepIds.buffer, chunk.creepNumbers.buffer,
+    chunk.extrasIndices.buffer, chunk.extrasOffsets.buffer, chunk.extrasBytes.buffer,
   ] as ArrayBuffer[]
+}
+
+function interpolate(from: number, to: number, progress: number) {
+  return from + (to - from) * progress
 }
 
 function packNumber(value: number) {

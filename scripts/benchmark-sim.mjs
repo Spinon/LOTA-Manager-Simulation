@@ -61,7 +61,7 @@ if (tacticalSubsteps !== 'on' && tacticalSubsteps !== 'off') {
   throw new Error(`Modo de substeps taticos invalido: ${tacticalSubsteps}`)
 }
 const clockMaxFrames = Math.max(1, Math.floor(Number(getArg('clock-max-frames', 9)) || 9))
-const replayClockBound = getArg('replay-clock-bound', 'on')
+const replayClockBound = getArg('replay-clock-bound', 'off')
 if (replayClockBound !== 'on' && replayClockBound !== 'off') {
   throw new Error(`Acoplamento do replay invalido: ${replayClockBound}`)
 }

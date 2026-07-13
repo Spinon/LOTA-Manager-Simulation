@@ -1,0 +1,81 @@
+{
+  "task": "T30",
+  "status": "complete",
+  "date": "2026-07-13",
+  "seed": "performance-reference",
+  "canonical": {
+    "clock": "event",
+    "replayClockBound": false,
+    "runs": 3,
+    "simulatedSeconds": 2562.5,
+    "medianWallSeconds": 9.56,
+    "medianCpuSeconds": 12.08,
+    "medianWallRate": 268.0,
+    "medianCpuRate": 212.2,
+    "winner": "dusk",
+    "kills": "14-50",
+    "digest": "0870297d913be664",
+    "globalTicks": 11490,
+    "virtualFrames": 77656,
+    "skippedGlobalFrames": 66166,
+    "replayMegabytes": 58.5
+  },
+  "sameEncoderBoundControl": {
+    "replayClockBound": true,
+    "simulatedSeconds": 2856.9,
+    "wallSeconds": 13.78,
+    "cpuSeconds": 18.13,
+    "wallRate": 207.3,
+    "cpuRate": 157.6,
+    "winner": "dusk",
+    "kills": "9-53",
+    "digest": "9b15acd1421f3008",
+    "replayMegabytes": 79.3
+  },
+  "comparison": {
+    "schedulerWallRateGainPercent": 29.28,
+    "schedulerCpuRateGainPercent": 34.64,
+    "gainOverT29WallRatePercent": 64.62,
+    "gainOverT29CpuRatePercent": 81.52,
+    "sameMatchReplayReductionPercent": 6.92,
+    "normalizedReplayBytesPerSecondReductionPercent": 23.45
+  },
+  "target": {
+    "baselineT24Rate": 114.2,
+    "targetMultiplier": 3,
+    "targetRate": 342.6,
+    "currentMultiplier": 2.3468,
+    "met": false
+  },
+  "trajectoryReplay": {
+    "positionChannels": ["arcanes", "creeps", "boss"],
+    "discreteStatePolicy": "previous-keyframe",
+    "creepDictionaryFields": ["id", "team", "lane", "type", "maxHp", "range"],
+    "dynamicCreepFields": ["x", "y", "hp"],
+    "sequentialExtrasDeduplication": true
+  },
+  "contentAddressedCache": {
+    "storage": "IndexedDB",
+    "compatibilityVersion": "lota-t30-trajectory-v1",
+    "identityFields": ["engineRulesVersion", "seed", "lineups", "strategies"],
+    "maximumEntries": 3,
+    "maximumMegabytes": 220,
+    "browserReplayFrames": 17320,
+    "browserMatchSeconds": 3746,
+    "warmLoadSecondsUpperBound": 2,
+    "incompatibleRulesRejectedByTest": true
+  },
+  "validation": {
+    "tests": "passed",
+    "lint": "passed",
+    "build": "passed",
+    "deterministicRuns": 3,
+    "browserSmoke": "passed",
+    "browserSeekToResult": "passed",
+    "browserReplayReturn": "passed",
+    "browserCacheReload": "passed",
+    "browserWinner": "dusk",
+    "browserScore": "20-33",
+    "browserConsoleErrors": 0
+  }
+}

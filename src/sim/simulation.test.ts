@@ -1840,6 +1840,8 @@ replayStore.appendChunk(detailChunk)
 replayStore.appendChunk(motionChunk)
 const normalizeFrame = <T>(frame: T) => JSON.parse(JSON.stringify(frame)) as T
 assert.equal(motionChunk.dictionaryAdditions.length, 0, 'creep id dictionary should be shared across replay chunks')
+assert.equal(detailChunk.dictionaryNumbers.length, detailChunk.dictionaryAdditions.length * 2, 'static creep max HP and range should be dictionary data')
+assert.equal(detailChunk.creepNumbers.length, renderFrame.creeps.length * 3, 'creep samples should only retain position and current HP')
 assert.deepEqual(normalizeFrame(replayStore.get(0)), normalizeFrame(renderFrame), 'binary replay should preserve complete render frames')
 assert.deepEqual(normalizeFrame(replayStore.get(1)), normalizeFrame(nextMotionFrame), 'binary replay should preserve compact motion frames')
 assert.equal(replayStore.findIndexAtOrBefore(nextMotionFrame.time - 0.01), 0, 'replay seek should select the preceding frame')
@@ -1849,6 +1851,33 @@ assert.deepEqual(
   'motion frames should reuse the latest inspector details',
 )
 assert.ok(replayStore.estimatedByteLength > 0, 'binary replay should report its retained byte size')
+
+const repeatedExtrasFrames = [
+  { ...motionFrame, time: motionFrame.time + 0.4 },
+  { ...motionFrame, time: motionFrame.time + 0.6 },
+]
+const repeatedExtrasChunk = replayEncoder.encode(repeatedExtrasFrames)
+assert.equal(repeatedExtrasChunk.extrasOffsets.length, 1, 'unchanged event payloads should reuse the shared extras dictionary')
+assert.equal(repeatedExtrasChunk.extrasBytes.byteLength, 0, 'reused event payloads should not be serialized again')
+replayStore.appendChunk(repeatedExtrasChunk)
+
+const trajectoryFrame = {
+  ...motionFrame,
+  time: motionFrame.time + 0.8,
+  arcanes: motionFrame.arcanes.map((arcane, index) => index === 0
+    ? [arcane[0] + 2, arcane[1] + 4, ...arcane.slice(2)] as typeof arcane
+    : arcane),
+  creeps: motionFrame.creeps.map((creep, index) => index === 0
+    ? [creep[0], creep[1], creep[2], creep[3], creep[4] + 3, creep[5] + 1, ...creep.slice(6)] as typeof creep
+    : creep),
+  boss: [motionFrame.boss[0] + 2, motionFrame.boss[1] - 2, ...motionFrame.boss.slice(2)] as typeof motionFrame.boss,
+}
+replayStore.appendChunk(replayEncoder.encode([trajectoryFrame]))
+const trajectorySample = replayStore.sampleAtTime(motionFrame.time + 0.7)
+assert.equal(trajectorySample.time, motionFrame.time + 0.7, 'trajectory sampling should preserve the requested replay time')
+assert.ok(Math.abs(trajectorySample.arcanes[0][0] - (motionFrame.arcanes[0][0] + 1)) < 0.001, 'arcane trajectories should interpolate between keyframes')
+assert.ok(Math.abs(trajectorySample.creeps[0][4] - (motionFrame.creeps[0][4] + 1.5)) < 0.001, 'creep trajectories should interpolate between keyframes')
+assert.ok(Math.abs(trajectorySample.boss[0] - (motionFrame.boss[0] + 1)) < 0.001, 'boss trajectories should interpolate between keyframes')
 
 for (const arcane of state.arcanes as Arcane[]) {
   assertFinitePoint(arcane)
