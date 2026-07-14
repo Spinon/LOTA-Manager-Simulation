@@ -1,0 +1,44 @@
+{
+  "task": "T33",
+  "date": "2026-07-13",
+  "seed": "performance-reference",
+  "mode": "full-match-event-clock-replay-off",
+  "runs": 3,
+  "baseline": {
+    "commit": "97cd26e",
+    "wallSecondsMedian": 13.05,
+    "wallRateMedian": 196.4,
+    "cpuSecondsMedian": 17.30,
+    "cpuRateMedian": 148.1
+  },
+  "candidate": {
+    "wallSecondsMedian": 12.79,
+    "wallRateMedian": 200.4,
+    "cpuSecondsMedian": 17.11,
+    "cpuRateMedian": 149.8
+  },
+  "improvement": {
+    "wallTimePercent": 2.0,
+    "wallRatePercent": 2.0,
+    "cpuTimePercent": 1.1,
+    "cpuRatePercent": 1.1
+  },
+  "profile": {
+    "resolveCombatInclusivePercent": [17.94, 17.39],
+    "isPointVisibleToTeamInclusivePercent": [5.16, 3.92],
+    "nearestReachableEnemyArcaneInclusivePercent": [1.21, 0.29],
+    "getSimpleSkillTargetInclusivePercent": [1.90, 1.13],
+    "tryCastSimpleSkillInclusivePercent": [5.45, 4.93]
+  },
+  "determinism": {
+    "simulatedSeconds": 2562.5,
+    "winner": "dusk",
+    "kills": "14-50",
+    "digest": "0870297d913be664",
+    "preserved": true
+  },
+  "rejectedExperiments": [
+    "manual traversal of vision grid buckets for each query",
+    "single-pass construction of both teams' vision providers"
+  ]
+}

@@ -838,6 +838,30 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
+### [x] T33 - Targeting e invalidação seletiva de visão
+
+> Concluída em 2026-07-13 - O combate deixou de consultar fog para alvos fora do alcance e de reconstruir toda a visão após dano não letal em creeps.
+
+**Objetivo**: reduzir o custo dominante de visibilidade dentro de `resolveCombat` sem alterar informação disponível, seleção de alvo ou resultado da partida.
+
+**Escopo**:
+- Rejeitar candidatos fora do alcance antes de consultar fog of war, sem alterar desempates.
+- Reutilizar a lista de skills do Arcane entre o gate de cooldown e a tentativa de cast.
+- Invalidar provedores de visão de creeps apenas quando HP cruza para zero.
+- Comparar a partida canônica sem render contra o commit da T32 no mesmo ambiente.
+
+**Critérios**: digest, duração, vencedor e placar preservados; ganho mensurável no benchmark completo; testes, lint e build verdes.
+
+**Resultado (2026-07-13)**:
+- Buscas de alvo de ataque e skill agora descartam candidatos fora do alcance antes do fog. A seleção continua percorrendo os Arcanes na mesma ordem e preserva o desempate anterior.
+- Dano parcial em creep conserva a grade de visão; somente a morte invalida o cache. Movimento, spawn e materialização tática continuam renovando os provedores normalmente. Um teste dedicado cobre dano não letal e morte.
+- Quando o ataque básico ainda está em cooldown, o gate e o seletor de cast compartilham a mesma lista de skills runtime.
+- Em três partidas A/B alternadas no mesmo ambiente, a mediana caiu de 13,05s para 12,79s wall (-2,0%) e de 17,30s para 17,11s CPU (-1,1%). A taxa subiu de 196,4x para 200,4x wall e de 148,1x para 149,8x CPU.
+- No perfil, `isPointVisibleToTeam` caiu de 5,16% para 3,92% inclusivo, `nearestReachableEnemyArcane` de 1,21% para 0,29% e `resolveCombat` de 17,94% para 17,39%.
+- Consultar buckets manualmente e construir os dois times em uma passagem ficaram cerca de 3-4% mais lentos no V8 e foram removidos. Baseline e candidata terminaram em 42:43, vitória Dusk, placar 14-50 e digest `0870297d913be664`.
+
+---
+
 ## Histórico (não retrabalhar)
 
 Concluído em rodadas anteriores — mantido aqui só como registro:

@@ -537,8 +537,16 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
 
   const alliedCreep = spawnWave(createInitialState('vision-creep-provider-test')).find((creep) => creep.team === 'dawn')!
   alliedCreep.pos = { x: 50, y: 50 }
+  observer.stats.hp = 0
+  visionState.arcanes = [...visionState.arcanes]
+  visionState.creepStorageMode = 'object'
   visionState.creeps = [alliedCreep]
-  assert.equal(isPointVisibleToTeam(visionState, 'dawn', { x: 55, y: 50 }), true, 'allied creeps should provide team vision')
+  const creepVisionPoint = { x: 50 + alliedCreep.visionRange - 0.25, y: 50 }
+  assert.equal(isPointVisibleToTeam(visionState, 'dawn', creepVisionPoint), true, 'allied creeps should provide team vision')
+  damageEntity(visionState, alliedCreep.id, 1, { id: 'vision-test-hit', label: 'Vision test', team: 'dusk' })
+  assert.equal(isPointVisibleToTeam(visionState, 'dawn', creepVisionPoint), true, 'non-lethal creep damage should preserve its vision provider')
+  damageEntity(visionState, alliedCreep.id, alliedCreep.maxHp * 2, { id: 'vision-test-kill', label: 'Vision test', team: 'dusk' })
+  assert.equal(isPointVisibleToTeam(visionState, 'dawn', creepVisionPoint), false, 'a dead creep should immediately stop providing vision')
 
   const buildingState = createInitialState('vision-building-provider-test')
   const alliedTower = buildingState.towers.find((tower) => tower.team === 'dawn')!
