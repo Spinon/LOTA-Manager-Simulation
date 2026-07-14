@@ -5,6 +5,7 @@ import {
   applySimpleSkillDispel,
   applySimpleSkillDisplacement,
   applySimpleSkillSummonPressure,
+  applySummonAttackSpecials,
   applySimpleNegativeSkillEffects,
   buildArcaneStats,
   buyItemAtBase,
@@ -2285,6 +2286,107 @@ let state: SimulationState = initialState
   const witchHpBeforeSoloLifesteal = liveWitch.stats.hp
   resolveCombat(deathWardState, createTickFrameContext(), new Set([deathWardUnit.id]))
   assert.ok(deathWardState.arcanes.find((arcane) => arcane.id === witch.id)!.stats.hp > witchHpBeforeSoloLifesteal, 'Scepter Death Ward should lifesteal from its primary attack without requiring a bounce target')
+
+  const unitAbilityState = createInitialState('summon-unit-ability-runtime')
+  unitAbilityState.time = 600
+  const unitAbilityCasterId = unitAbilityState.arcanes[0].id
+  const unitAbilityTargets = unitAbilityState.arcanes.filter((arcane) => arcane.team !== unitAbilityState.arcanes[0].team).slice(0, 2)
+  unitAbilityState.arcanes.filter((arcane) => arcane.team !== unitAbilityState.arcanes[0].team).forEach((enemy) => {
+    enemy.pos = unitAbilityTargets.includes(enemy) ? { x: 51 + unitAbilityTargets.indexOf(enemy), y: 50 } : { x: 85, y: 85 }
+    enemy.stats.maxHp = enemy.stats.hp = 100_000
+  })
+  const getUnitAbilityTarget = (index = 0) => unitAbilityState.arcanes.find((arcane) => arcane.id === unitAbilityTargets[index].id)!
+  const spawnUnitAbilitySummon = (heroId: string, sourceAbilityId: number) => {
+    const caster = unitAbilityState.arcanes.find((arcane) => arcane.id === unitAbilityCasterId)!
+    caster.heroDefinitionId = heroId
+    caster.pos = { x: 50, y: 50 }
+    const definition = getHeroDefinition(heroId)
+    const skill = [...(definition.skills ?? []), ...(definition.supplementalSkills ?? [])]
+      .find((candidate) => candidate.sourceAbilityId === sourceAbilityId)!
+    caster.skillLevels = { [skill.key]: 1 }
+    const profile = getSkillEffectProfile(skill, 1)
+    const spawned = applySimpleSkillSummonPressure(
+      unitAbilityState,
+      caster,
+      skill,
+      profile,
+      caster.pos,
+      profile.summonMode,
+    )[0]
+    assert.ok(spawned, `${skill.id} should materialize a summon for its unit ability test`)
+    spawned.pos = { x: 51, y: 50 }
+    unitAbilityState.summons = [spawned]
+    return spawned
+  }
+
+  const wolf = spawnUnitAbilitySummon('h069_wolf_alpha', 5395)
+  const wolfTargetHp = getUnitAbilityTarget().stats.hp
+  for (let attempt = 0; attempt < 60 && getUnitAbilityTarget().stats.hp === wolfTargetHp; attempt += 1) {
+    unitAbilityState.time += 0.05
+    applySummonAttackSpecials(unitAbilityState, wolf, getUnitAbilityTarget())
+  }
+  assert.ok(getUnitAbilityTarget().stats.hp < wolfTargetHp, 'Spirit Wolf should deterministically proc its 160% critical attack')
+
+  unitAbilityState.timedEffects = []
+  const boar = spawnUnitAbilitySummon('h030_beast_commander', 7230)
+  applySummonAttackSpecials(unitAbilityState, boar, getUnitAbilityTarget())
+  const boarSlow = unitAbilityState.timedEffects.find((effect) => effect.sourceId.endsWith(':boar_poison_slow'))!
+  assert.equal(boarSlow.value, 0.2)
+  assert.ok(boarSlow.expiresAt > unitAbilityState.time && boarSlow.expiresAt - unitAbilityState.time <= 3)
+
+  unitAbilityState.timedEffects = []
+  const plagueWard = spawnUnitAbilitySummon('h032_poison_alchemist', 5180)
+  applySummonAttackSpecials(unitAbilityState, plagueWard, getUnitAbilityTarget())
+  const wardPoison = unitAbilityState.timedEffects.find((effect) => effect.sourceId.endsWith(':ward_poison'))!
+  assert.equal(wardPoison.value, 8)
+  const wardPoisonHp = getUnitAbilityTarget().stats.hp
+  unitAbilityState.time += 1
+  processTimedEffects(unitAbilityState)
+  assert.ok(getUnitAbilityTarget().stats.hp < wardPoisonHp, 'Plague Ward poison should tick through the shared timed-effect runtime')
+
+  unitAbilityState.timedEffects = []
+  const spiderling = spawnUnitAbilitySummon('h053_brood_matriarch', 5279)
+  applySummonAttackSpecials(unitAbilityState, spiderling, getUnitAbilityTarget())
+  assert.equal(unitAbilityState.timedEffects.find((effect) => effect.sourceId.endsWith(':minor_poison'))?.value, 4)
+
+  unitAbilityState.timedEffects = []
+  const forgedSpirit = spawnUnitAbilitySummon('h066_complex_mage', 5387)
+  for (let attack = 0; attack < 12; attack += 1) applySummonAttackSpecials(unitAbilityState, forgedSpirit, getUnitAbilityTarget())
+  const meltingAttack = unitAbilityState.timedEffects.find((effect) => effect.sourceId.endsWith(':melting_attack'))!
+  assert.equal(meltingAttack.stacks, 10)
+  assert.equal(meltingAttack.modifiers?.armorFlat, -10)
+
+  unitAbilityState.timedEffects = []
+  const golem = spawnUnitAbilitySummon('h029_soul_warlock', 5165)
+  const splashTargetHp = getUnitAbilityTarget(1).stats.hp
+  applySummonAttackSpecials(unitAbilityState, golem, getUnitAbilityTarget())
+  assert.ok(getUnitAbilityTarget(1).stats.hp < splashTargetHp, 'Infernal Golem should splash Burning Fists around its primary target')
+  const impactTargetHp = unitAbilityTargets.map((_, index) => getUnitAbilityTarget(index).stats.hp)
+  const golemKiller = getUnitAbilityTarget()
+  damageEntity(unitAbilityState, golem.id, golem.hp + 1, {
+    id: golemKiller.id,
+    label: golemKiller.player,
+    team: golemKiller.team,
+  })
+  resolveDeaths(unitAbilityState)
+  assert.ok(unitAbilityTargets.every((_, index) => getUnitAbilityTarget(index).stats.hp < impactTargetHp[index]), 'a killed Infernal Golem should apply its on-death impact in area')
+  assert.equal(unitAbilityState.summons.some((summon) => summon.id === golem.id), false)
+
+  const eidolon = spawnUnitAbilitySummon('h025_gravity_summoner', 5147)
+  for (let attack = 0; attack < 5; attack += 1) applySummonAttackSpecials(unitAbilityState, eidolon, getUnitAbilityTarget())
+  assert.equal(eidolon.abilityCounter, 5)
+  const eidolonFrame = createMatchRenderFrame(unitAbilityState)
+  const eidolonStaticData = createMatchStaticData(unitAbilityState)
+  const eidolonReplayStore = new ReplayFrameStore()
+  eidolonReplayStore.appendChunk(new ReplayChunkEncoder().encode([eidolonFrame]))
+  assert.equal(materializeMatchRenderFrame(eidolonReplayStore.get(0), eidolonStaticData).summons[0].abilityCounter, 5)
+  applySummonAttackSpecials(unitAbilityState, eidolon, getUnitAbilityTarget())
+  assert.equal(eidolon.hp, 0)
+  assert.equal(unitAbilityState.summons.filter((summon) => summon.variant === 'eidolon_split_child').length, 2)
+  resolveDeaths(unitAbilityState)
+  const splitChildren = unitAbilityState.summons.filter((summon) => summon.variant === 'eidolon_split_child')
+  for (let attack = 0; attack < 6; attack += 1) applySummonAttackSpecials(unitAbilityState, splitChildren[0], getUnitAbilityTarget())
+  assert.equal(unitAbilityState.summons.filter((summon) => summon.variant === 'eidolon_split_child').length, 2, 'split children should not recursively multiply')
 
   const passiveCarrier = skillState.arcanes[0]
   skillState.timedEffects = []

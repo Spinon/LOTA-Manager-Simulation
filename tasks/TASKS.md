@@ -566,6 +566,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Testes headless cobrem mapeamento, prioridade de valores, fallback de stats, Stone Form/cooldown, recall/replay e proc de Entangling Claws. Auditoria permanece em 6 completas, 631 parciais, 12 aproximações e 85 ausentes. Suíte completa, lint e build verdes; benchmark de 5 minutos: mediana 302,9x wall / 239,9x CPU, digest `534bd00e225a74ea` preservado.
 - Próxima rodada da T16: executar as passivas restantes dos unit seeds: crítico dos wolves, slow do boar, venenos de wards/spiderlings, Melting Attack, splash/on-death do golem e split dos eidolons.
 
+**Progresso de passivas dos unit seeds (2026-07-14)**:
+- Ataques de Spirit Wolves rolam crítico determinístico de 20% por 160% de dano. Boars aplicam slow de 20% por 3s; Plague Wards e spiderlings aplicam DoTs mágicos de 8 por 3s e 4 por 2s, respectivamente.
+- Forged Spirits acumulam Melting Attack em `-1` de armadura por ataque, duração de 5s e teto de 10 stacks. Os debuffs usam `TimedEffect`, logo respeitam resistência, dispel, expiração e o cache de modificadores já existente.
+- Burning Fists causa 40% do dano do golem em 250 unidades ao redor do alvo primário. Golem Impact dispara somente em morte por dano, causa 150 mágico em 400 unidades e resolve cadeias de golems antes da coleta de mortos; expiração natural não explode.
+- Eidolons contam ataques conectados e, no sexto, substituem a unidade por dois filhos com a duração restante. O contador atravessa replay normal/comprimido e os filhos carregam uma variante explícita que impede split recursivo.
+- Todos os handlers partem dos eventos de ataque/morte existentes; não há polling global. Slow, DoT e redução de armadura persistentes ainda afetam somente Arcanes porque creeps e summons não possuem container de status próprio; crítico, splash e impacto causam dano em qualquer unidade suportada.
+- Testes headless cobrem valores, procs, ticks, stacks, splash, explosão, split, replay e limite de geração. Suíte completa, lint e build verdes; benchmark de 5 minutos: mediana 294,5x wall / 258,8x CPU, digest `534bd00e225a74ea` preservado.
+- Próxima rodada da T16: integrar efeitos compartilhados entre dono e summon (Grave Chill/Cloak nos Familiars e Spirit Link/Savage Roar no Bear) e revisar as regras adaptadas de clones/ilusões.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

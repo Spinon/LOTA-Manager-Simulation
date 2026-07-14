@@ -360,7 +360,7 @@ export type Creep = {
   pullUntil?: number
   motionPlan?: CreepMotionPlan
 }
-export type SummonVariant = 'tombstone_zombie'
+export type SummonVariant = 'tombstone_zombie' | 'eidolon_split_child'
 export type SummonedUnit = {
   id: string
   ownerId: string
@@ -390,6 +390,7 @@ export type SummonedUnit = {
   unitSeedId?: string
   nextAbilityAt?: number
   recallStartedAt?: number
+  abilityCounter?: number
   targetId?: string
   lastHitBy?: CombatSource
 }
@@ -2306,7 +2307,7 @@ type RenderSummonFrame = [
   string, string, string, string, TeamId, number, number, number, number, number,
   number, number, number, number, number, number, number, number, number,
   SkillSummonArchetype, boolean, boolean, number, number, boolean, string | undefined,
-  SummonVariant | undefined, string | undefined, number | undefined, number | undefined,
+  SummonVariant | undefined, string | undefined, number | undefined, number | undefined, number | undefined,
 ]
 type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number, AttackEffect['action'], string]
 type RenderMarkerFrame = [TeamId, number, number, number, number]
@@ -2457,7 +2458,7 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
       summon.canMove, summon.canAttack, renderNumber(summon.damageTakenMultiplier),
       renderNumber(summon.healingAuraPct), summon.channelBound, summon.targetId,
       summon.variant,
-      summon.unitSeedId, summon.nextAbilityAt, summon.recallStartedAt,
+      summon.unitSeedId, summon.nextAbilityAt, summon.recallStartedAt, summon.abilityCounter,
     ]),
     towerHp: state.towers.map((tower) => renderNumber(tower.hp)),
     structureHp: state.structures.map((structure) => renderNumber(structure.hp)),
@@ -2606,7 +2607,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       xpReward: summon[18], archetype: summon[19], canMove: summon[20], canAttack: summon[21],
       damageTakenMultiplier: summon[22], healingAuraPct: summon[23], channelBound: summon[24],
       targetId: summon[25], variant: summon[26], unitSeedId: summon[27],
-      nextAbilityAt: summon[28], recallStartedAt: summon[29],
+      nextAbilityAt: summon[28], recallStartedAt: summon[29], abilityCounter: summon[30],
     })),
     towers: staticData.towers.map((tower, index): Tower => ({ ...tower, pos: tower.pos, hp: frame.towerHp[index] ?? 0, lastAttack: 0 })),
     structures: staticData.structures.map((structure, index): Structure => ({ ...structure, pos: structure.pos, hp: frame.structureHp[index] ?? 0, lastAttack: 0 })),
@@ -10069,26 +10070,182 @@ export function resolveSummonExplosion(state: SimulationState, summon: SummonedU
   ]
 }
 
+function didSummonAbilityProc(
+  state: SimulationState,
+  summon: SummonedUnit,
+  target: CombatTarget,
+  abilityId: string,
+  chancePct: number,
+) {
+  return seededRandomUnit(
+    state.matchSeed,
+    `summon-proc:${abilityId}:${summon.id}:${target.id}:${Math.round(state.time * 1000)}`,
+  ) < chancePct / 100
+}
+
+function applySummonDamageOverTime(
+  state: SimulationState,
+  summon: SummonedUnit,
+  target: Arcane,
+  abilityId: string,
+  label: string,
+) {
+  const ability = getSummonUnitAbility(summon, abilityId)
+  if (!ability) return
+  addTimedEffect(state, target, {
+    sourceId: `${summon.id}:${abilityId}`,
+    sourceName: `${summon.name}: ${label}`,
+    sourceTeam: summon.team,
+    kind: 'dot',
+    polarity: 'negative',
+    value: getSummonAbilityNumber(ability, 'dps'),
+    duration: getSummonAbilityNumber(ability, 'duration'),
+    damageType: 'magical',
+    tickInterval: 1,
+  })
+}
+
+function applyMeltingAttack(state: SimulationState, summon: SummonedUnit, target: Arcane) {
+  const ability = getSummonUnitAbility(summon, 'melting_attack')
+  if (!ability) return
+  const sourceId = `${summon.id}:melting_attack`
+  const effectId = `buff-${target.id}-${sourceId}`
+  const existing = state.timedEffects.find((effect) => effect.id === effectId)
+  const stacks = Math.min(
+    getSummonAbilityNumber(ability, 'maxStacks', 10),
+    (existing?.stacks ?? 0) + 1,
+  )
+  addTimedEffect(state, target, {
+    sourceId,
+    sourceName: `${summon.name}: Melting Attack`,
+    sourceTeam: summon.team,
+    kind: 'buff',
+    polarity: 'negative',
+    value: stacks,
+    modifiers: { armorFlat: -getSummonAbilityNumber(ability, 'armorReduction', 1) * stacks },
+    duration: getSummonAbilityNumber(ability, 'duration', 5),
+  })
+  const liveEffect = state.timedEffects.find((effect) => effect.id === effectId)
+  if (liveEffect) liveEffect.stacks = stacks
+}
+
+function applyBurningFistsSplash(state: SimulationState, summon: SummonedUnit, target: CombatTarget) {
+  const ability = getSummonUnitAbility(summon, 'burning_fists')
+  if (!ability) return
+  const radius = getSummonAbilityNumber(ability, 'radius', 250) / 140
+  const damage = summon.damage * getSummonAbilityNumber(ability, 'damagePct', 40) / 100
+  const secondaryTargets: CombatTarget[] = [
+    ...state.arcanes.filter((arcane) => arcane.team !== summon.team && arcane.stats.hp > 0 && arcane.respawn <= state.time),
+    ...state.creeps.filter((creep) => creep.team !== summon.team && creep.hp > 0),
+    ...state.summons.filter((candidate) => candidate.id !== summon.id && candidate.team !== summon.team && candidate.hp > 0),
+  ]
+  secondaryTargets.forEach((secondary) => {
+    if (secondary.id === target.id || distanceSquared(secondary.pos, target.pos) > radius * radius) return
+    damageEntity(state, secondary.id, damage, {
+      id: summon.id,
+      label: `${summon.name}: Burning Fists`,
+      team: summon.team,
+      damageType: 'magical',
+    })
+  })
+}
+
+function applyEidolonSplit(state: SimulationState, summon: SummonedUnit) {
+  const ability = getSummonUnitAbility(summon, 'eidolon_split')
+  if (!ability || summon.variant === 'eidolon_split_child') return
+  summon.abilityCounter = (summon.abilityCounter ?? 0) + 1
+  if (summon.abilityCounter < getSummonAbilityNumber(ability, 'attacksToSplit', 6)) return
+
+  const count = Math.max(1, Math.round(getSummonAbilityNumber(ability, 'summons', 2)))
+  const timestamp = Math.round(state.time * 1000)
+  const children = Array.from({ length: count }, (_, index): SummonedUnit => ({
+    ...summon,
+    id: `${summon.id}-split-${timestamp}-${index}`,
+    name: `${summon.name} dividido ${index + 1}`,
+    variant: 'eidolon_split_child',
+    pos: clampToMapBounds({ x: summon.pos.x + (index === 0 ? -0.7 : 0.7), y: summon.pos.y + 0.45 }),
+    hp: summon.maxHp,
+    lastAttack: state.time,
+    spawnedAt: state.time,
+    abilityCounter: 0,
+    lastHitBy: undefined,
+  }))
+  summon.hp = 0
+  summon.lastHitBy = undefined
+  state.summons = [...state.summons, ...children]
+  teamVisionProviderCache.delete(state)
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `eidolon-split-${summon.id}-${state.time}`,
+      team: summon.team,
+      pos: { ...summon.pos },
+      label: 'Eidolon Split',
+      createdAt: state.time,
+      expiresAt: state.time + 0.9,
+    },
+  ]
+}
+
 export function applySummonAttackSpecials(state: SimulationState, summon: SummonedUnit, target: CombatTarget) {
-  const entanglingClaws = getSummonUnitAbility(summon, 'entangling_claws')
-  if (entanglingClaws && 'player' in target) {
-    const chance = getSummonAbilityNumber(entanglingClaws, 'chance', 20) / 100
-    const roll = seededRandomUnit(
-      state.matchSeed,
-      `summon-proc:${summon.id}:${target.id}:${Math.round(state.time * 1000)}`,
-    )
-    if (roll < chance) {
+  const entanglingClaws = summon.unitSeedId === 'summon_spirit_bear'
+    ? getSummonUnitAbility(summon, 'entangling_claws')
+    : undefined
+  if (
+    entanglingClaws &&
+    'player' in target &&
+    didSummonAbilityProc(state, summon, target, entanglingClaws.id, getSummonAbilityNumber(entanglingClaws, 'chance', 20))
+  ) {
+    addTimedEffect(state, target, {
+      sourceId: `${summon.id}:entangling_claws`,
+      sourceName: `${summon.name}: Entangling Claws`,
+      sourceTeam: summon.team,
+      kind: 'root',
+      polarity: 'negative',
+      value: 1,
+      duration: getSummonAbilityNumber(entanglingClaws, 'root', 1.2),
+    })
+  }
+
+  const wolfCrit = summon.unitSeedId === 'summon_spirit_wolf'
+    ? getSummonUnitAbility(summon, 'wolf_crit')
+    : undefined
+  if (wolfCrit && didSummonAbilityProc(state, summon, target, wolfCrit.id, getSummonAbilityNumber(wolfCrit, 'critChance', 20))) {
+    const extraDamage = summon.damage * (getSummonAbilityNumber(wolfCrit, 'critMultiplier', 160) / 100 - 1)
+    damageEntity(state, target.id, extraDamage, {
+      id: summon.id,
+      label: `${summon.name}: critico`,
+      team: summon.team,
+      damageType: 'physical',
+    })
+  }
+
+  if ('player' in target) {
+    const boarSlow = summon.unitSeedId === 'summon_alpha_boar'
+      ? getSummonUnitAbility(summon, 'boar_poison_slow')
+      : undefined
+    if (boarSlow) {
       addTimedEffect(state, target, {
-        sourceId: `${summon.id}:entangling_claws`,
-        sourceName: `${summon.name}: Entangling Claws`,
+        sourceId: `${summon.id}:boar_poison_slow`,
+        sourceName: `${summon.name}: veneno`,
         sourceTeam: summon.team,
-        kind: 'root',
+        kind: 'slow',
         polarity: 'negative',
-        value: 1,
-        duration: getSummonAbilityNumber(entanglingClaws, 'root', 1.2),
+        value: getSummonAbilityNumber(boarSlow, 'slowPct', 20) / 100,
+        duration: getSummonAbilityNumber(boarSlow, 'duration', 3),
       })
     }
+    if (summon.unitSeedId === 'summon_plague_ward') {
+      applySummonDamageOverTime(state, summon, target, 'ward_poison', 'Ward Poison')
+    } else if (summon.unitSeedId === 'summon_spiderling') {
+      applySummonDamageOverTime(state, summon, target, 'minor_poison', 'Minor Poison')
+    } else if (summon.unitSeedId === 'summon_forged_spirit') {
+      applyMeltingAttack(state, summon, target)
+    }
   }
+
+  if (summon.unitSeedId === 'summon_infernal_golem') applyBurningFistsSplash(state, summon, target)
+  if (summon.unitSeedId === 'summon_eidolon') applyEidolonSplit(state, summon)
 
   if (summon.sourceSkillId === summonFamiliarsSkillId && 'player' in target) {
     addTimedEffect(state, target, {
@@ -11952,8 +12109,56 @@ export function applySpiritBearBacklash(state: SimulationState, deadSummons: Sum
   }
 }
 
+export function applySummonDeathAbilities(state: SimulationState, initialDeadSummons: SummonedUnit[]) {
+  const pending = [...initialDeadSummons]
+  const queued = new Set(pending.map((summon) => summon.id))
+  const processed = new Set<string>()
+  for (let index = 0; index < pending.length; index += 1) {
+    const summon = pending[index]
+    if (processed.has(summon.id) || summon.hp > 0) continue
+    processed.add(summon.id)
+    const impact = getSummonUnitAbility(summon, 'golem_impact')
+    if (!impact) continue
+    const radius = getSummonAbilityNumber(impact, 'radius', 400) / 140
+    const damage = getSummonAbilityNumber(impact, 'damage', 150)
+    const targets: CombatTarget[] = [
+      ...state.arcanes.filter((arcane) => arcane.team !== summon.team && arcane.stats.hp > 0 && arcane.respawn <= state.time),
+      ...state.creeps.filter((creep) => creep.team !== summon.team && creep.hp > 0),
+      ...state.summons.filter((candidate) => candidate.id !== summon.id && candidate.team !== summon.team && candidate.hp > 0),
+    ]
+    targets.forEach((target) => {
+      if (distanceSquared(target.pos, summon.pos) > radius * radius) return
+      damageEntity(state, target.id, damage, {
+        id: summon.id,
+        label: `${summon.name}: Golem Impact`,
+        team: summon.team,
+        damageType: 'magical',
+      })
+    })
+    state.skillMarkers = [
+      ...state.skillMarkers.slice(-23),
+      {
+        id: `golem-impact-${summon.id}-${state.time}`,
+        team: summon.team,
+        pos: { ...summon.pos },
+        label: 'Golem Impact',
+        createdAt: state.time,
+        expiresAt: state.time + 0.9,
+      },
+    ]
+    state.summons
+      .filter((candidate) => candidate.hp <= 0 && !queued.has(candidate.id))
+      .forEach((candidate) => {
+        queued.add(candidate.id)
+        pending.push(candidate)
+      })
+  }
+}
+
 export function resolveDeaths(state: SimulationState): SimulationState {
   const next = state
+  const triggeringDeadSummons = next.summons.filter((summon) => summon.hp <= 0)
+  applySummonDeathAbilities(next, triggeringDeadSummons)
   const deadCreeps = next.creeps.filter((creep) => creep.hp <= 0)
   const deadCreepIds = new Set(deadCreeps.map((creep) => creep.id))
   const deadSummons = next.summons.filter((summon) => summon.hp <= 0 || summon.expiresAt <= next.time)
