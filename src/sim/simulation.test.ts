@@ -2132,6 +2132,121 @@ let state: SimulationState = initialState
   performArcaneBasicAttack(fleshGolemState, undying, fleshGolemTarget)
   assert.equal(fleshGolemState.summons.length, transformedSummonCount, 'attacks outside the transformation should not summon zombies')
 
+  const tombstoneState = createInitialState('tombstone-zombie-runtime')
+  tombstoneState.time = 600
+  const tombstoneCaster = tombstoneState.arcanes[0]
+  tombstoneCaster.heroDefinitionId = 'h077_decay_zombie'
+  tombstoneCaster.skillLevels = { E: 1 }
+  tombstoneCaster.pos = { x: 50, y: 50 }
+  const tombstoneTarget = tombstoneState.arcanes.find((candidate) => candidate.team !== tombstoneCaster.team)!
+  tombstoneState.arcanes.filter((candidate) => candidate.team !== tombstoneCaster.team).forEach((enemy) => {
+    enemy.pos = enemy.id === tombstoneTarget.id ? { x: 51, y: 50 } : { x: 85, y: 85 }
+  })
+  const tombstoneSkill = getHeroDefinition(tombstoneCaster.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5444)!
+  const tombstoneProfile = getSkillEffectProfile(tombstoneSkill, 1)
+  applySimpleSkillSummonPressure(tombstoneState, tombstoneCaster, tombstoneSkill, tombstoneProfile, tombstoneCaster.pos)
+  const tombstoneUnit = tombstoneState.summons[0]
+  tombstoneUnit.pos = { ...tombstoneCaster.pos }
+  assert.equal(tombstoneUnit.canAttack, false, 'Tombstone should spawn zombies instead of performing generic attacks')
+  tombstoneState.time += tombstoneProfile.summonSpawnInterval
+  updateSummonedUnits(tombstoneState, 0.5)
+  const tombstoneZombie = tombstoneState.summons.find((summon) => summon.variant === 'tombstone_zombie')!
+  assert.ok(tombstoneZombie, 'Tombstone should periodically create a zombie for each enemy Arcane in its radius')
+  assert.equal(tombstoneZombie.targetId, tombstoneTarget.id)
+  assert.equal(tombstoneZombie.damage, tombstoneProfile.summonChildDamage)
+  assert.equal(tombstoneZombie.maxHp, tombstoneProfile.summonChildHits * 90)
+  const tombstoneReplay = materializeMatchRenderFrame(createMatchRenderFrame(tombstoneState), createMatchStaticData(tombstoneState))
+  assert.equal(tombstoneReplay.summons.find((summon) => summon.id === tombstoneZombie.id)?.variant, 'tombstone_zombie', 'replay frames should preserve specialized summon variants')
+
+  const familiarState = createInitialState('familiar-corrosion-runtime')
+  familiarState.time = 600
+  const gargoyle = familiarState.arcanes[0]
+  gargoyle.heroDefinitionId = 'h084_gargoyle_brood'
+  gargoyle.skillLevels = { R: 1 }
+  const familiarTarget = familiarState.arcanes.find((candidate) => candidate.team !== gargoyle.team)!
+  gargoyle.pos = { x: 50, y: 50 }
+  familiarTarget.pos = { x: 51, y: 50 }
+  const familiarSkill = getHeroDefinition(gargoyle.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5483)!
+  applySimpleSkillSummonPressure(familiarState, gargoyle, familiarSkill, getSkillEffectProfile(familiarSkill, 1), gargoyle.pos)
+  const familiars = familiarState.summons.filter((summon) => summon.sourceSkillId === familiarSkill.id)
+  assert.equal(familiars.length, 2)
+  familiars.forEach((familiar) => {
+    familiar.pos = { ...familiarTarget.pos }
+    familiar.targetId = familiarTarget.id
+    familiar.lastAttack = familiarState.time - familiar.attackInterval
+  })
+  resolveCombat(familiarState, createTickFrameContext(), new Set(familiars.map((familiar) => familiar.id)))
+  const familiarCorrosion = familiarState.timedEffects.filter((effect) => (
+    effect.targetId === familiarTarget.id && effect.modifiers?.armorFlat === -1
+  ))
+  assert.equal(familiarCorrosion.length, 2, 'each Familiar should maintain its own stacking armor-reduction debuff')
+
+  const bearState = createInitialState('spirit-bear-runtime')
+  bearState.time = 600
+  const druid = bearState.arcanes[0]
+  const bearKiller = bearState.arcanes.find((candidate) => candidate.team !== druid.team)!
+  druid.heroDefinitionId = 'h072_druid_dual'
+  const bearSkill = getHeroDefinition(druid.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 1342)!
+  druid.skillLevels = { [bearSkill.key]: 1 }
+  druid.pos = { x: 50, y: 50 }
+  applySimpleSkillSummonPressure(bearState, druid, bearSkill, getSkillEffectProfile(bearSkill, 1), druid.pos)
+  const spiritBear = bearState.summons[0]
+  spiritBear.pos = { x: 70, y: 50 }
+  spiritBear.hp -= 100
+  spiritBear.targetId = bearKiller.id
+  const bearHpBeforeRegen = spiritBear.hp
+  updateSummonedUnits(bearState, 1)
+  assert.equal(spiritBear.hp, bearHpBeforeRegen + 1.5, 'Spirit Bear should apply its imported flat regeneration')
+  assert.ok(spiritBear.pos.x < 70, 'Spirit Bear should return toward its owner after breaking the attack leash')
+  assert.equal(spiritBear.targetId, undefined)
+  const druidHpBeforeBacklash = druid.stats.hp
+  damageEntity(bearState, spiritBear.id, spiritBear.hp + 1, {
+    id: bearKiller.id,
+    label: bearKiller.player,
+    team: bearKiller.team,
+    damageType: 'pure',
+  })
+  resolveDeaths(bearState)
+  assert.equal(
+    bearState.arcanes.find((arcane) => arcane.id === druid.id)!.stats.hp,
+    druidHpBeforeBacklash - druid.stats.maxHp * 0.2,
+    'a killed Spirit Bear should deal imported backlash damage to its owner',
+  )
+
+  const deathWardState = createInitialState('death-ward-scepter-runtime')
+  deathWardState.time = 600
+  const witch = deathWardState.arcanes[0]
+  witch.heroDefinitionId = 'h023_witch_shaman'
+  witch.skillLevels = { R: 1 }
+  witch.items = [shopCatalog.find((item) => item.id === 'i135_grand_spell_scepter')!.name]
+  witch.pos = { x: 50, y: 50 }
+  witch.stats.hp = witch.stats.maxHp - 200
+  const deathWardTargets = deathWardState.arcanes.filter((candidate) => candidate.team !== witch.team).slice(0, 2)
+  deathWardState.arcanes.filter((candidate) => candidate.team !== witch.team).forEach((enemy) => {
+    enemy.pos = deathWardTargets.includes(enemy) ? { x: 51 + deathWardTargets.indexOf(enemy), y: 50 } : { x: 85, y: 85 }
+  })
+  const deathWardSkill = getHeroDefinition(witch.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5141)!
+  applySimpleSkillSummonPressure(deathWardState, witch, deathWardSkill, getSkillEffectProfile(deathWardSkill, 1), witch.pos)
+  const deathWardUnit = deathWardState.summons[0]
+  deathWardUnit.pos = { x: 50, y: 50 }
+  deathWardUnit.targetId = deathWardTargets[0].id
+  deathWardUnit.lastAttack = deathWardState.time - deathWardUnit.attackInterval
+  const deathWardTargetHp = deathWardTargets.map((target) => target.stats.hp)
+  const witchHpBeforeLifesteal = witch.stats.hp
+  resolveCombat(deathWardState, createTickFrameContext(), new Set([deathWardUnit.id]))
+  assert.ok(deathWardTargets.every((target, index) => (
+    deathWardState.arcanes.find((arcane) => arcane.id === target.id)!.stats.hp < deathWardTargetHp[index]
+  )), 'Scepter Death Ward should bounce to a second nearby Arcane')
+  assert.ok(deathWardState.arcanes.find((arcane) => arcane.id === witch.id)!.stats.hp > witchHpBeforeLifesteal, 'Scepter Death Ward bounce should heal its owner through imported lifesteal')
+  deathWardState.arcanes.find((arcane) => arcane.id === deathWardTargets[1].id)!.pos = { x: 85, y: 85 }
+  const liveWitch = deathWardState.arcanes.find((arcane) => arcane.id === witch.id)!
+  liveWitch.stats.hp = liveWitch.stats.maxHp - 100
+  deathWardState.time += deathWardUnit.attackInterval
+  deathWardUnit.lastAttack = deathWardState.time - deathWardUnit.attackInterval
+  const witchHpBeforeSoloLifesteal = liveWitch.stats.hp
+  resolveCombat(deathWardState, createTickFrameContext(), new Set([deathWardUnit.id]))
+  assert.ok(deathWardState.arcanes.find((arcane) => arcane.id === witch.id)!.stats.hp > witchHpBeforeSoloLifesteal, 'Scepter Death Ward should lifesteal from its primary attack without requiring a bounce target')
+
   const passiveCarrier = skillState.arcanes[0]
   skillState.timedEffects = []
   passiveCarrier.heroDefinitionId = 'h005_frost_marksman'

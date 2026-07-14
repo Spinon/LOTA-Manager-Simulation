@@ -288,6 +288,21 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
       assignAlias(values, skill, 'summonTriggerSlowPct', ['movespeed'], true)
       assignAlias(values, skill, 'summonTriggerSlowDuration', ['slow_duration'])
     }
+    if (skill.sourceInternalName === 'undying_tombstone') {
+      assignAlias(values, skill, 'summonSpawnInterval', ['zombie_interval'])
+      assignAlias(values, skill, 'summonChildDamage', ['zombie_damage_tooltip'])
+      assignAlias(values, skill, 'summonChildHits', ['zombie_health'])
+      assignAlias(values, skill, 'summonEffectRadius', ['radius'])
+    }
+    if (skill.sourceInternalName === 'lone_druid_spirit_bear') {
+      assignAlias(values, skill, 'summonRegen', ['bear_regen_tooltip'])
+      assignAlias(values, skill, 'summonLeashRange', ['bear_attack_leash_range'])
+      assignAlias(values, skill, 'summonBacklashPct', ['backlash_damage'])
+    }
+    if (skill.sourceInternalName === 'witch_doctor_death_ward') {
+      assignUpgradeAlias(values, skill, 'summonScepterBounceRadius', ['bounce_radius'], 'scepter')
+      assignUpgradeAlias(values, skill, 'summonScepterLifestealPct', ['scepter_lifesteal'], 'scepter')
+    }
   }
   assignAlias(values, skill, 'manaValue', ['mana_burned', 'mana_drain', 'mana_restore'])
   assignAlias(values, skill, 'attackSpeed', ['bonus_attack_speed', 'attack_speed'])
@@ -307,6 +322,18 @@ function assignAlias(target: HeroSkillDefinition['values'], skill: RuntimeSkill,
   const picked = pickSpecial(skill, names)
   if (picked.length === 0) return
   target[key] = absolute ? picked.map((value) => Math.abs(value)) : picked
+}
+
+function assignUpgradeAlias(
+  target: HeroSkillDefinition['values'],
+  skill: RuntimeSkill,
+  key: string,
+  names: string[],
+  upgrade: 'scepter' | 'shard',
+) {
+  const special = names.map((name) => skill.specialValues.find((value) => value.name === name)).find(Boolean)
+  const picked = special ? upgrade === 'scepter' ? special.scepterValues : special.shardValues : []
+  if (picked.length > 0) target[key] = [...picked]
 }
 
 function isSummonAbility(skill: RuntimeSkill) {

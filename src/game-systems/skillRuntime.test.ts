@@ -89,7 +89,21 @@ assert.equal(tempestDouble.summonGoldBounty, 70)
 
 const spiritBear = findOfficialSkill('h072_druid_dual', 1342)
 assert.equal(spiritBear.kind, 'active', 'castable innate abilities should remain active')
-assert.equal(getSkillEffectProfile(spiritBear, 1).summonDuration, 7200)
+const spiritBearProfile = getSkillEffectProfile(spiritBear, 1)
+assert.equal(spiritBearProfile.summonDuration, 7200)
+assert.equal(spiritBearProfile.summonRegen, 1.5)
+assert.equal(spiritBearProfile.summonLeashRange, 1100)
+assert.equal(spiritBearProfile.summonBacklashPct, 0.2)
+
+const tombstone = getSkillEffectProfile(findOfficialSkill('h077_decay_zombie', 5444), 1)
+assert.equal(tombstone.summonSpawnInterval, 4)
+assert.equal(tombstone.summonChildDamage, 34)
+assert.equal(tombstone.summonChildHits, 2)
+assert.equal(tombstone.summonEffectRadius, 1200)
+
+const deathWard = getSkillEffectProfile(findOfficialSkill('h023_witch_shaman', 5141), 1)
+assert.equal(deathWard.summonScepterBounceRadius, 575)
+assert.equal(deathWard.summonScepterLifestealPct, 0.1)
 
 const eldritchImp = getSkillEffectProfile(findOfficialSkill('h029_soul_warlock', 1274), 1)
 assert.equal(eldritchImp.summonMode, 'on_death')

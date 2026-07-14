@@ -359,6 +359,7 @@ export type Creep = {
   pullUntil?: number
   motionPlan?: CreepMotionPlan
 }
+export type SummonVariant = 'tombstone_zombie'
 export type SummonedUnit = {
   id: string
   ownerId: string
@@ -384,6 +385,7 @@ export type SummonedUnit = {
   damageTakenMultiplier: number
   healingAuraPct: number
   channelBound: boolean
+  variant?: SummonVariant
   targetId?: string
   lastHitBy?: CombatSource
 }
@@ -2300,6 +2302,7 @@ type RenderSummonFrame = [
   string, string, string, string, TeamId, number, number, number, number, number,
   number, number, number, number, number, number, number, number, number,
   SkillSummonArchetype, boolean, boolean, number, number, boolean, string | undefined,
+  SummonVariant | undefined,
 ]
 type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number, AttackEffect['action'], string]
 type RenderMarkerFrame = [TeamId, number, number, number, number]
@@ -2449,6 +2452,7 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
       renderNumber(summon.goldReward), renderNumber(summon.xpReward), summon.archetype,
       summon.canMove, summon.canAttack, renderNumber(summon.damageTakenMultiplier),
       renderNumber(summon.healingAuraPct), summon.channelBound, summon.targetId,
+      summon.variant,
     ]),
     towerHp: state.towers.map((tower) => renderNumber(tower.hp)),
     structureHp: state.structures.map((structure) => renderNumber(structure.hp)),
@@ -2596,7 +2600,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       lastAttack: summon[14], spawnedAt: summon[15], expiresAt: summon[16], goldReward: summon[17],
       xpReward: summon[18], archetype: summon[19], canMove: summon[20], canAttack: summon[21],
       damageTakenMultiplier: summon[22], healingAuraPct: summon[23], channelBound: summon[24],
-      targetId: summon[25],
+      targetId: summon[25], variant: summon[26],
     })),
     towers: staticData.towers.map((tower, index): Tower => ({ ...tower, pos: tower.pos, hp: frame.towerHp[index] ?? 0, lastAttack: 0 })),
     structures: staticData.structures.map((structure, index): Structure => ({ ...structure, pos: structure.pos, hp: frame.structureHp[index] ?? 0, lastAttack: 0 })),
@@ -9548,7 +9552,7 @@ export function applySimpleSkillSummonPressure(
   const damage = healingWard ? 0 : Math.max(0, Math.round(baseDamage))
   const ranged = ward || profile.summonRange >= 300 || hasAnySimpleSkillTag(skill, ['spirit', 'archer', 'ranged'])
   const canMove = !ward && (healingWard || profile.summonMoveSpeed > 0 || illusion || clone || archetype === 'unit')
-  const canAttack = damage > 0 && !healingWard
+  const canAttack = damage > 0 && !healingWard && skill.id !== tombstoneSkillId
   const timestamp = Math.round(state.time * 1000)
   const sequence = state.summons.length
   const spawned = Array.from({ length: count }, (_, index): SummonedUnit => {
@@ -9593,6 +9597,10 @@ const soulWarlockHeroId = 'h029_soul_warlock'
 const decayZombieHeroId = 'h077_decay_zombie'
 const fleshGolemSkillId = 'h077_decay_zombie_standard_4_5447'
 const spawnSpiderlingsSkillId = 'h053_brood_matriarch_standard_4_5279'
+const tombstoneSkillId = 'h077_decay_zombie_standard_3_5444'
+const spiritBearSkillId = 'h072_druid_dual_innate_1_1342'
+const summonFamiliarsSkillId = 'h084_gargoyle_brood_standard_4_5483'
+const deathWardSkillId = 'h023_witch_shaman_standard_4_5141'
 
 type ConditionalSummonDeathTarget = {
   id: string
@@ -9741,6 +9749,80 @@ export function triggerOnAttackSummons(state: SimulationState, caster: Arcane, t
   }
 }
 
+function getSummonOwnerSkillProfile(state: SimulationState, summon: SummonedUnit) {
+  const caster = state.arcanes.find((arcane) => arcane.id === summon.ownerId)
+  const skill = caster && getArcaneRuntimeSkills(caster).find((candidate) => candidate.id === summon.sourceSkillId)
+  const level = caster && skill ? getSimpleSkillLevel(caster, skill) : 0
+  if (!caster || !skill || level <= 0) return undefined
+  return { caster, skill, profile: getSkillEffectProfile(skill, level) }
+}
+
+export function updateTombstoneZombieSpawning(state: SimulationState, tombstone: SummonedUnit) {
+  const source = getSummonOwnerSkillProfile(state, tombstone)
+  if (!source) return
+  const interval = source.profile.summonSpawnInterval || 4
+  if (state.time < tombstone.lastAttack + interval) return
+  tombstone.lastAttack = state.time
+  const radius = (source.profile.summonEffectRadius || 1200) / 140
+  const targets = state.arcanes.filter((arcane) => (
+    arcane.team !== tombstone.team && arcane.stats.hp > 0 && arcane.respawn <= state.time &&
+    distanceSquared(arcane.pos, tombstone.pos) <= radius * radius
+  ))
+  const ownerSummonCount = state.summons.filter((summon) => summon.ownerId === tombstone.ownerId && summon.hp > 0).length
+  const capacity = Math.max(0, 12 - ownerSummonCount)
+  const spawnTargets = targets.slice(0, capacity)
+  if (spawnTargets.length === 0) return
+  const remainingDuration = Math.max(0.25, tombstone.expiresAt - state.time)
+  const childDuration = Math.min(remainingDuration, interval * 2.5)
+  const timestamp = Math.round(state.time * 1000)
+  const sequence = state.summons.length
+  const maxHp = Math.max(1, Math.round((source.profile.summonChildHits || 2) * 90))
+  const damage = Math.max(1, Math.round(source.profile.summonChildDamage || 34))
+  const zombies = spawnTargets.map((target, index): SummonedUnit => ({
+    id: `${tombstone.id}-zombie-${timestamp}-${sequence}-${index}`,
+    ownerId: tombstone.ownerId,
+    sourceSkillId: tombstone.sourceSkillId,
+    name: `Zombie da ${source.skill.name} ${index + 1}`,
+    archetype: 'unit',
+    variant: 'tombstone_zombie',
+    team: tombstone.team,
+    pos: clampToMapBounds({ x: target.pos.x + (index % 2 === 0 ? -1 : 1), y: target.pos.y + 0.7 }),
+    hp: maxHp,
+    maxHp,
+    damage,
+    range: 2.2,
+    visionRange: 7,
+    moveSpeed: 4.4,
+    attackInterval: 1.1,
+    lastAttack: state.time - 0.5,
+    spawnedAt: state.time,
+    expiresAt: state.time + childDuration,
+    goldReward: 6,
+    xpReward: 8,
+    canMove: true,
+    canAttack: true,
+    damageTakenMultiplier: 1,
+    healingAuraPct: 0,
+    channelBound: false,
+    targetId: target.id,
+  }))
+  state.summons = [...state.summons, ...zombies]
+  teamVisionProviderCache.delete(state)
+}
+
+function updateSpiritBearRuntime(state: SimulationState, bear: SummonedUnit, delta: number) {
+  const source = getSummonOwnerSkillProfile(state, bear)
+  if (!source) return false
+  if (source.profile.summonRegen > 0 && bear.hp < bear.maxHp) {
+    bear.hp = Math.min(bear.maxHp, bear.hp + source.profile.summonRegen * delta)
+  }
+  const leashRange = (source.profile.summonLeashRange || 1100) / 140
+  if (distanceSquared(bear.pos, source.caster.pos) <= leashRange * leashRange) return false
+  bear.targetId = undefined
+  bear.pos = moveToward(bear.pos, source.caster.pos, bear.moveSpeed * delta)
+  return true
+}
+
 export function updateSummonedUnits(state: SimulationState, delta: number) {
   for (const summon of state.summons) {
     if (summon.hp <= 0 || summon.expiresAt <= state.time) continue
@@ -9751,6 +9833,11 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
         continue
       }
     }
+    if (summon.sourceSkillId === tombstoneSkillId && summon.variant !== 'tombstone_zombie') {
+      updateTombstoneZombieSpawning(state, summon)
+      continue
+    }
+    if (summon.sourceSkillId === spiritBearSkillId && updateSpiritBearRuntime(state, summon, delta)) continue
     if (summon.healingAuraPct > 0) applySummonHealingAura(state, summon, delta)
     const retained = summon.canAttack && summon.targetId ? getCombatTargetById(state, summon.targetId) : undefined
     const target = summon.canAttack
@@ -9795,19 +9882,25 @@ export function getSummonTarget(state: SimulationState, summon: SummonedUnit): C
     arcane.team !== summon.team && arcane.stats.hp > 0 && arcane.respawn <= state.time &&
     isPointVisibleToTeam(state, summon.team, arcane.pos)
   ))
-  const units: CombatTarget[] = [
+  const unitCandidates: CombatTarget[] = [
     ...enemyArcanes,
     ...state.creeps.filter((creep) => creep.team !== summon.team && creep.hp > 0),
     ...state.summons.filter((other) => other.team !== summon.team && other.hp > 0 && other.expiresAt > state.time),
   ]
+  const units = summon.sourceSkillId === spiritBearSkillId
+    ? unitCandidates.filter((target) => isWithinSpiritBearLeash(state, summon, target.pos))
+    : unitCandidates
   const unit = nearest(summon.pos, units, summon.visionRange)
   if (unit) return unit
   if (summon.sourceSkillId === eldritchSummoningSkillId) return undefined
-  const objectives: CombatTarget[] = [
+  const objectiveCandidates: CombatTarget[] = [
     ...getAttackableEnemyTowers(state, summon.team),
     ...getAttackableEnemyStructures(state, summon.team),
     ...(isEnemyBaseUnlocked(state, summon.team) ? state.bases.filter((base) => base.team !== summon.team && base.hp > 0) : []),
   ]
+  const objectives = summon.sourceSkillId === spiritBearSkillId
+    ? objectiveCandidates.filter((target) => isWithinSpiritBearLeash(state, summon, target.pos))
+    : objectiveCandidates
   return nearest(summon.pos, objectives, summon.visionRange)
 }
 
@@ -9819,7 +9912,13 @@ export function isSummonTargetValid(state: SimulationState, summon: SummonedUnit
   if ('tier' in target && !isTowerUnlocked(state, summon.team, target)) return false
   if ('kind' in target && !isStructureUnlocked(state, summon.team, target)) return false
   if (isBoss(target) || 'strength' in target) return false
+  if (summon.sourceSkillId === spiritBearSkillId && !isWithinSpiritBearLeash(state, summon, target.pos)) return false
   return true
+}
+
+function isWithinSpiritBearLeash(state: SimulationState, bear: SummonedUnit, point: Point) {
+  const owner = state.arcanes.find((arcane) => arcane.id === bear.ownerId)
+  return !owner || distanceSquared(owner.pos, point) <= (1100 / 140) ** 2
 }
 
 export function getSummonAttackCenterRange(summon: SummonedUnit, target: CombatTarget) {
@@ -9864,6 +9963,63 @@ export function resolveSummonExplosion(state: SimulationState, summon: SummonedU
       expiresAt: state.time + 0.8,
     },
   ]
+}
+
+export function applySummonAttackSpecials(state: SimulationState, summon: SummonedUnit, target: CombatTarget) {
+  if (summon.sourceSkillId === summonFamiliarsSkillId && 'player' in target) {
+    addTimedEffect(state, target, {
+      sourceId: summon.id,
+      sourceName: `${summon.name}: corrosao`,
+      sourceTeam: summon.team,
+      kind: 'buff',
+      polarity: 'negative',
+      value: 1,
+      modifiers: { armorFlat: -1 },
+      duration: 6,
+    })
+  }
+
+  if (summon.sourceSkillId !== deathWardSkillId) return
+  const source = getSummonOwnerSkillProfile(state, summon)
+  if (!source || !getArcaneAbilityUpgradeSlots(source.caster).has('scepter')) return
+  const radius = source.profile.summonScepterBounceRadius / 140
+  const secondary = radius > 0
+    ? nearest(
+        target.pos,
+        state.arcanes.filter((arcane) => (
+          arcane.team !== summon.team && arcane.id !== target.id && arcane.stats.hp > 0 && arcane.respawn <= state.time
+        )),
+        radius,
+      )
+    : undefined
+  if (secondary) {
+    state.effects = addAttackEffect(state.effects, {
+      kind: 'creep',
+      action: 'skill',
+      sourceId: summon.id,
+      targetKind: 'arcane',
+      team: summon.team,
+      from: { ...target.pos },
+      to: { ...secondary.pos },
+      createdAt: state.time,
+    })
+    damageEntity(state, secondary.id, summon.damage, {
+      id: summon.id,
+      label: `${summon.name}: ricochete`,
+      team: summon.team,
+      damageType: 'physical',
+    })
+  }
+  const liveOwner = state.arcanes.find((arcane) => arcane.id === summon.ownerId)
+  if (liveOwner && source.profile.summonScepterLifestealPct > 0) {
+    const healing = Math.min(
+      liveOwner.stats.maxHp - liveOwner.stats.hp,
+      summon.damage * (secondary ? 2 : 1) * source.profile.summonScepterLifestealPct,
+    )
+    liveOwner.stats.hp += healing
+    liveOwner.healingDone += healing
+    liveOwner.healingReceived += healing
+  }
 }
 
 export function shouldCommitOffensiveSkill(
@@ -10772,6 +10928,7 @@ export function resolveCombat(
       team: summon.team,
       damageType: 'physical',
     })
+    applySummonAttackSpecials(next, summon, target)
   }
 
   for (const tower of next.towers) {
@@ -11656,6 +11813,21 @@ export function collectRingmasterSouvenirsFromDeaths(state: SimulationState, dea
     })
 }
 
+export function applySpiritBearBacklash(state: SimulationState, deadSummons: SummonedUnit[]) {
+  for (const summon of deadSummons) {
+    if (summon.sourceSkillId !== spiritBearSkillId || summon.hp > 0 || !summon.lastHitBy) continue
+    const source = getSummonOwnerSkillProfile(state, summon)
+    if (!source || source.caster.stats.hp <= 0 || source.caster.respawn > state.time) continue
+    const backlashDamage = source.caster.stats.maxHp * source.profile.summonBacklashPct
+    if (backlashDamage <= 0) continue
+    damageEntity(state, source.caster.id, backlashDamage, {
+      ...summon.lastHitBy,
+      label: `${summon.name}: backlash`,
+      damageType: 'pure',
+    })
+  }
+}
+
 export function resolveDeaths(state: SimulationState): SimulationState {
   const next = state
   const deadCreeps = next.creeps.filter((creep) => creep.hp <= 0)
@@ -11663,6 +11835,7 @@ export function resolveDeaths(state: SimulationState): SimulationState {
   const deadSummons = next.summons.filter((summon) => summon.hp <= 0 || summon.expiresAt <= next.time)
   const deadCamps = next.camps.filter((camp) => camp.hp <= 0 && camp.respawn <= next.time)
   const deadBoss = next.boss.hp <= 0 && next.boss.respawn <= next.time ? next.boss : undefined
+  applySpiritBearBacklash(next, deadSummons)
   const deadArcanes = next.arcanes.filter((arcane) => arcane.stats.hp <= 0 && arcane.respawn <= next.time)
 
   resolveConditionalSummonDeathTriggers(next, [

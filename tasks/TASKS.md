@@ -549,6 +549,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Suíte completa, lint e build verdes. Benchmark de 5 minutos: mediana 287,3x wall / 248,0x CPU, digest `534bd00e225a74ea` preservado.
 - Próxima rodada da T16: auditar habilidades próprias dos outros summons, começando por Tombstone zombies, Familiars, Spirit Bear e wards com ataques especiais.
 
+**Progresso de habilidades dos summons persistentes (2026-07-14)**:
+- Tombstone deixou de atacar como uma ward comum. A cada intervalo oficial de 4/3,6/3,2/2,8s, cria um zombie para cada Arcane inimigo dentro das 1200 unidades oficiais; dano, hits de vida, alvo inicial e duração são preservados, com o limite global de 12 summons por dono.
+- Spirit Bear usa regeneração plana de 1,5 HP/s, respeita o leash oficial de 1100 unidades durante targeting e perseguição e retorna ao dono quando ultrapassa esse limite. Sua morte por dano aplica backlash puro de 20% da vida máxima ao dono no mesmo ciclo de resolução; expiração não ativa o efeito.
+- Cada Familiar aplica e renova sua própria redução de armadura por 6s. O valor `-1` é uma aproximação declarada porque o seed informa `armor_reduction_per_hit`, mas não fornece o número; efeitos de Familiars diferentes empilham.
+- Death Ward com Scepter ricocheteia em um segundo Arcane dentro das 575 unidades importadas e cura o dono em 10% do dano de cada ataque conectado. O ataque primário mantém lifesteal mesmo sem alvo secundário. Serpent Wards permanecem com ataques básicos porque o seed atual não declara multi-target ativo fora dos valores de upgrade.
+- O replay ganhou apenas um discriminador opcional de variante para os zombies da Tombstone; os demais comportamentos continuam derivados de `sourceSkillId`, sem polling global ou snapshots pesados. Testes headless cobrem import, spawn periódico, replay, debuff empilhável, leash, regen, backlash, ricochete e lifesteal.
+- Auditoria permanece em 6 completas, 631 parciais, 12 aproximações e 85 ausentes. Suíte completa, lint e build verdes; benchmark headless de 5 minutos: mediana 314,2x wall / 232,9x CPU, digest `534bd00e225a74ea` preservado.
+- Próxima rodada da T16: auditar subskills ausentes do seed principal (Stone Form, Return e equivalentes) e as habilidades próprias das famílias restantes de summons.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

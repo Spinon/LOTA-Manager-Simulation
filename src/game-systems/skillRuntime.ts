@@ -49,6 +49,14 @@ export type SkillEffectProfile = {
   summonTriggerRadius: number
   summonTriggerSlowPct: number
   summonTriggerSlowDuration: number
+  summonSpawnInterval: number
+  summonChildDamage: number
+  summonChildHits: number
+  summonRegen: number
+  summonLeashRange: number
+  summonBacklashPct: number
+  summonScepterBounceRadius: number
+  summonScepterLifestealPct: number
   isDamageOverTime: boolean
   isHealingOverTime: boolean
   isArea: boolean
@@ -149,6 +157,14 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
     summonTriggerRadius: Math.max(0, getSkillValue(skill, 'summonTriggerRadius', level, 0)),
     summonTriggerSlowPct: clampPercent(getSkillValue(skill, 'summonTriggerSlowPct', level, 0)),
     summonTriggerSlowDuration: Math.max(0, getSkillValue(skill, 'summonTriggerSlowDuration', level, 0)),
+    summonSpawnInterval: Math.max(0, getSkillValue(skill, 'summonSpawnInterval', level, 0)),
+    summonChildDamage: Math.max(0, getSkillValue(skill, 'summonChildDamage', level, 0)),
+    summonChildHits: Math.max(0, getSkillValue(skill, 'summonChildHits', level, 0)),
+    summonRegen: Math.max(0, getSkillValue(skill, 'summonRegen', level, 0)),
+    summonLeashRange: Math.max(0, getSkillValue(skill, 'summonLeashRange', level, 0)),
+    summonBacklashPct: clampPercent(getSkillValue(skill, 'summonBacklashPct', level, 0)),
+    summonScepterBounceRadius: Math.max(0, getSkillValue(skill, 'summonScepterBounceRadius', level, 0)),
+    summonScepterLifestealPct: clampPercent(getSkillValue(skill, 'summonScepterLifestealPct', level, 0)),
     isDamageOverTime: hasSkillTag(skill, ['damage_over_time', 'dot', 'poison', 'aura_dot', 'burn']),
     isHealingOverTime: hasSkillTag(skill, ['heal_over_time', 'hot', 'regen', 'regeneration']),
     isArea: skill.target === 'area' || getSkillValue(skill, 'radius', level, 0) > 0,
