@@ -523,6 +523,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - O import deixou de tratar todo `count`, todo `spirit` e todo parâmetro de ilusão como summon. A família auditada caiu de 105 falsos/ambíguos para 39 skills reais: 32 ativas parciais e sete passivas ausentes. Auditoria geral: 6 completas, 624 parciais, 12 aproximações e 92 ausentes.
 - Suíte completa, lint e build verdes. Benchmark de 5 minutos: mediana 291,5x wall / 259,0x CPU, digest `534bd00e225a74ea`. Próxima rodada: templates por unidade, wards imóveis, ilusões, clones e gatilhos passivos.
 
+**Progresso de arquétipos de summon (2026-07-14)**:
+- A classificação passou a usar uma tabela semântica por habilidade oficial. Spirits orbitais, Fire Spirits, Searing Chains, Dissimilate, skills comuns de Skeleton King/Treant e o monociclo deixaram de gerar unidades indevidas; a família caiu de 39 para 25 skills reais.
+- As 21 skills de cast ou canal usam arquétipos próprios: unidade móvel, ward imóvel, healing ward móvel sem ataque, ilusão com dano causado/recebido oficial e clone com atributos integrais do dono. Spirit Bear e Familiars persistem durante a partida.
+- HP, dano, alcance, movimento, intervalo de ataque, visão e bounty usam os campos oficiais quando disponíveis. Death Ward nasce no início do canal e desaparece quando ele termina ou é interrompido; Healing Ward aplica cura percentual por segundo aos aliados próximos.
+- Replay, interpolação, seleção e painel de dados preservam e exibem o arquétipo. A auditoria agora registra 21 summons materializados e quatro gatilhos pendentes (`on_death`, `target_death` e `on_attack`), sem confundi-los com casts imediatos.
+- Auditoria geral: 6 completas, 627 parciais, 12 aproximações e 89 ausentes. Próxima rodada: implementar os quatro gatilhos condicionais e as habilidades próprias das unidades invocadas.
+- Suíte completa, lint, build e smoke visual verdes. Benchmark de 5 minutos: mediana 315,8x wall / 242,6x CPU, digest `534bd00e225a74ea` preservado.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

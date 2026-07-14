@@ -82,6 +82,20 @@ const runtimeValueKeys = new Set([
   'slowPct',
   'stun',
   'summonDuration',
+  'summonArchetype',
+  'summonMode',
+  'summonHp',
+  'summonHits',
+  'summonDamage',
+  'summonRange',
+  'summonMoveSpeed',
+  'summonAttackInterval',
+  'summonVision',
+  'summonGoldBounty',
+  'summonXpBounty',
+  'summonOutgoingDamagePct',
+  'summonIncomingDamagePct',
+  'summonHealPct',
   'summons',
   'tauntDuration',
 ])
@@ -223,13 +237,14 @@ function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
   const summonCount = maxNumericValue(skill.values.summons)
   const summonTagged = tags.some((tag) => tag.toLowerCase() === 'summon')
   if (summonTagged || summonCount > 0) {
-    const materialized = skill.kind !== 'passive' && summonCount > 0
+    const summonMode = typeof skill.values.summonMode === 'string' ? skill.values.summonMode : 'unknown'
+    const materialized = ['cast', 'channel'].includes(summonMode) && summonCount > 0
     add(
       'summon',
       materialized ? 'partial' : 'missing',
       materialized
-        ? 'active summons spawn independent combat units; source-specific illusions, wards, persistence, and unit templates remain pending'
-        : 'the skill declares summoned units but has no active count-driven materialization path',
+        ? 'cast summons use imported unit stats and specialized unit, ward, healing ward, illusion, or clone behavior'
+        : `summon trigger ${summonMode} still requires event-driven materialization`,
     )
   }
   if (skill.kind === 'passive') {

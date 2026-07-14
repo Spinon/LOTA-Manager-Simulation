@@ -1779,20 +1779,59 @@ function drawSummonLayer(
     const point = toCanvasPoint(visual, viewport)
     const radius = 4.6
     const hpRatio = clampNumber(summon[7] / Math.max(1, summon[8]), 0, 1)
+    const archetype = summon[19]
+    const ward = archetype === 'ward' || archetype === 'healing_ward'
+    const illusion = archetype === 'illusion'
+    const clone = archetype === 'clone'
     context.save()
     context.translate(point.x, point.y)
-    context.rotate(Math.PI / 4)
+    if (!ward && !illusion) context.rotate(Math.PI / 4)
     context.fillStyle = 'rgba(4, 8, 12, 0.82)'
-    context.fillRect(-radius - 1.5, -radius - 1.5, (radius + 1.5) * 2, (radius + 1.5) * 2)
+    if (illusion) {
+      context.beginPath()
+      context.arc(0, 0, radius + 1.5, 0, Math.PI * 2)
+      context.fill()
+    } else {
+      context.fillRect(-radius - 1.5, -radius - 1.5, (radius + 1.5) * 2, (radius + 1.5) * 2)
+    }
     context.fillStyle = teamInfo[summon[4]].primary
     context.globalAlpha = 0.42 + hpRatio * 0.5
-    context.fillRect(-radius, -radius, radius * 2, radius * 2)
+    if (illusion) {
+      context.beginPath()
+      context.arc(0, 0, radius, 0, Math.PI * 2)
+      context.fill()
+    } else {
+      context.fillRect(-radius, -radius, radius * 2, radius * 2)
+    }
     context.globalAlpha = 1
     context.strokeStyle = summon[0] === selectedId ? '#f6c85d' : 'rgba(255, 255, 255, 0.72)'
     context.lineWidth = summon[0] === selectedId ? 2.2 : 1
-    context.strokeRect(-radius, -radius, radius * 2, radius * 2)
+    if (illusion) {
+      context.setLineDash([2, 1.5])
+      context.beginPath()
+      context.arc(0, 0, radius, 0, Math.PI * 2)
+      context.stroke()
+      context.setLineDash([])
+    } else {
+      context.strokeRect(-radius, -radius, radius * 2, radius * 2)
+    }
+    if (archetype === 'healing_ward') {
+      context.beginPath()
+      context.moveTo(-2.5, 0)
+      context.lineTo(2.5, 0)
+      context.moveTo(0, -2.5)
+      context.lineTo(0, 2.5)
+      context.stroke()
+    }
+    if (clone) context.strokeRect(-radius + 1.8, -radius + 1.8, (radius - 1.8) * 2, (radius - 1.8) * 2)
     if (summon[0] === selectedId) {
-      context.strokeRect(-radius - 3, -radius - 3, (radius + 3) * 2, (radius + 3) * 2)
+      if (illusion) {
+        context.beginPath()
+        context.arc(0, 0, radius + 3, 0, Math.PI * 2)
+        context.stroke()
+      } else {
+        context.strokeRect(-radius - 3, -radius - 3, (radius + 3) * 2, (radius + 3) * 2)
+      }
     }
     context.restore()
   }
@@ -2594,12 +2633,19 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | SummonedUnit | 
 
   if ('ownerId' in entity) {
     const owner = state.arcanes.find((arcane) => arcane.id === entity.ownerId)
+    const archetypeLabels = {
+      unit: 'Unidade invocada',
+      ward: 'Ward',
+      healing_ward: 'Ward de cura',
+      illusion: 'Ilusao',
+      clone: 'Clone',
+    }
     return (
       <div className="detail-panel unit-detail">
         <div className="detail-icon"><Swords size={21} /></div>
         <div className="detail-title">
           <strong>{entity.name}</strong>
-          <span>{teamInfo[entity.team].name} / {owner?.player ?? 'dono ausente'}</span>
+          <span>{archetypeLabels[entity.archetype]} / {teamInfo[entity.team].name} / {owner?.player ?? 'dono ausente'}</span>
         </div>
         <MetricGroup
           title="Combate"
@@ -2609,6 +2655,9 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | SummonedUnit | 
             ['Alcance', `${entity.range}`],
             ['Visao', `${entity.visionRange}`],
             ['Ataque', `${entity.attackInterval.toFixed(2)}s`],
+            ['Movimento', entity.canMove ? `${entity.moveSpeed.toFixed(1)}` : 'Imovel'],
+            ['Dano recebido', `${Math.round(entity.damageTakenMultiplier * 100)}%`],
+            ...(entity.healingAuraPct > 0 ? [['Aura de cura', `${(entity.healingAuraPct * 100).toFixed(1)}%/s`] as [string, string]] : []),
             ['Duracao', `${Math.max(0, Math.ceil(entity.expiresAt - state.time))}s`],
             ['Bounty', `${entity.goldReward} ouro / ${entity.xpReward} XP`],
           ]}

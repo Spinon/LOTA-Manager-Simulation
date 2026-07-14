@@ -1,6 +1,8 @@
 import type { HeroSkillDefinition } from './heroAttributes.ts'
 
 export type SkillUsageSituation = keyof NonNullable<HeroSkillDefinition['aiUsage']>
+export type SkillSummonArchetype = 'unit' | 'ward' | 'healing_ward' | 'illusion' | 'clone'
+export type SkillSummonMode = 'cast' | 'channel' | 'target_death' | 'on_attack' | 'on_death'
 
 export type SkillEffectProfile = {
   damage: number
@@ -28,6 +30,20 @@ export type SkillEffectProfile = {
   lifestealPct: number
   summonCount: number
   summonDuration: number
+  summonArchetype: SkillSummonArchetype
+  summonMode: SkillSummonMode
+  summonHp: number
+  summonHits: number
+  summonDamage: number
+  summonRange: number
+  summonMoveSpeed: number
+  summonAttackInterval: number
+  summonVision: number
+  summonGoldBounty: number
+  summonXpBounty: number
+  summonOutgoingDamagePct: number
+  summonIncomingDamagePct: number
+  summonHealPct: number
   isDamageOverTime: boolean
   isHealingOverTime: boolean
   isArea: boolean
@@ -45,6 +61,11 @@ export function getSkillValue(skill: HeroSkillDefinition, key: string, level: nu
     return typeof picked === 'number' && Number.isFinite(picked) ? picked : fallback
   }
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+export function getSkillStringValue<T extends string>(skill: HeroSkillDefinition, key: string, fallback: T): T {
+  const value = skill.values[key]
+  return typeof value === 'string' ? value as T : fallback
 }
 
 export function hasSkillTag(skill: HeroSkillDefinition, tags: string[]) {
@@ -104,6 +125,20 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
       ? Math.max(0, Math.round(getSkillValue(skill, 'summons', level, 0)))
       : 0,
     summonDuration: Math.max(0, getSkillValue(skill, 'summonDuration', level, duration)),
+    summonArchetype: getSkillStringValue(skill, 'summonArchetype', 'unit' as SkillSummonArchetype),
+    summonMode: getSkillStringValue(skill, 'summonMode', 'cast' as SkillSummonMode),
+    summonHp: Math.max(0, getSkillValue(skill, 'summonHp', level, 0)),
+    summonHits: Math.max(0, getSkillValue(skill, 'summonHits', level, 0)),
+    summonDamage: Math.max(0, getSkillValue(skill, 'summonDamage', level, 0)),
+    summonRange: Math.max(0, getSkillValue(skill, 'summonRange', level, 0)),
+    summonMoveSpeed: Math.max(0, getSkillValue(skill, 'summonMoveSpeed', level, 0)),
+    summonAttackInterval: Math.max(0, getSkillValue(skill, 'summonAttackInterval', level, 0)),
+    summonVision: Math.max(0, getSkillValue(skill, 'summonVision', level, 0)),
+    summonGoldBounty: Math.max(0, getSkillValue(skill, 'summonGoldBounty', level, 0)),
+    summonXpBounty: Math.max(0, getSkillValue(skill, 'summonXpBounty', level, 0)),
+    summonOutgoingDamagePct: Math.max(0, getSkillValue(skill, 'summonOutgoingDamagePct', level, 0)),
+    summonIncomingDamagePct: Math.max(0, getSkillValue(skill, 'summonIncomingDamagePct', level, 0)),
+    summonHealPct: Math.max(0, getSkillValue(skill, 'summonHealPct', level, 0)),
     isDamageOverTime: hasSkillTag(skill, ['damage_over_time', 'dot', 'poison', 'aura_dot', 'burn']),
     isHealingOverTime: hasSkillTag(skill, ['heal_over_time', 'hot', 'regen', 'regeneration']),
     isArea: skill.target === 'area' || getSkillValue(skill, 'radius', level, 0) > 0,

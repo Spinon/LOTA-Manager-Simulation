@@ -44,7 +44,7 @@ import {
   wisdomRuneXp,
 } from '../game-systems/nonCombatFormulas.ts'
 import { expectedTimeToKillStructure, isBackdoorProtected, structureDamageTaken } from '../game-systems/structureFormulas.ts'
-import { getPrimarySkillUsageSituation, getSkillAiUsageScore, getSkillEffectProfile, hasSkillTag, isConfirmedGlobalSkill } from '../game-systems/skillRuntime.ts'
+import { getPrimarySkillUsageSituation, getSkillAiUsageScore, getSkillEffectProfile, hasSkillTag, isConfirmedGlobalSkill, type SkillSummonArchetype } from '../game-systems/skillRuntime.ts'
 import {
   abilityUpgradeItemIds,
   getContextualSkillIds,
@@ -364,6 +364,7 @@ export type SummonedUnit = {
   ownerId: string
   sourceSkillId: string
   name: string
+  archetype: SkillSummonArchetype
   team: TeamId
   pos: Point
   hp: number
@@ -378,6 +379,11 @@ export type SummonedUnit = {
   expiresAt: number
   goldReward: number
   xpReward: number
+  canMove: boolean
+  canAttack: boolean
+  damageTakenMultiplier: number
+  healingAuraPct: number
+  channelBound: boolean
   targetId?: string
   lastHitBy?: CombatSource
 }
@@ -2292,7 +2298,8 @@ type RenderArcaneFrame = [
 type RenderCreepFrame = [string, TeamId, LaneId, LaneCreepKind, number, number, number, number, number]
 type RenderSummonFrame = [
   string, string, string, string, TeamId, number, number, number, number, number,
-  number, number, number, number, number, number, number, number, number, string | undefined,
+  number, number, number, number, number, number, number, number, number,
+  SkillSummonArchetype, boolean, boolean, number, number, boolean, string | undefined,
 ]
 type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number, AttackEffect['action'], string]
 type RenderMarkerFrame = [TeamId, number, number, number, number]
@@ -2439,7 +2446,9 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
       renderNumber(summon.maxHp), renderNumber(summon.damage), renderNumber(summon.range),
       renderNumber(summon.visionRange), renderNumber(summon.moveSpeed), renderNumber(summon.attackInterval),
       renderNumber(summon.lastAttack), renderNumber(summon.spawnedAt), renderNumber(summon.expiresAt),
-      renderNumber(summon.goldReward), renderNumber(summon.xpReward), summon.targetId,
+      renderNumber(summon.goldReward), renderNumber(summon.xpReward), summon.archetype,
+      summon.canMove, summon.canAttack, renderNumber(summon.damageTakenMultiplier),
+      renderNumber(summon.healingAuraPct), summon.channelBound, summon.targetId,
     ]),
     towerHp: state.towers.map((tower) => renderNumber(tower.hp)),
     structureHp: state.structures.map((structure) => renderNumber(structure.hp)),
@@ -2585,7 +2594,9 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       pos: { x: summon[5], y: summon[6] }, hp: summon[7], maxHp: summon[8], damage: summon[9],
       range: summon[10], visionRange: summon[11], moveSpeed: summon[12], attackInterval: summon[13],
       lastAttack: summon[14], spawnedAt: summon[15], expiresAt: summon[16], goldReward: summon[17],
-      xpReward: summon[18], targetId: summon[19],
+      xpReward: summon[18], archetype: summon[19], canMove: summon[20], canAttack: summon[21],
+      damageTakenMultiplier: summon[22], healingAuraPct: summon[23], channelBound: summon[24],
+      targetId: summon[25],
     })),
     towers: staticData.towers.map((tower, index): Tower => ({ ...tower, pos: tower.pos, hp: frame.towerHp[index] ?? 0, lastAttack: 0 })),
     structures: staticData.structures.map((structure, index): Structure => ({ ...structure, pos: structure.pos, hp: frame.structureHp[index] ?? 0, lastAttack: 0 })),
@@ -6222,6 +6233,8 @@ function completeSkillChannel(state: SimulationState, arcane: Arcane, channel: C
     ? target.stats.hp > 0 && target.respawn <= state.time
     : target.hp > 0
   if (!targetAlive && skill.target === 'unit') return
+  const profile = getSkillEffectProfile(skill, level)
+  if (profile.summonMode === 'channel') return
 
   resolveSimpleSkillEffects(
     state,
@@ -6229,7 +6242,7 @@ function completeSkillChannel(state: SimulationState, arcane: Arcane, channel: C
     skill,
     level,
     target,
-    getSkillEffectProfile(skill, level),
+    profile,
     false,
     channel.target,
   )
@@ -9045,6 +9058,9 @@ export function startSimpleSkillChannel(
   liveArcane.decision = liveArcane.microDecision
   liveArcane.forceDecision = false
   liveArcane.nextDecisionAt = Math.max(liveArcane.nextDecisionAt, liveArcane.channeling.completesAt)
+  if (profile.summonMode === 'channel' && profile.summonCount > 0) {
+    applySimpleSkillSummonPressure(state, liveArcane, skill, profile, target.pos)
+  }
   if (liveArcane !== arcane) {
     arcane.stats = liveArcane.stats
     arcane.channeling = liveArcane.channeling
@@ -9473,16 +9489,35 @@ export function applySimpleSkillSummonPressure(
   profile: ReturnType<typeof getSkillEffectProfile>,
   center: Point = caster.pos,
 ) {
-  if (profile.summonCount <= 0) return
+  if (profile.summonCount <= 0 || !['cast', 'channel'].includes(profile.summonMode)) return
+  const duration = Math.max(4, Math.min(7200, profile.summonDuration || profile.duration))
+  if (duration >= 3600) {
+    state.summons = state.summons.filter((summon) => (
+      summon.ownerId !== caster.id || summon.sourceSkillId !== skill.id
+    ))
+  }
   const ownerSummons = state.summons.filter((summon) => summon.ownerId === caster.id && summon.hp > 0)
-  const count = Math.min(6, profile.summonCount, Math.max(0, 12 - ownerSummons.length))
+  const ownerLimit = profile.summonArchetype === 'ward' ? 24 : 12
+  const castLimit = profile.summonArchetype === 'ward' ? 12 : 10
+  const count = Math.min(castLimit, profile.summonCount, Math.max(0, ownerLimit - ownerSummons.length))
   if (count <= 0) return
-  const duration = Math.max(4, Math.min(120, profile.summonDuration || profile.duration))
   const levelScale = 1 + Math.max(0, caster.stats.level - 1) * 0.035
   const swarmScale = 1 / Math.sqrt(Math.max(1, count))
-  const maxHp = Math.round((115 + caster.stats.maxHp * 0.16) * levelScale * (0.72 + swarmScale * 0.28))
-  const damage = Math.round((12 + caster.stats.damage * 0.24) * levelScale * (0.7 + swarmScale * 0.3))
-  const ranged = hasAnySimpleSkillTag(skill, ['ward', 'spirit', 'archer', 'ranged'])
+  const archetype = profile.summonArchetype
+  const illusion = archetype === 'illusion'
+  const clone = archetype === 'clone'
+  const ward = archetype === 'ward'
+  const healingWard = archetype === 'healing_ward'
+  const importedHp = profile.summonHits > 0 ? profile.summonHits * 90 : profile.summonHp
+  const genericHp = (115 + caster.stats.maxHp * 0.16) * levelScale * (0.72 + swarmScale * 0.28)
+  const maxHp = Math.max(1, Math.round(illusion || clone ? caster.stats.maxHp : importedHp || genericHp))
+  const outgoingDamage = profile.summonOutgoingDamagePct > 0 ? profile.summonOutgoingDamagePct / 100 : illusion ? 0.35 : 1
+  const genericDamage = (12 + caster.stats.damage * 0.24) * levelScale * (0.7 + swarmScale * 0.3)
+  const baseDamage = clone ? caster.stats.damage : illusion ? caster.stats.damage * outgoingDamage : profile.summonDamage || genericDamage
+  const damage = healingWard ? 0 : Math.max(0, Math.round(baseDamage))
+  const ranged = ward || profile.summonRange >= 300 || hasAnySimpleSkillTag(skill, ['spirit', 'archer', 'ranged'])
+  const canMove = !ward && (healingWard || profile.summonMoveSpeed > 0 || illusion || clone || archetype === 'unit')
+  const canAttack = damage > 0 && !healingWard
   const timestamp = Math.round(state.time * 1000)
   const spawned = Array.from({ length: count }, (_, index): SummonedUnit => {
     const angle = ((index + 1) / count) * Math.PI * 2
@@ -9493,20 +9528,26 @@ export function applySimpleSkillSummonPressure(
       ownerId: caster.id,
       sourceSkillId: skill.id,
       name: `${skill.name} ${index + 1}`,
+      archetype,
       team: caster.team,
       pos,
       hp: maxHp,
       maxHp,
       damage,
-      range: ranged ? 5.8 : 2.2,
-      visionRange: ranged ? 8.5 : 7,
-      moveSpeed: ranged ? 3.8 : 4.4,
-      attackInterval: ranged ? 1.35 : 1.05,
+      range: profile.summonRange > 0 ? profile.summonRange / 140 : ranged ? 5.8 : 2.2,
+      visionRange: profile.summonVision > 0 ? profile.summonVision / 140 : ranged ? 8.5 : 7,
+      moveSpeed: canMove ? (profile.summonMoveSpeed > 0 ? profile.summonMoveSpeed / 45 : ranged ? 3.8 : 4.4) : 0,
+      attackInterval: profile.summonAttackInterval > 0 ? profile.summonAttackInterval : ranged ? 1.35 : 1.05,
       lastAttack: state.time - 0.5,
       spawnedAt: state.time,
       expiresAt: state.time + duration,
-      goldReward: Math.max(8, Math.round((12 + caster.stats.level * 1.5) * swarmScale)),
-      xpReward: Math.max(12, Math.round((18 + caster.stats.level * 2) * swarmScale)),
+      goldReward: Math.max(0, Math.round(profile.summonGoldBounty || (12 + caster.stats.level * 1.5) * swarmScale)),
+      xpReward: Math.max(0, Math.round(profile.summonXpBounty || (18 + caster.stats.level * 2) * swarmScale)),
+      canMove,
+      canAttack,
+      damageTakenMultiplier: profile.summonIncomingDamagePct > 0 ? profile.summonIncomingDamagePct / 100 : illusion ? 3 : 1,
+      healingAuraPct: healingWard ? Math.max(0.01, profile.summonHealPct / 100) : 0,
+      channelBound: profile.summonMode === 'channel',
     }
   })
   state.summons = [...state.summons, ...spawned]
@@ -9516,24 +9557,49 @@ export function applySimpleSkillSummonPressure(
 export function updateSummonedUnits(state: SimulationState, delta: number) {
   for (const summon of state.summons) {
     if (summon.hp <= 0 || summon.expiresAt <= state.time) continue
-    const retained = summon.targetId ? getCombatTargetById(state, summon.targetId) : undefined
-    const target = retained && isSummonTargetValid(state, summon, retained)
-      ? retained
-      : getSummonTarget(state, summon)
+    if (summon.channelBound) {
+      const owner = state.arcanes.find((arcane) => arcane.id === summon.ownerId)
+      if (owner?.channeling?.skillId !== summon.sourceSkillId) {
+        summon.expiresAt = state.time
+        continue
+      }
+    }
+    if (summon.healingAuraPct > 0) applySummonHealingAura(state, summon, delta)
+    const retained = summon.canAttack && summon.targetId ? getCombatTargetById(state, summon.targetId) : undefined
+    const target = summon.canAttack
+      ? retained && isSummonTargetValid(state, summon, retained)
+        ? retained
+        : getSummonTarget(state, summon)
+      : undefined
     summon.targetId = target?.id
     if (target) {
       const stopDistance = summon.range + getEntityCollisionRadius(target) * 0.7
-      if (distanceSquared(summon.pos, target.pos) > stopDistance * stopDistance) {
+      if (summon.canMove && distanceSquared(summon.pos, target.pos) > stopDistance * stopDistance) {
         summon.pos = moveToward(summon.pos, target.pos, summon.moveSpeed * delta)
       }
       continue
     }
+    if (!summon.canMove) continue
     const owner = state.arcanes.find((arcane) => arcane.id === summon.ownerId)
     if (!owner || owner.stats.hp <= 0 || owner.respawn > state.time) continue
     const followPoint = formationPoint(owner.pos, summon.id)
     if (distanceSquared(summon.pos, followPoint) > 4 * 4) {
       summon.pos = moveToward(summon.pos, followPoint, summon.moveSpeed * delta)
     }
+  }
+}
+
+function applySummonHealingAura(state: SimulationState, summon: SummonedUnit, delta: number) {
+  const radiusSquared = summon.visionRange * summon.visionRange
+  const owner = state.arcanes.find((arcane) => arcane.id === summon.ownerId)
+  for (const ally of state.arcanes) {
+    if (ally.team !== summon.team || ally.stats.hp <= 0 || ally.respawn > state.time) continue
+    if (distanceSquared(ally.pos, summon.pos) > radiusSquared) continue
+    const healing = Math.min(ally.stats.maxHp - ally.stats.hp, ally.stats.maxHp * summon.healingAuraPct * delta)
+    if (healing <= 0) continue
+    ally.stats.hp += healing
+    ally.healingReceived += healing
+    if (owner) owner.healingDone += healing
   }
 }
 
@@ -10446,7 +10512,7 @@ export function resolveCombat(
 
   for (const summon of next.summons) {
     if (actorFilter && !actorFilter.has(summon.id)) continue
-    if (pregame || summon.hp <= 0 || summon.expiresAt <= next.time) continue
+    if (pregame || !summon.canAttack || summon.hp <= 0 || summon.expiresAt <= next.time) continue
     if (next.time < summon.lastAttack + summon.attackInterval) continue
     const target = summon.targetId ? getCombatTargetById(next, summon.targetId) : undefined
     if (!target || !isSummonTargetValid(next, summon, target)) continue
@@ -11865,7 +11931,8 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
     }
   } else if (targetSummon && targetSummonIndex !== undefined) {
     const summons = [...state.summons]
-    summons[targetSummonIndex] = { ...targetSummon, hp: hit(targetSummon.hp), lastHitBy: source }
+    const summonDamage = finalDamage * Math.max(0, targetSummon.damageTakenMultiplier)
+    summons[targetSummonIndex] = { ...targetSummon, hp: Math.max(0, targetSummon.hp - summonDamage), lastHitBy: source }
     state.summons = summons
     if (summons[targetSummonIndex].hp <= 0) teamVisionProviderCache.delete(state)
   } else if (targetTower && targetTowerIndex !== undefined) {

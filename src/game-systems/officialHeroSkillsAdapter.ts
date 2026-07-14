@@ -49,6 +49,42 @@ type RuntimeKit = {
   shardGrantedAbilities: readonly RuntimeSkill[]
 }
 
+type SummonArchetype = 'unit' | 'ward' | 'healing_ward' | 'illusion' | 'clone'
+type SummonMode = 'cast' | 'channel' | 'target_death' | 'on_attack' | 'on_death'
+
+type SummonImportProfile = {
+  archetype: SummonArchetype
+  mode: SummonMode
+}
+
+const summonImportProfiles: Record<string, SummonImportProfile> = {
+  juggernaut_healing_ward: { archetype: 'healing_ward', mode: 'cast' },
+  shadow_shaman_mass_serpent_ward: { archetype: 'ward', mode: 'cast' },
+  witch_doctor_death_ward: { archetype: 'ward', mode: 'channel' },
+  enigma_demonic_conversion: { archetype: 'unit', mode: 'cast' },
+  warlock_rain_of_chaos: { archetype: 'unit', mode: 'cast' },
+  warlock_eldritch_summoning: { archetype: 'unit', mode: 'on_death' },
+  beastmaster_summon_razorback: { archetype: 'unit', mode: 'cast' },
+  beastmaster_summon_raptor: { archetype: 'unit', mode: 'cast' },
+  venomancer_plague_ward: { archetype: 'ward', mode: 'cast' },
+  skeleton_king_bone_guard: { archetype: 'unit', mode: 'cast' },
+  skeleton_king_reincarnation: { archetype: 'unit', mode: 'on_death' },
+  furion_force_of_nature: { archetype: 'unit', mode: 'cast' },
+  clinkz_wind_walk: { archetype: 'unit', mode: 'cast' },
+  broodmother_spawn_spiderlings: { archetype: 'unit', mode: 'target_death' },
+  invoker_forge_spirit: { archetype: 'unit', mode: 'cast' },
+  lycan_summon_wolves: { archetype: 'unit', mode: 'cast' },
+  lone_druid_spirit_bear: { archetype: 'unit', mode: 'cast' },
+  chaos_knight_phantasm: { archetype: 'illusion', mode: 'cast' },
+  treant_eyes_in_the_forest: { archetype: 'ward', mode: 'cast' },
+  undying_tombstone: { archetype: 'ward', mode: 'cast' },
+  undying_flesh_golem: { archetype: 'unit', mode: 'on_attack' },
+  naga_siren_mirror_image: { archetype: 'illusion', mode: 'cast' },
+  visage_summon_familiars: { archetype: 'unit', mode: 'cast' },
+  arc_warden_tempest_double: { archetype: 'clone', mode: 'cast' },
+  ringmaster_funhouse_mirror: { archetype: 'illusion', mode: 'cast' },
+}
+
 const runtimeKits = HERO_SKILL_RUNTIME_OFFICIAL as unknown as readonly RuntimeKit[]
 const runtimeKitByHeroId = new Map(runtimeKits.map((kit) => [kit.heroId, kit]))
 const deprecatedHeroAliases: Record<string, string> = {
@@ -133,8 +169,9 @@ function toHeroSkillDefinition(kit: RuntimeKit, skill: RuntimeSkill, key: string
 }
 
 function getSkillKind(skill: RuntimeSkill): SkillKind {
-  if (skill.category === 'innate' || skill.behaviorFlags.includes('PASSIVE')) return 'passive'
+  if (skill.behaviorFlags.includes('PASSIVE')) return 'passive'
   if (skill.behaviorFlags.includes('ATTACK') && skill.behaviorFlags.includes('AUTOCAST')) return 'passive'
+  if (skill.category === 'innate' && skill.sourceInternalName !== 'lone_druid_spirit_bear') return 'passive'
   if (skill.behaviorFlags.includes('TOGGLE')) return 'toggle'
   return 'active'
 }
@@ -186,14 +223,60 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
   assignAlias(values, skill, 'heal', ['heal', 'heal_amount', 'health_restore'])
   assignAlias(values, skill, 'barrier', ['barrier', 'shield', 'damage_absorb'])
   assignAlias(values, skill, 'slowPct', ['slow', 'movespeed_slow', 'movement_slow', 'enemy_slow'], true)
-  if (isSummonAbility(skill)) {
+  const summonProfile = getSummonImportProfile(skill)
+  if (summonProfile) {
+    values.summonArchetype = summonProfile.archetype
+    values.summonMode = summonProfile.mode
+  }
+  if (summonProfile && (summonProfile.mode === 'cast' || summonProfile.mode === 'channel')) {
     assignAlias(values, skill, 'summons', [
-      'summons', 'max_treants', 'unit_count', 'count', 'ward_count', 'hawk_count', 'wolf_count',
-      'familiar_count', 'spirit_count', 'spirit_amount', 'images_count', 'aether_remnant_count',
+      'summons', 'spawn_count', 'max_treants', 'max_skeleton_charges', 'count', 'ward_count',
+      'hawk_count', 'wolf_count', 'familiar_count', 'images_count', 'skeleton_count',
       'extra_spirit_count_exort', 'extra_spirit_count_quas',
     ])
     if (!hasPositiveNumber(Array.isArray(values.summons) ? values.summons : [])) values.summons = [1]
-    assignAlias(values, skill, 'summonDuration', ['summon_duration', 'treant_duration', 'duration'])
+    assignAlias(values, skill, 'summonDuration', [
+      'summon_duration', 'golem_duration', 'skeleton_duration', 'treant_duration', 'spiderling_duration',
+      'spirit_duration', 'wolf_duration', 'illusion_duration', 'duration', 'AbilityDuration',
+    ])
+    if (skill.sourceInternalName === 'witch_doctor_death_ward') values.summonDuration = [...skill.channelTimes]
+    if (['lone_druid_spirit_bear', 'visage_summon_familiars'].includes(skill.sourceInternalName)) values.summonDuration = [7200]
+    assignAlias(values, skill, 'summonHp', [
+      'eidelon_max_health', 'golem_hp', 'boar_base_max_health', 'hawk_base_max_health',
+      'ward_hp_tooltip', 'skeleton_health', 'treant_health', 'tooltip_spiderling_hp', 'spirit_hp',
+      'wolf_hp', 'bear_hp', 'familiar_hp',
+    ])
+    assignAlias(values, skill, 'summonHits', [
+      'healing_ward_hits_to_kill_tooltip', 'hits_to_destroy_tooltip', 'ward_health', 'tombstone_health',
+    ])
+    assignAlias(values, skill, 'summonDamage', [
+      'ward_damage_tooltip', 'eidelon_base_damage', 'golem_dmg', 'boar_base_damage',
+      'skeleton_damage_tooltip', 'treant_damage', 'spirit_damage', 'wolf_damage',
+      'familiar_attack_damage', 'dive_damage', 'damage',
+    ])
+    assignAlias(values, skill, 'summonRange', [
+      'attack_range_tooltip', 'eidolon_attack_range', 'familiar_attack_range',
+    ])
+    assignAlias(values, skill, 'summonMoveSpeed', [
+      'healing_ward_movespeed_tooltip', 'eidelon_base_movespeed', 'golem_movement_speed',
+      'boar_base_movespeed', 'min_move_speed', 'treant_movespeed', 'wolf_movespeed',
+      'bear_movespeed', 'familiar_base_movespeed',
+    ])
+    assignAlias(values, skill, 'summonAttackInterval', ['hawk_base_attack_interval', 'wolf_bat', 'bear_bat', 'attack_rate'])
+    assignAlias(values, skill, 'summonVision', [
+      'healing_ward_aura_radius', 'hawk_base_vision_range', 'treant_vision_day', 'vision_aoe', 'vision_radius',
+    ])
+    assignAlias(values, skill, 'summonGoldBounty', [
+      'golem_gold_bounty', 'hawk_base_gold_bounty', 'gold_bounty', 'treant_gold_bounty_min',
+      'familiar_bounty', 'bounty_gold', 'bounty',
+    ])
+    assignAlias(values, skill, 'summonXpBounty', [
+      'eidolon_xp_bounty', 'boar_base_xp_bounty', 'hawk_base_xp_bounty', 'xp_bounty',
+      'treant_xp_bounty', 'familiar_bounty', 'bounty_xp',
+    ])
+    assignAlias(values, skill, 'summonOutgoingDamagePct', ['outgoing_damage_tooltip', 'tooltip_damage_outgoing_melee'])
+    assignAlias(values, skill, 'summonIncomingDamagePct', ['incoming_damage_tooltip', 'tooltip_incoming_damage_total_pct', 'tooltip_damage_incoming_total_pct'])
+    assignAlias(values, skill, 'summonHealPct', ['healing_ward_heal_amount'])
   }
   assignAlias(values, skill, 'manaValue', ['mana_burned', 'mana_drain', 'mana_restore'])
   assignAlias(values, skill, 'attackSpeed', ['bonus_attack_speed', 'attack_speed'])
@@ -216,14 +299,11 @@ function assignAlias(target: HeroSkillDefinition['values'], skill: RuntimeSkill,
 }
 
 function isSummonAbility(skill: RuntimeSkill) {
-  const internal = skill.sourceInternalName.toLowerCase()
-  const specialNames = skill.specialValues.map((special) => special.name.toLowerCase())
-  const explicitInternal = /(?:^|_)(?:summon|healing_ward|serpent_ward|plague_ward|death_ward|spawn_spiderlings?|treants?|golem|eidolons?|familiars?|skeletons?|zombies?|spirit_bear|spirit_wolf|forge_spirit|summon_boar|summon_hawk|mirror_image|doppelganger|phantasm|tempest_double)(?:_|$)/.test(internal)
-  const explicitSpecial = specialNames.some((name) => (
-    /(?:^|_)(?:summons|max_treants|unit_count|ward_count|hawk_count|wolf_count|familiar_count|spirit_count|spirit_amount|images_count|aether_remnant_count|spawn_zombie_on_attack)(?:_|$)/.test(name) ||
-    /(?:treant|golem|spiderling|eidolon|familiar|skeleton|zombie|healing_ward|serpent_ward|plague_ward)_(?:health|hp|damage|duration|bounty|count|hits)/.test(name)
-  ))
-  return explicitInternal || explicitSpecial
+  return getSummonImportProfile(skill) !== undefined
+}
+
+function getSummonImportProfile(skill: RuntimeSkill) {
+  return summonImportProfiles[skill.sourceInternalName.toLowerCase()]
 }
 
 function assignControlDurationAlias(
@@ -287,9 +367,13 @@ function getSkillTags(skill: RuntimeSkill, values: HeroSkillDefinition['values']
   addSemanticTag(tags, internal, 'blink')
   addSemanticTag(tags, internal, 'leap')
   addSemanticTag(tags, internal, 'dash')
-  addSemanticTag(tags, internal, 'summon')
   if (['teleport', 'blink', 'leap', 'dash', 'charge'].some((token) => internal.includes(token))) tags.add('mobility')
   if (isSummonAbility(skill)) tags.add('summon')
+  const summonProfile = getSummonImportProfile(skill)
+  if (summonProfile) {
+    tags.add(`summon_${summonProfile.archetype}`)
+    tags.add(`summon_${summonProfile.mode}`)
+  }
   if ('stun' in values) tags.add('stun')
   if ('silence' in values) tags.add('silence')
   if ('root' in values) tags.add('root')

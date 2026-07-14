@@ -483,16 +483,7 @@ function normalizeParentStateSkill(skill: HeroSkillDefinition, sourceAbilityId: 
   }
   const base = { ...skill, name: names[sourceAbilityId] ?? skill.name }
   if (sourceAbilityId === 5474) return { ...base, tags: withTags(skill, ['transformation', 'damage_buff']) }
-  if (sourceAbilityId === 5486) {
-    return {
-      ...base,
-      values: {
-        ...skill.values,
-        summons: skill.values.spirit_amount ?? 5,
-        summonDuration: skill.values.spirit_duration ?? skill.values.duration ?? 15,
-      },
-    }
-  }
+  if (sourceAbilityId === 5486) return base
   if (sourceAbilityId === 5490 || sourceAbilityId === 5493) {
     return { ...base, target: 'self', tags: withTags(skill, ['summon_control', 'defensive_utility']) }
   }

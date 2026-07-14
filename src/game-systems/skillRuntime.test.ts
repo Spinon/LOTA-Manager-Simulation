@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 
 import type { HeroSkillDefinition } from './heroAttributes.ts'
 import { getPrimarySkillUsageSituation, getSkillAiUsageScore, getSkillEffectProfile, isConfirmedGlobalSkill } from './skillRuntime.ts'
+import { getOfficialSkillsForHero } from './officialHeroSkillsAdapter.ts'
+import { getRuntimeNormalizedSkill } from './skillUnlocks.ts'
 
 const skill: HeroSkillDefinition = {
   key: 'Q',
@@ -60,5 +62,38 @@ const namedControlProfile = getSkillEffectProfile(namedControlSkill, 2)
 assert.equal(namedControlProfile.fearDuration, 1.8)
 assert.equal(namedControlProfile.disarmDuration, 3.1)
 assert.equal(namedControlProfile.muteDuration, 2, 'named controls without an explicit duration should use the official base duration')
+
+function findOfficialSkill(heroId: string, sourceAbilityId: number) {
+  const kit = getOfficialSkillsForHero(heroId)
+  const found = [...(kit?.skills ?? []), ...(kit?.supplementalSkills ?? [])]
+    .find((candidate) => candidate.sourceAbilityId === sourceAbilityId)
+  assert.ok(found, `${heroId} should expose official ability ${sourceAbilityId}`)
+  return found
+}
+
+const serpentWard = getSkillEffectProfile(findOfficialSkill('h020_hex_warden', 5081), 2)
+assert.equal(serpentWard.summonArchetype, 'ward')
+assert.equal(serpentWard.summonMode, 'cast')
+assert.equal(serpentWard.summonCount, 10)
+assert.equal(serpentWard.summonDamage, 85)
+
+const mirrorImage = getSkillEffectProfile(findOfficialSkill('h081_naga_siren', 5467), 1)
+assert.equal(mirrorImage.summonArchetype, 'illusion')
+assert.equal(mirrorImage.summonCount, 3)
+assert.equal(mirrorImage.summonOutgoingDamagePct, 25)
+assert.equal(mirrorImage.summonIncomingDamagePct, 350)
+
+const tempestDouble = getSkillEffectProfile(findOfficialSkill('h105_arc_double', 5683), 1)
+assert.equal(tempestDouble.summonArchetype, 'clone')
+assert.equal(tempestDouble.summonGoldBounty, 70)
+
+const spiritBear = findOfficialSkill('h072_druid_dual', 1342)
+assert.equal(spiritBear.kind, 'active', 'castable innate abilities should remain active')
+assert.equal(getSkillEffectProfile(spiritBear, 1).summonDuration, 7200)
+
+const hellfireBlast = findOfficialSkill('h034_skeleton_monarch', 5086)
+assert.equal(hellfireBlast.tags.includes('summon'), false, 'hero-name tokens must not classify ordinary skills as summons')
+const orbitingSpirits = getRuntimeNormalizedSkill(findOfficialSkill('h083_spirit_tether', 5486))
+assert.equal(getSkillEffectProfile(orbitingSpirits, 1).summonCount, 0, 'orbiting projectiles are not independent summoned units')
 
 console.log('skillRuntime tests passed')

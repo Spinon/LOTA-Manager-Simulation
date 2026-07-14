@@ -107,6 +107,7 @@ import {
   updateArcaneKinematics,
   updateCombatAiFoundation,
   updateBoss,
+  updateSummonedUnits,
   type Arcane,
   type Camp,
   type Creep,
@@ -1791,6 +1792,34 @@ let state: SimulationState = initialState
 }
 
 {
+  const wardChannelState = createInitialState('summon-channel-lifetime')
+  wardChannelState.time = 300
+  const caster = wardChannelState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const target = wardChannelState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  caster.heroDefinitionId = 'h023_witch_shaman'
+  caster.skillLevels = { R: 1 }
+  caster.pos = { x: 50, y: 50 }
+  caster.aiMode = 'join_fight'
+  caster.stats.maxMana = 1000
+  caster.stats.mana = 1000
+  target.pos = { x: 52, y: 50 }
+  const deathWard = getHeroDefinition(caster.heroDefinitionId).skills!.find((candidate) => candidate.key === 'R')!
+
+  assert.equal(castSimpleSkill(wardChannelState, caster, deathWard, 1, target, true), true)
+  assert.equal(wardChannelState.summons.length, 1, 'channeled summons should materialize when channeling starts')
+  assert.equal(wardChannelState.summons[0].channelBound, true)
+  assert.equal(wardChannelState.summons[0].canMove, false)
+
+  const targetHpBeforeCompletion = target.stats.hp
+  wardChannelState.time = caster.channeling!.completesAt
+  resolveCompletedChannels(wardChannelState)
+  assert.equal(target.stats.hp, targetHpBeforeCompletion, 'the ward should deal damage through its own attacks, not a generic completion hit')
+  updateSummonedUnits(wardChannelState, 0.1)
+  resolveDeaths(wardChannelState)
+  assert.equal(wardChannelState.summons.length, 0, 'channel-bound summons should despawn when channeling ends')
+}
+
+{
   const killState = createInitialState('skill-kill-attribution-seed')
   const attacker = killState.arcanes.find((arcane) => arcane.team === 'dawn')!
   const victim = killState.arcanes.find((arcane) => arcane.team === 'dusk')!
@@ -1931,6 +1960,62 @@ let state: SimulationState = initialState
   expiringSummon.expiresAt = skillState.time
   resolveDeaths(skillState)
   assert.equal(skillState.summons.some((summon) => summon.id === expiringSummon.id), false, 'expired summons should despawn without a kill')
+
+  skillState.summons = []
+  const liveCaster = skillState.arcanes.find((arcane) => arcane.id === caster.id)!
+  applySimpleSkillSummonPressure(skillState, liveCaster, areaRoot, {
+    ...profile,
+    summonCount: 1,
+    summonDuration: 30,
+    summonArchetype: 'ward',
+    summonMode: 'cast',
+    summonHp: 300,
+    summonDamage: 80,
+    summonRange: 560,
+    summonMoveSpeed: 500,
+  })
+  const wardSummon = skillState.summons[0]
+  assert.equal(wardSummon.archetype, 'ward')
+  assert.equal(wardSummon.canMove, false, 'combat wards should remain at their cast point')
+  assert.equal(wardSummon.maxHp, 300, 'summons should prefer imported health')
+  assert.equal(wardSummon.damage, 80, 'summons should prefer imported damage')
+  assert.equal(wardSummon.range, 4, 'official world attack range should convert to map units')
+
+  skillState.summons = []
+  applySimpleSkillSummonPressure(skillState, liveCaster, areaRoot, {
+    ...profile,
+    summonCount: 1,
+    summonDuration: 30,
+    summonArchetype: 'illusion',
+    summonMode: 'cast',
+    summonOutgoingDamagePct: 25,
+    summonIncomingDamagePct: 350,
+  })
+  const illusion = skillState.summons[0]
+  assert.equal(illusion.maxHp, liveCaster.stats.maxHp, 'illusions should copy their owner health pool')
+  assert.equal(illusion.damage, Math.round(liveCaster.stats.damage * 0.25), 'illusions should scale owner damage by the official output percentage')
+  const illusionHp = illusion.hp
+  damageEntity(skillState, illusion.id, 20, { id: summonTarget.id, label: summonTarget.player, team: summonTarget.team })
+  assert.equal(skillState.summons[0].hp, illusionHp - 70, 'illusion incoming damage should use the official amplification')
+
+  skillState.summons = []
+  const woundedAlly = skillState.arcanes.find((arcane) => arcane.team === liveCaster.team && arcane.id !== liveCaster.id)!
+  woundedAlly.stats.hp = woundedAlly.stats.maxHp * 0.5
+  applySimpleSkillSummonPressure(skillState, liveCaster, areaRoot, {
+    ...profile,
+    summonCount: 1,
+    summonDuration: 30,
+    summonArchetype: 'healing_ward',
+    summonMode: 'cast',
+    summonHealPct: 2,
+    summonDamage: 0,
+  }, woundedAlly.pos)
+  const healingWard = skillState.summons[0]
+  healingWard.pos = { ...woundedAlly.pos }
+  const woundedHp = woundedAlly.stats.hp
+  updateSummonedUnits(skillState, 1)
+  assert.equal(healingWard.canAttack, false, 'healing wards should not perform generic attacks')
+  assert.ok(woundedAlly.stats.hp > woundedHp, 'healing wards should restore nearby allied health over time')
 
   const passiveCarrier = skillState.arcanes[0]
   skillState.timedEffects = []
