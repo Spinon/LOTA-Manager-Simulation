@@ -1,0 +1,48 @@
+{
+  "task": "T34",
+  "date": "2026-07-13",
+  "seed": "performance-reference",
+  "mode": "full-match-event-clock-replay-off",
+  "runs": 3,
+  "baseline": {
+    "commit": "0dd389b",
+    "wallSecondsMedian": 14.64,
+    "wallRateMedian": 175.0,
+    "cpuSecondsMedian": 19.02,
+    "cpuRateMedian": 134.7
+  },
+  "candidate": {
+    "wallSecondsMedian": 13.97,
+    "wallRateMedian": 183.4,
+    "cpuSecondsMedian": 18.34,
+    "cpuRateMedian": 139.7
+  },
+  "improvement": {
+    "wallTimePercent": 4.6,
+    "wallRatePercent": 4.8,
+    "cpuTimePercent": 3.6,
+    "cpuRatePercent": 3.7
+  },
+  "profile": {
+    "updateArcaneMovementInclusivePercent": [28.56, 28.13],
+    "getEnemyActionThreatScoreInclusivePercent": [4.83, 4.55],
+    "getDangerScoreInclusivePercent": [2.63, 1.93],
+    "applySimpleActiveItemIfNeededInclusivePercent": [2.39, 1.48],
+    "getSimpleActiveItemCandidateInclusivePercent": [2.08, 1.29],
+    "queryCreepSpatialGridIntoInclusivePercent": [5.32, 4.68]
+  },
+  "determinism": {
+    "simulatedSeconds": 2562.5,
+    "winner": "dusk",
+    "kills": "14-50",
+    "digest": "0870297d913be664",
+    "preserved": true
+  },
+  "nextHotPath": {
+    "name": "createAiGameSnapshot",
+    "inclusivePercent": 6.30
+  },
+  "rejectedExperiments": [
+    "rewriting global AI snapshot aggregates as direct JavaScript loops"
+  ]
+}

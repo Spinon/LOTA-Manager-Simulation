@@ -422,6 +422,7 @@ export type TickFrameContext = {
   routeObjectivesCache?: Map<string, Array<Tower | Structure | Base>>
   visibleEnemiesCache?: Map<TeamId, Arcane[]>
   baseThreatCache?: Map<TeamId, ReturnType<typeof getBaseThreat>>
+  actionThreatCache?: WeakMap<Point, Map<string, number>>
 }
 export type SpatialGrid<T extends { pos: Point }> = {
   cellSize: number
@@ -1977,6 +1978,7 @@ export function createTickFrameContext(): TickFrameContext {
     routeObjectivesCache: new Map(),
     visibleEnemiesCache: new Map(),
     baseThreatCache: new Map(),
+    actionThreatCache: new WeakMap(),
   }
 }
 
@@ -4707,7 +4709,14 @@ export function getInventoryPowerItemCount(arcane: Arcane) {
   return getShopItemsForInventory(arcane.items).length
 }
 
-export function getGankTarget(state: SimulationState, arcane: Arcane, visibleEnemies: Arcane[], targetThreatLimit: number, currentDanger: number) {
+export function getGankTarget(
+  state: SimulationState,
+  arcane: Arcane,
+  visibleEnemies: Arcane[],
+  targetThreatLimit: number,
+  currentDanger: number,
+  frameContext?: TickFrameContext,
+) {
   if (getGamePhase(state.time) !== 'early') return undefined
   if (currentDanger > 56) return undefined
   if (arcane.stats.hp / arcane.stats.maxHp < 0.68) return undefined
@@ -4744,7 +4753,7 @@ export function getGankTarget(state: SimulationState, arcane: Arcane, visibleEne
         ally.stats.hp > 0 &&
         ally.respawn <= state.time
       )), 9)
-      const targetDanger = getEnemyActionThreatScore(state, arcane, enemy.pos, visibleEnemies)
+      const targetDanger = getEnemyActionThreatScore(state, arcane, enemy.pos, visibleEnemies, frameContext)
       const effectiveTargetDanger = getEffectiveDangerScore(0, targetDanger, arcane.stats.hp / arcane.stats.maxHp)
       const localNumbers = getLocalNumbers(state, arcane.team, enemy.pos, 12, visibleEnemies)
       const ownLane = getLaneWinAssessment(state, arcane.team, arcane.lane)
@@ -4772,7 +4781,14 @@ export function getGankTarget(state: SimulationState, arcane: Arcane, visibleEne
     .sort((a, b) => b.score - a.score)[0]?.enemy
 }
 
-export function getRotateTarget(state: SimulationState, arcane: Arcane, visibleEnemies: Arcane[], targetThreatLimit: number, currentDanger: number) {
+export function getRotateTarget(
+  state: SimulationState,
+  arcane: Arcane,
+  visibleEnemies: Arcane[],
+  targetThreatLimit: number,
+  currentDanger: number,
+  frameContext?: TickFrameContext,
+) {
   const phase = getGamePhase(state.time)
   if (arcane.role !== 'Mid' || phase === 'late') return undefined
   if (currentDanger > 58) return undefined
@@ -4797,7 +4813,7 @@ export function getRotateTarget(state: SimulationState, arcane: Arcane, visibleE
         ally.respawn <= state.time
       )), phase === 'early' ? 10 : 13)
       const alliedPressure = state.creeps.some((creep) => creep.team === arcane.team && creep.lane === enemy.lane && distance(creep.pos, enemy.pos) <= 8)
-      const targetDanger = getEnemyActionThreatScore(state, arcane, enemy.pos, visibleEnemies)
+      const targetDanger = getEnemyActionThreatScore(state, arcane, enemy.pos, visibleEnemies, frameContext)
       const effectiveTargetDanger = getEffectiveDangerScore(0, targetDanger, arcane.stats.hp / arcane.stats.maxHp)
       const localNumbers = getLocalNumbers(state, arcane.team, enemy.pos, phase === 'early' ? 12 : 14, visibleEnemies)
       const midLane = getLaneWinAssessment(state, arcane.team, 'mid')
@@ -4826,7 +4842,14 @@ export function getRotateTarget(state: SimulationState, arcane: Arcane, visibleE
     .sort((a, b) => b.score - a.score)[0]?.enemy
 }
 
-export function getInitiateTarget(state: SimulationState, arcane: Arcane, visibleEnemies: Arcane[], targetThreatLimit: number, currentDanger: number) {
+export function getInitiateTarget(
+  state: SimulationState,
+  arcane: Arcane,
+  visibleEnemies: Arcane[],
+  targetThreatLimit: number,
+  currentDanger: number,
+  frameContext?: TickFrameContext,
+) {
   const phase = getGamePhase(state.time)
   if (arcane.role !== 'Offlane' || phase === 'early') return undefined
   if (currentDanger > 54) return undefined
@@ -4850,7 +4873,7 @@ export function getInitiateTarget(state: SimulationState, arcane: Arcane, visibl
     .map((enemy) => {
       const enemyCluster = visibleEnemies.filter((other) => distance(other.pos, enemy.pos) <= 8).length
       const allyCluster = alliesReady.filter((ally) => distance(ally.pos, enemy.pos) <= 13).length
-      const targetDanger = getEnemyActionThreatScore(state, arcane, enemy.pos, visibleEnemies)
+      const targetDanger = getEnemyActionThreatScore(state, arcane, enemy.pos, visibleEnemies, frameContext)
       const effectiveTargetDanger = getEffectiveDangerScore(0, targetDanger, arcane.stats.hp / arcane.stats.maxHp)
       const localNumbers = getLocalNumbers(state, arcane.team, enemy.pos, phase === 'mid' ? 14 : 16, visibleEnemies)
       const numbersBonus = Math.max(0, localNumbers.advantage) * 13
@@ -5347,6 +5370,8 @@ export function updateArcaneMovement(
   let aiExecutionChance = arcane.aiExecutionChance
   let aiExecutionDelay = arcane.aiExecutionDelay
   let aiFailure = arcane.aiFailure
+  let decisionDangerScore: number | undefined
+  let decisionVisibleEnemies: Arcane[] | undefined
   const ownBase = teamInfo[arcane.team].base
   const path = lanePaths[arcane.team][arcane.lane]
   if (state.time < 0) {
@@ -5449,8 +5474,10 @@ export function updateArcaneMovement(
 
   if (shouldRunDecision) {
     const visibleEnemies = getVisibleEnemyArcanes(state, arcane.team, frameContext)
-    const dangerScore = getDangerScore(state, arcane, visibleEnemies)
-    const actionDanger = getEnemyActionThreatScore(state, arcane, arcane.pos, visibleEnemies)
+    const dangerScore = getDangerScore(state, arcane, visibleEnemies, frameContext)
+    const actionDanger = getEnemyActionThreatScore(state, arcane, arcane.pos, visibleEnemies, frameContext)
+    decisionDangerScore = dangerScore
+    decisionVisibleEnemies = visibleEnemies
     const memoryDanger = getTeamMemoryDanger(state, arcane.team, arcane.pos)
     const hpRatio = arcane.stats.hp / arcane.stats.maxHp
     const isWounded = hpRatio < 0.62
@@ -5487,20 +5514,20 @@ export function updateArcaneMovement(
       (phase !== 'early' || creep.lane === arcane.lane) &&
       !isUnsafeUnderEnemyTower(state, arcane.team, creep.pos, creep.lane) &&
       !isTooDeepForAggression(state, arcane, creep.pos, creep.lane, phase) &&
-      getEffectiveDangerScore(0, getEnemyActionThreatScore(state, arcane, creep.pos, visibleEnemies), hpRatio) <= targetThreatLimit
+      getEffectiveDangerScore(0, getEnemyActionThreatScore(state, arcane, creep.pos, visibleEnemies, frameContext), hpRatio) <= targetThreatLimit
     ))
     const nearbyEnemy = nearest(
       arcane.pos,
       visibleEnemies.filter((enemy) => (
         !isUnsafeUnderEnemyTower(state, arcane.team, enemy.pos, enemy.lane) &&
         !isTooDeepForAggression(state, arcane, enemy.pos, enemy.lane, phase) &&
-        getEffectiveDangerScore(0, getEnemyActionThreatScore(state, arcane, enemy.pos, visibleEnemies), hpRatio) <= targetThreatLimit + 5
+        getEffectiveDangerScore(0, getEnemyActionThreatScore(state, arcane, enemy.pos, visibleEnemies, frameContext), hpRatio) <= targetThreatLimit + 5
       )),
       phase === 'early' ? 8 : phase === 'mid' ? 13 : 16,
     )
-    const gankTarget = getGankTarget(state, arcane, visibleEnemies, targetThreatLimit, effectiveDanger)
-    const rotateTarget = getRotateTarget(state, arcane, visibleEnemies, targetThreatLimit, effectiveDanger)
-    const initiateTarget = getInitiateTarget(state, arcane, visibleEnemies, targetThreatLimit, effectiveDanger)
+    const gankTarget = getGankTarget(state, arcane, visibleEnemies, targetThreatLimit, effectiveDanger, frameContext)
+    const rotateTarget = getRotateTarget(state, arcane, visibleEnemies, targetThreatLimit, effectiveDanger, frameContext)
+    const initiateTarget = getInitiateTarget(state, arcane, visibleEnemies, targetThreatLimit, effectiveDanger, frameContext)
     const laneEnemyCreeps = safeEnemyCreeps.filter((creep) => creep.lane === arcane.lane)
     const claimableLaneCreeps = laneEnemyCreeps.filter((creep) => canArcaneClaimFarmAt(state, arcane, creep.pos))
     const laneCreep = nearest(arcane.pos, claimableLaneCreeps, phase === 'early' ? 13 : 10)
@@ -5916,7 +5943,9 @@ export function updateArcaneMovement(
   const shouldShopAtBase = shouldDecide && atBase && (canBuyAtBase || !macroDecision.startsWith('Avancar'))
   const shoppedArcane = shouldShopAtBase ? buyAtBase(state, arcane) : arcane
   const dispelResult = shouldDecide ? applyDispelItemIfNeeded(state, shoppedArcane) : { arcane: shoppedArcane, used: undefined }
-  const activeItemResult = shouldDecide ? applySimpleActiveItemIfNeeded(state, dispelResult.arcane) : { arcane: dispelResult.arcane, used: undefined, interruptsDecision: false }
+  const activeItemResult = shouldDecide
+    ? applySimpleActiveItemIfNeeded(state, dispelResult.arcane, decisionDangerScore, decisionVisibleEnemies, frameContext)
+    : { arcane: dispelResult.arcane, used: undefined, interruptsDecision: false }
   const consumableResult = shouldDecide && !atBase ? consumeItemIfNeeded(state, activeItemResult.arcane) : { arcane: activeItemResult.arcane, used: undefined }
   const activeArcane = consumableResult.arcane
   const channelingArcane = shouldDecide
@@ -6217,9 +6246,15 @@ export function applyDispelItemIfNeeded(state: SimulationState, arcane: Arcane):
   }
 }
 
-export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Arcane): { arcane: Arcane; used?: string; interruptsDecision?: boolean } {
+export function applySimpleActiveItemIfNeeded(
+  state: SimulationState,
+  arcane: Arcane,
+  knownDanger?: number,
+  visibleEnemies?: Arcane[],
+  frameContext?: TickFrameContext,
+): { arcane: Arcane; used?: string; interruptsDecision?: boolean } {
   if (hasTimedEffect(state, arcane.id, 'mute')) return { arcane }
-  const candidate = getSimpleActiveItemCandidate(state, arcane)
+  const candidate = getSimpleActiveItemCandidate(state, arcane, knownDanger, visibleEnemies, frameContext)
   const active = candidate?.item.active
   if (!candidate || !active) return { arcane }
 
@@ -6229,9 +6264,11 @@ export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Ar
   let interruptsDecision = false
   const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
   const tags = active.tags
-  const allyTargets = getSimpleActiveItemAllyTargets(state, arcane, item)
+  let cachedAllyTargets: Arcane[] | undefined
+  const getAllyTargets = () => cachedAllyTargets ??= getSimpleActiveItemAllyTargets(state, arcane, item)
 
   if (hasAnyItemTag(tags, ['restore_health', 'heal_over_time', 'healing', 'heal'])) {
+    const allyTargets = getAllyTargets()
     const healing = getActiveItemNumber(active.values, 'health') ?? getActiveItemNumber(active.values, 'heal') ?? 180
     if (hasAnyItemTag(tags, ['team']) || active.target === 'area') {
       applyHealthToArcanes(state, allyTargets, healing, arcane.id)
@@ -6246,6 +6283,7 @@ export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Ar
   }
 
   if (hasAnyItemTag(tags, ['restore_mana'])) {
+    const allyTargets = getAllyTargets()
     const mana = getActiveItemNumber(active.values, 'mana') ?? 120
     if (hasAnyItemTag(tags, ['team']) || active.target === 'area') {
       applyManaToArcanes(state, allyTargets, mana)
@@ -6257,6 +6295,7 @@ export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Ar
   }
 
   if (hasAnyItemTag(tags, ['magic_barrier', 'physical_barrier', 'team_barrier', 'barrier', 'damage_immunity', 'link_barrier', 'debuff_immunity', 'ethereal', 'physical_immunity'])) {
+    const allyTargets = getAllyTargets()
     const barrier = getActiveItemNumber(active.values, 'barrier') ??
       getActiveItemNumber(active.values, 'magicBarrier') ??
       getActiveItemNumber(active.values, 'block') ??
@@ -6302,6 +6341,7 @@ export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Ar
   }
 
   if (hasAnyItemTag(tags, ['movement', 'mobility', 'haste', 'attack_speed', 'slow_immunity'])) {
+    const allyTargets = getAllyTargets()
     const targets = hasAnyItemTag(tags, ['team']) || active.target === 'area' ? allyTargets : [nextArcane]
     targets.forEach((target) => addTimedEffect(state, target, {
       sourceId: item.id,
@@ -6338,11 +6378,13 @@ export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Ar
     }
   }
 
-  const enemyTarget = getSimpleActiveItemEnemyTarget(state, arcane, item)
+  const activeDamage = getActiveItemDamage(arcane, item)
+  const enemyTarget = activeDamage > 0 || hasAnyItemTag(tags, ['slow', 'attack_slow', 'disarm', 'stun', 'disable', 'hex', 'cyclone', 'root', 'silence', 'armor_reduction', 'heal_reduction'])
+    ? getSimpleActiveItemEnemyTarget(state, arcane, item)
+    : undefined
   if (enemyTarget) {
-    const damage = getActiveItemDamage(arcane, item)
-    if (damage > 0) {
-      damageEntity(state, enemyTarget.id, damage, {
+    if (activeDamage > 0) {
+      damageEntity(state, enemyTarget.id, activeDamage, {
         id: item.id,
         label: `${arcane.player}: ${item.name}`,
         team: arcane.team,
@@ -6441,26 +6483,44 @@ export function applySimpleActiveItemIfNeeded(state: SimulationState, arcane: Ar
   }
 }
 
-export function getSimpleActiveItemCandidate(state: SimulationState, arcane: Arcane) {
-  return getShopItemsForInventory(arcane.items)
-    .filter((item) => item.active !== undefined)
-    .filter((item) => (arcane.itemCooldowns[item.name] ?? 0) <= state.time)
-    .map((item) => ({ name: item.name, item }))
-    .find((candidate) => shouldUseSimpleActiveItem(state, arcane, candidate.item))
+export function getSimpleActiveItemCandidate(
+  state: SimulationState,
+  arcane: Arcane,
+  knownDanger?: number,
+  visibleEnemies?: Arcane[],
+  frameContext?: TickFrameContext,
+) {
+  for (const item of getShopItemsForInventory(arcane.items)) {
+    if (!item.active || (arcane.itemCooldowns[item.name] ?? 0) > state.time) continue
+    if (shouldUseSimpleActiveItem(state, arcane, item, knownDanger, visibleEnemies, frameContext)) {
+      return { name: item.name, item }
+    }
+  }
+  return undefined
 }
 
-export function shouldUseSimpleActiveItem(state: SimulationState, arcane: Arcane, item: ShopItem) {
+export function shouldUseSimpleActiveItem(
+  state: SimulationState,
+  arcane: Arcane,
+  item: ShopItem,
+  knownDanger?: number,
+  visibleEnemies?: Arcane[],
+  frameContext?: TickFrameContext,
+) {
   const active = item.active
   if (!active) return false
   const tags = active.tags
   const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
   const manaRatio = arcane.stats.mana / Math.max(1, arcane.stats.maxMana)
-  const danger = getDangerScore(state, arcane)
-  const allyTargets = getSimpleActiveItemAllyTargets(state, arcane, item)
 
   if (active.dispelPower && getDispelItemCandidate(state, arcane)?.item.id === item.id) return false
-  if (hasAnyItemTag(tags, ['restore_health', 'heal_over_time', 'healing', 'heal'])) return hpRatio < 0.48 || allyTargets.some((ally) => ally.stats.hp / Math.max(1, ally.stats.maxHp) < 0.48)
+  if (hasAnyItemTag(tags, ['restore_health', 'heal_over_time', 'healing', 'heal'])) {
+    const allyTargets = getSimpleActiveItemAllyTargets(state, arcane, item)
+    return hpRatio < 0.48 || allyTargets.some((ally) => ally.stats.hp / Math.max(1, ally.stats.maxHp) < 0.48)
+  }
   if (hasAnyItemTag(tags, ['magic_barrier', 'physical_barrier', 'team_barrier', 'barrier', 'damage_immunity', 'link_barrier', 'debuff_immunity', 'ethereal', 'physical_immunity'])) {
+    const danger = knownDanger ?? getDangerScore(state, arcane, visibleEnemies, frameContext)
+    const allyTargets = getSimpleActiveItemAllyTargets(state, arcane, item)
     const teamBarrier = hasAnyItemTag(tags, ['team', 'team_barrier']) || active.target === 'area'
     const targetsNeedBarrier = allyTargets.some((ally) => (
       !hasTimedEffect(state, ally.id, 'barrier') &&
@@ -6471,6 +6531,7 @@ export function shouldUseSimpleActiveItem(state: SimulationState, arcane: Arcane
     return hpRatio < 0.5 || danger > 66
   }
   if (hasAnyItemTag(tags, ['blink', 'mobility', 'haste', 'displacement', 'movement'])) {
+    const danger = knownDanger ?? getDangerScore(state, arcane, visibleEnemies, frameContext)
     const activeCombatIntent = arcane.microDecision.includes('Atacando') ||
       arcane.microDecision.includes('Iniciando') ||
       arcane.microDecision.includes('Gank') ||
@@ -6486,17 +6547,21 @@ export function shouldUseSimpleActiveItem(state: SimulationState, arcane: Arcane
 
 export function getSimpleActiveItemEnemyTarget(state: SimulationState, arcane: Arcane, item: ShopItem) {
   const range = Math.max(arcane.stats.range + 3, (getActiveItemNumber(item.active?.values ?? {}, 'range') ?? 650) / 100)
-  return nearest(arcane.pos, state.arcanes.filter((target) => (
-    target.team !== arcane.team &&
-    target.stats.hp > 0 &&
-    target.respawn <= state.time &&
-    isPointVisibleToTeam(state, arcane.team, target.pos)
-  )), range)
+  return nearestVisibleEnemyArcane(state, arcane.pos, arcane.team, range)
 }
 
 export function getSimpleActiveItemCreepTarget(state: SimulationState, arcane: Arcane, item: ShopItem) {
   const range = Math.max(arcane.stats.range + 2, (getActiveItemNumber(item.active?.values ?? {}, 'range') ?? 650) / 100)
-  return nearest(arcane.pos, state.creeps.filter((creep) => creep.team !== arcane.team && creep.hp > 0), range)
+  let closest: Creep | undefined
+  let closestDistanceSquared = range * range
+  for (const creep of state.creeps) {
+    if (creep.team === arcane.team || creep.hp <= 0) continue
+    const creepDistanceSquared = distanceSquared(arcane.pos, creep.pos)
+    if (creepDistanceSquared > closestDistanceSquared) continue
+    closest = creep
+    closestDistanceSquared = creepDistanceSquared
+  }
+  return closest
 }
 
 export function getSimpleActiveItemAllyTargets(state: SimulationState, arcane: Arcane, item: ShopItem) {
@@ -12175,6 +12240,7 @@ export function getDangerScore(
     enemy.respawn <= state.time &&
     isPointVisibleToTeam(state, arcane.team, enemy.pos)
   )),
+  frameContext?: TickFrameContext,
 ) {
   const nearbyEnemyCreeps = queryCreepSpatialGrid(state, arcane.pos, 8)
   let enemyHeroPressure = 0
@@ -12210,7 +12276,7 @@ export function getDangerScore(
   const bossPressure = state.boss.hp > 0 && state.boss.aggroTargetId === arcane.id && state.boss.aggroUntil && state.boss.aggroUntil > state.time
     ? Math.max(0, 1 - distance(arcane.pos, state.boss.pos) / (state.boss.range + 5)) * 26
     : 0
-  const actionRadiusPressure = getEnemyActionThreatScore(state, arcane, arcane.pos, visibleEnemies) * 0.38
+  const actionRadiusPressure = getEnemyActionThreatScore(state, arcane, arcane.pos, visibleEnemies, frameContext) * 0.38
   let allyRelief = 0
   for (const ally of state.arcanes) {
     if (ally.team !== arcane.team || ally.id === arcane.id || ally.stats.hp <= 0 || ally.respawn > state.time) continue
@@ -12230,7 +12296,11 @@ export function getEnemyActionThreatScore(
     enemy.respawn <= state.time &&
     isPointVisibleToTeam(state, arcane.team, enemy.pos)
   )),
+  frameContext?: TickFrameContext,
 ) {
+  const pointCache = frameContext?.actionThreatCache?.get(point)
+  const cached = pointCache?.get(arcane.id)
+  if (cached !== undefined) return cached
   const nearbyEnemyCreeps = queryCreepSpatialGrid(state, point, 20)
   let towerThreat = 0
   for (const tower of state.towers) {
@@ -12271,7 +12341,13 @@ export function getEnemyActionThreatScore(
     if (distance(point, ally.pos) <= 8) nearbyAllyRelief += 4
   }
 
-  return Math.max(0, Math.min(100, towerThreat + visibleArcaneThreat + creepThreat + neutralThreat + bossThreat - nearbyAllyRelief))
+  const score = Math.max(0, Math.min(100, towerThreat + visibleArcaneThreat + creepThreat + neutralThreat + bossThreat - nearbyAllyRelief))
+  if (frameContext?.actionThreatCache) {
+    const cache = pointCache ?? new Map<string, number>()
+    cache.set(arcane.id, score)
+    if (!pointCache) frameContext.actionThreatCache.set(point, cache)
+  }
+  return score
 }
 
 export function getEffectiveDangerScore(dangerScore: number, actionDanger: number, hpRatio: number) {

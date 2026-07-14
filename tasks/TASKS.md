@@ -742,6 +742,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Ganho normalizado da primeira entrega: +44,0% wall e +46,4% CPU. Naquele estágio, o candidato alcançou 1,26x o baseline T24 (114,2x) e abriu as T29/T30.
 - Após T29-T31, a comparação controlada alcançou 291,9x wall, ou 2,56x o baseline T24. O próximo custo relevante está nas passadas de combate/blackboard e no targeting de rota; ainda faltam 17,4% sobre a taxa atual para atingir 342,6x.
 - A T32 adicionou +2,5% wall e +4,7% CPU em comparação controlada. Aplicado ao melhor resultado normalizado anterior, o acumulado estimado chega a 299,3x (2,62x T24); ainda faltam cerca de 14,5% para 342,6x.
+- T33 e T34 acrescentaram aproximadamente +2,0% e +4,8% de taxa wall em comparações controladas. Aplicados ao acumulado anterior, levam a estimativa a 319,9x (2,80x T24); faltam cerca de 7,1% para 342,6x.
 - Soltar o relógio da cadência do replay chegou a 172,8x, porém alterou a partida de 56:13/29-48 para 41:50/7-59; a variante foi mantida apenas como opção de benchmark e não foi adotada no Worker.
 - Testes, lint, build, digest determinístico curto e smoke test visual aprovados. Dados completos em `reports/timing-wheel-audit.json`.
 
@@ -859,6 +860,30 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Em três partidas A/B alternadas no mesmo ambiente, a mediana caiu de 13,05s para 12,79s wall (-2,0%) e de 17,30s para 17,11s CPU (-1,1%). A taxa subiu de 196,4x para 200,4x wall e de 148,1x para 149,8x CPU.
 - No perfil, `isPointVisibleToTeam` caiu de 5,16% para 3,92% inclusivo, `nearestReachableEnemyArcane` de 1,21% para 0,29% e `resolveCombat` de 17,94% para 17,39%.
 - Consultar buckets manualmente e construir os dois times em uma passagem ficaram cerca de 3-4% mais lentos no V8 e foram removidos. Baseline e candidata terminaram em 42:43, vitória Dusk, placar 14-50 e digest `0870297d913be664`.
+
+---
+
+### [x] T34 - Percepção incremental dos Arcanes
+
+> Concluída em 2026-07-13 - Ameaça por ponto passou a ser compartilhada no frame e itens ativos deixaram de reconstruir percepção que não utilizam.
+
+**Objetivo**: reduzir o custo de `updateArcaneMovement` compartilhando percepção exata dentro do frame e evitando trabalho que a ação avaliada não utiliza.
+
+**Escopo**:
+- Memoizar ameaça por Arcane e ponto durante o frame de decisão.
+- Reutilizar perigo e inimigos visíveis entre decisão e avaliação de itens ativos.
+- Avaliar aliados, perigo e alvos de itens somente para categorias que usam esses dados.
+- Preservar cadência, alcance, prioridade e desempates da IA.
+
+**Critérios**: digest, duração, vencedor e placar preservados; ganho total mensurável e queda nos custos de ameaça/contexto; testes, lint e build verdes.
+
+**Resultado (2026-07-13)**:
+- `TickFrameContext` agora memoiza o score exato de ameaça por Arcane e referência de ponto. Decisão principal, danger score, gank, rotate e initiate reutilizam o mesmo valor sem mudar alcance ou fórmula.
+- A avaliação de itens ativos reutiliza perigo e inimigos já percebidos pela decisão. Aliados, perigo e alvos ofensivos só são calculados para tags que realmente dependem deles; seleção de item e desempates mantêm a ordem do inventário.
+- Em três partidas A/B alternadas no mesmo ambiente, a mediana caiu de 14,64s para 13,97s wall (-4,6%) e de 19,02s para 18,34s CPU (-3,6%). A taxa subiu de 175,0x para 183,4x wall (+4,8%) e de 134,7x para 139,7x CPU (+3,7%).
+- No perfil, `getDangerScore` caiu de 2,63% para 1,93% inclusivo, `applySimpleActiveItemIfNeeded` de 2,39% para 1,48%, `getSimpleActiveItemCandidate` de 2,08% para 1,29% e `queryCreepSpatialGridInto` de 5,32% para 4,68%.
+- Reescrever os agregados do snapshot global com loops diretos ficou cerca de 5% mais lento no V8 e foi removido. O próximo gargalo isolado é `createAiGameSnapshot`, com aproximadamente 6,3% do perfil candidato.
+- Baseline e candidata terminaram em 42:43, vitória Dusk, placar 14-50 e digest `0870297d913be664`.
 
 ---
 
