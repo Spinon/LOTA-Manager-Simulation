@@ -97,6 +97,10 @@ const runtimeValueKeys = new Set([
   'summonOutgoingDamagePct',
   'summonIncomingDamagePct',
   'summonHealPct',
+  'summonEffectRadius',
+  'summonTriggerRadius',
+  'summonTriggerSlowPct',
+  'summonTriggerSlowDuration',
   'summons',
   'tauntDuration',
 ])
@@ -244,7 +248,7 @@ function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
       'summon',
       materialized ? 'partial' : 'missing',
       materialized
-        ? 'summons use imported unit stats and cast, channel, target-death, attack, or death event materialization'
+        ? 'summons use imported unit stats and event materialization; conditional imps, skeletons, and spiderlings have source-specific behavior'
         : `summon trigger ${summonMode} still requires event-driven materialization`,
     )
   }

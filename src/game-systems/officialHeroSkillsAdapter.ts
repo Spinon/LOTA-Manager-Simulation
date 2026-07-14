@@ -280,6 +280,14 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
     assignAlias(values, skill, 'summonOutgoingDamagePct', ['outgoing_damage_tooltip', 'tooltip_damage_outgoing_melee'])
     assignAlias(values, skill, 'summonIncomingDamagePct', ['incoming_damage_tooltip', 'tooltip_incoming_damage_total_pct', 'tooltip_damage_incoming_total_pct'])
     assignAlias(values, skill, 'summonHealPct', ['healing_ward_heal_amount'])
+    if (skill.sourceInternalName === 'warlock_eldritch_summoning') {
+      assignAlias(values, skill, 'summonEffectRadius', ['tooltip_imp_explode_radius'])
+    }
+    if (skill.sourceInternalName === 'skeleton_king_reincarnation') {
+      assignAlias(values, skill, 'summonTriggerRadius', ['slow_radius'])
+      assignAlias(values, skill, 'summonTriggerSlowPct', ['movespeed'], true)
+      assignAlias(values, skill, 'summonTriggerSlowDuration', ['slow_duration'])
+    }
   }
   assignAlias(values, skill, 'manaValue', ['mana_burned', 'mana_drain', 'mana_restore'])
   assignAlias(values, skill, 'attackSpeed', ['bonus_attack_speed', 'attack_speed'])

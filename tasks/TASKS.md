@@ -540,6 +540,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Todos os 25 summons reais agora são materializados. Auditoria geral: 6 completas, 631 parciais, 12 aproximações e 85 ausentes. Suíte completa, lint e build verdes; benchmark de 5 minutos: mediana 294,0x wall / 258,8x CPU, digest `534bd00e225a74ea` preservado.
 - Próxima rodada da T16: implementar habilidades próprias das unidades invocadas, começando por explosão do imp, comportamento dos skeletons e propagação de spiderlings.
 
+**Progresso de habilidades dos summons condicionais (2026-07-14)**:
+- Minor Imps agora perseguem unidades até alcance de contato, explodem uma única vez com o raio oficial de 400 unidades, causam dano mágico em área e são consumidos. Sem unidades próximas, seguem o dono em vez de desperdiçar a explosão em estruturas.
+- Reincarnation aplica o slow oficial de 75% por 4s dentro de 600 unidades. Os skeletons nascem com `targetId` distribuído entre os Arcanes inimigos próximos e começam a persegui-los imediatamente.
+- Last hits de spiderlings propagam uma unidade adicional no local da morte. A propagação reutiliza duração e stats importados, continua sujeita ao limite de 12 summons vivos por dono e não executa polling fora da resolução de mortes.
+- Os efeitos são derivados da `sourceSkillId` já presente no replay; nenhum metadado por frame foi adicionado. Raio de explosão, raio de slow, intensidade e duração foram normalizados como valores runtime consumidos.
+- Testes headless cobrem dano em área e distância segura, consumo/despawn do imp, slow e foco dos skeletons, propagação por autoria do last hit e limites existentes. Auditoria permanece em 6 completas, 631 parciais, 12 aproximações e 85 ausentes.
+- Suíte completa, lint e build verdes. Benchmark de 5 minutos: mediana 287,3x wall / 248,0x CPU, digest `534bd00e225a74ea` preservado.
+- Próxima rodada da T16: auditar habilidades próprias dos outros summons, começando por Tombstone zombies, Familiars, Spirit Bear e wards com ataques especiais.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

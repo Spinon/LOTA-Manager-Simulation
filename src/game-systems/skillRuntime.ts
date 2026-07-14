@@ -45,6 +45,10 @@ export type SkillEffectProfile = {
   summonOutgoingDamagePct: number
   summonIncomingDamagePct: number
   summonHealPct: number
+  summonEffectRadius: number
+  summonTriggerRadius: number
+  summonTriggerSlowPct: number
+  summonTriggerSlowDuration: number
   isDamageOverTime: boolean
   isHealingOverTime: boolean
   isArea: boolean
@@ -141,6 +145,10 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
     summonOutgoingDamagePct: Math.max(0, getSkillValue(skill, 'summonOutgoingDamagePct', level, 0)),
     summonIncomingDamagePct: Math.max(0, getSkillValue(skill, 'summonIncomingDamagePct', level, 0)),
     summonHealPct: Math.max(0, getSkillValue(skill, 'summonHealPct', level, 0)),
+    summonEffectRadius: Math.max(0, getSkillValue(skill, 'summonEffectRadius', level, 0)),
+    summonTriggerRadius: Math.max(0, getSkillValue(skill, 'summonTriggerRadius', level, 0)),
+    summonTriggerSlowPct: clampPercent(getSkillValue(skill, 'summonTriggerSlowPct', level, 0)),
+    summonTriggerSlowDuration: Math.max(0, getSkillValue(skill, 'summonTriggerSlowDuration', level, 0)),
     isDamageOverTime: hasSkillTag(skill, ['damage_over_time', 'dot', 'poison', 'aura_dot', 'burn']),
     isHealingOverTime: hasSkillTag(skill, ['heal_over_time', 'hot', 'regen', 'regeneration']),
     isArea: skill.target === 'area' || getSkillValue(skill, 'radius', level, 0) > 0,

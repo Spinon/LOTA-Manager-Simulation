@@ -2033,6 +2033,17 @@ let state: SimulationState = initialState
   assert.equal(spiderlingState.timedEffects.some((effect) => effect.kind === 'summon_mark' && effect.targetId === spiderlingTarget.id), true, 'target-death summons should mark their victim')
   resolveDeaths(spiderlingState)
   assert.equal(spiderlingState.summons.filter((summon) => summon.sourceSkillId === spawnSpiderlings.id).length, 4, 'a marked target death should materialize the imported spiderling count')
+  const propagatingSpiderling = spiderlingState.summons.find((summon) => summon.sourceSkillId === spawnSpiderlings.id)!
+  const propagatedTarget = spiderlingState.arcanes.find((candidate) => candidate.team !== brood.team && candidate.id !== spiderlingTarget.id)!
+  propagatedTarget.stats.hp = 1
+  damageEntity(spiderlingState, propagatedTarget.id, 10, {
+    id: propagatingSpiderling.id,
+    label: propagatingSpiderling.name,
+    team: propagatingSpiderling.team,
+    damageType: 'physical',
+  })
+  resolveDeaths(spiderlingState)
+  assert.equal(spiderlingState.summons.filter((summon) => summon.sourceSkillId === spawnSpiderlings.id).length, 5, 'a spiderling last hit should propagate one additional unit')
 
   const eldritchState = createInitialState('debuff-death-summon-runtime')
   eldritchState.time = 600
@@ -2050,6 +2061,23 @@ let state: SimulationState = initialState
   assert.equal(castSimpleSkill(eldritchState, warlock, offensiveWarlockSkill, 1, afflictedTarget, true), true)
   resolveDeaths(eldritchState)
   assert.equal(eldritchState.summons.filter((summon) => summon.sourceSkillId === eldritchSummoning.id).length, 1, 'an enemy dying under a Warlock skill should summon one minor imp')
+  const minorImp = eldritchState.summons.find((summon) => summon.sourceSkillId === eldritchSummoning.id)!
+  const explosionTargets = eldritchState.arcanes.filter((candidate) => candidate.team !== warlock.team && candidate.stats.hp > 0).slice(0, 2)
+  const distantEnemy = eldritchState.arcanes.find((candidate) => candidate.team !== warlock.team && !explosionTargets.includes(candidate) && candidate.stats.hp > 0)!
+  minorImp.pos = { x: 50, y: 50 }
+  minorImp.targetId = explosionTargets[0].id
+  minorImp.lastAttack = eldritchState.time - minorImp.attackInterval
+  explosionTargets[0].pos = { x: 50.4, y: 50 }
+  explosionTargets[1].pos = { x: 52, y: 50 }
+  distantEnemy.pos = { x: 60, y: 50 }
+  const explosionHp = explosionTargets.map((target) => target.stats.hp)
+  const distantHp = distantEnemy.stats.hp
+  resolveCombat(eldritchState, createTickFrameContext(), new Set([minorImp.id]))
+  assert.ok(explosionTargets.every((target, index) => eldritchState.arcanes.find((candidate) => candidate.id === target.id)!.stats.hp < explosionHp[index]), 'the imp should damage every enemy inside its imported explosion radius')
+  assert.equal(eldritchState.arcanes.find((candidate) => candidate.id === distantEnemy.id)!.stats.hp, distantHp, 'the imp explosion should not hit distant enemies')
+  assert.equal(eldritchState.summons.find((summon) => summon.id === minorImp.id)!.hp, 0, 'the imp should be consumed by its first explosion')
+  resolveDeaths(eldritchState)
+  assert.equal(eldritchState.summons.some((summon) => summon.id === minorImp.id), false, 'an exploded imp should despawn during death resolution')
 
   const reincarnationState = createInitialState('self-death-summon-runtime')
   reincarnationState.time = 600
@@ -2060,9 +2088,14 @@ let state: SimulationState = initialState
   monarch.stats.mana = 500
   monarch.stats.hp = 0
   monarch.lastHitBy = { id: monarchKiller.id, label: monarchKiller.player, team: monarchKiller.team }
+  const nearbyReincarnationEnemies = reincarnationState.arcanes.filter((candidate) => candidate.team !== monarch.team).slice(0, 2)
+  nearbyReincarnationEnemies.forEach((enemy, index) => { enemy.pos = { x: monarch.pos.x + 1 + index, y: monarch.pos.y } })
+  reincarnationState.arcanes.filter((candidate) => candidate.team !== monarch.team && !nearbyReincarnationEnemies.includes(candidate)).forEach((enemy) => { enemy.pos = { x: 80, y: 80 } })
   const reincarnation = getHeroDefinition(monarch.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5089)!
   resolveDeaths(reincarnationState)
   assert.equal(reincarnationState.summons.filter((summon) => summon.sourceSkillId === reincarnation.id).length, 2, 'Reincarnation should summon the level-one skeleton count on death')
+  assert.ok(nearbyReincarnationEnemies.every((enemy) => hasTimedEffect(reincarnationState, enemy.id, 'slow')), 'Reincarnation should slow nearby enemy Arcanes')
+  assert.ok(reincarnationState.summons.filter((summon) => summon.sourceSkillId === reincarnation.id).every((summon) => nearbyReincarnationEnemies.some((enemy) => enemy.id === summon.targetId)), 'Reincarnation skeletons should immediately focus nearby enemy Arcanes')
   assert.equal(reincarnationState.arcanes[0].itemCooldowns[reincarnation.id], 780, 'death-triggered summons should enter the official cooldown')
 
   const noManaReincarnationState = createInitialState('self-death-summon-no-mana')

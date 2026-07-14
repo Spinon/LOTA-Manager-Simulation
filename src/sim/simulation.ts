@@ -9520,7 +9520,7 @@ export function applySimpleSkillSummonPressure(
   const supportsTrigger = triggerMode
     ? profile.summonMode === triggerMode
     : profile.summonMode === 'cast' || profile.summonMode === 'channel'
-  if (requestedCount <= 0 || !supportsTrigger) return
+  if (requestedCount <= 0 || !supportsTrigger) return []
   const duration = Math.max(4, Math.min(7200, profile.summonDuration || profile.duration))
   if (duration >= 3600) {
     state.summons = state.summons.filter((summon) => (
@@ -9531,7 +9531,7 @@ export function applySimpleSkillSummonPressure(
   const ownerLimit = profile.summonArchetype === 'ward' ? 24 : 12
   const castLimit = profile.summonArchetype === 'ward' ? 12 : 10
   const count = Math.min(castLimit, requestedCount, Math.max(0, ownerLimit - ownerSummons.length))
-  if (count <= 0) return
+  if (count <= 0) return []
   const levelScale = 1 + Math.max(0, caster.stats.level - 1) * 0.035
   const swarmScale = 1 / Math.sqrt(Math.max(1, count))
   const archetype = profile.summonArchetype
@@ -9584,6 +9584,7 @@ export function applySimpleSkillSummonPressure(
   })
   state.summons = [...state.summons, ...spawned]
   teamVisionProviderCache.delete(state)
+  return spawned
 }
 
 const eldritchSummoningSkillId = 'h029_soul_warlock_innate_1_1274'
@@ -9591,6 +9592,13 @@ const reincarnationSummonSkillId = 'h034_skeleton_monarch_standard_4_5089'
 const soulWarlockHeroId = 'h029_soul_warlock'
 const decayZombieHeroId = 'h077_decay_zombie'
 const fleshGolemSkillId = 'h077_decay_zombie_standard_4_5447'
+const spawnSpiderlingsSkillId = 'h053_brood_matriarch_standard_4_5279'
+
+type ConditionalSummonDeathTarget = {
+  id: string
+  pos: Point
+  lastHitBy?: CombatSource
+}
 
 export function markConditionalSummonDeathTarget(
   state: SimulationState,
@@ -9644,7 +9652,7 @@ function addSummonDeathMark(
 
 export function resolveConditionalSummonDeathTriggers(
   state: SimulationState,
-  deadTargets: Array<{ id: string; pos: Point }>,
+  deadTargets: ConditionalSummonDeathTarget[],
   deadArcanes: Arcane[],
 ) {
   const deadTargetIds = new Set(deadTargets.map((target) => target.id))
@@ -9668,6 +9676,20 @@ export function resolveConditionalSummonDeathTriggers(
     state.timedEffects = state.timedEffects.filter((effect) => !consumedMarkIds.has(effect.id))
   }
 
+  for (const target of deadTargets) {
+    const sourceSummon = target.lastHitBy
+      ? state.summons.find((summon) => summon.id === target.lastHitBy?.id && summon.sourceSkillId === spawnSpiderlingsSkillId)
+      : undefined
+    if (!sourceSummon) continue
+    const caster = state.arcanes.find((arcane) => arcane.id === sourceSummon.ownerId)
+    const skill = caster && getArcaneRuntimeSkills(caster).find((candidate) => candidate.id === spawnSpiderlingsSkillId)
+    if (!caster || !skill) continue
+    const level = getSimpleSkillLevel(caster, skill)
+    if (level <= 0) continue
+    const profile = getSkillEffectProfile(skill, level)
+    applySimpleSkillSummonPressure(state, caster, skill, profile, target.pos, 'target_death', 1)
+  }
+
   for (const caster of deadArcanes) {
     if (hasTimedEffect(state, caster.id, 'break')) continue
     const skill = getArcaneRuntimeSkills(caster).find((candidate) => candidate.id === reincarnationSummonSkillId)
@@ -9679,7 +9701,26 @@ export function resolveConditionalSummonDeathTriggers(
     if (profile.summonMode !== 'on_death' || profile.summonCount <= 0) continue
     caster.stats.mana -= getSimpleSkillManaCost(caster, skill, level)
     setArcaneSkillCooldown(state, caster, skill.id, state.time + getSimpleSkillCooldown(skill, level))
-    applySimpleSkillSummonPressure(state, caster, skill, profile, caster.pos, 'on_death')
+    const triggerRadius = profile.summonTriggerRadius > 0 ? profile.summonTriggerRadius / 140 : 600 / 140
+    const nearbyEnemies = state.arcanes.filter((arcane) => (
+      arcane.team !== caster.team && arcane.stats.hp > 0 && arcane.respawn <= state.time &&
+      distanceSquared(arcane.pos, caster.pos) <= triggerRadius * triggerRadius
+    ))
+    nearbyEnemies.forEach((enemy) => addTimedEffect(state, enemy, {
+      sourceId: `${caster.id}-${skill.id}`,
+      sourceName: skill.name,
+      sourceTeam: caster.team,
+      kind: 'slow',
+      polarity: 'negative',
+      value: profile.summonTriggerSlowPct || 0.75,
+      duration: profile.summonTriggerSlowDuration || 4,
+    }))
+    const spawned = applySimpleSkillSummonPressure(state, caster, skill, profile, caster.pos, 'on_death')
+    if (nearbyEnemies.length > 0) {
+      spawned.forEach((summon, index) => {
+        summon.targetId = nearbyEnemies[index % nearbyEnemies.length].id
+      })
+    }
   }
 }
 
@@ -9719,7 +9760,7 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
       : undefined
     summon.targetId = target?.id
     if (target) {
-      const stopDistance = summon.range + getEntityCollisionRadius(target) * 0.7
+      const stopDistance = getSummonAttackCenterRange(summon, target)
       if (summon.canMove && distanceSquared(summon.pos, target.pos) > stopDistance * stopDistance) {
         summon.pos = moveToward(summon.pos, target.pos, summon.moveSpeed * delta)
       }
@@ -9761,6 +9802,7 @@ export function getSummonTarget(state: SimulationState, summon: SummonedUnit): C
   ]
   const unit = nearest(summon.pos, units, summon.visionRange)
   if (unit) return unit
+  if (summon.sourceSkillId === eldritchSummoningSkillId) return undefined
   const objectives: CombatTarget[] = [
     ...getAttackableEnemyTowers(state, summon.team),
     ...getAttackableEnemyStructures(state, summon.team),
@@ -9778,6 +9820,50 @@ export function isSummonTargetValid(state: SimulationState, summon: SummonedUnit
   if ('kind' in target && !isStructureUnlocked(state, summon.team, target)) return false
   if (isBoss(target) || 'strength' in target) return false
   return true
+}
+
+export function getSummonAttackCenterRange(summon: SummonedUnit, target: CombatTarget) {
+  const attackRange = summon.sourceSkillId === eldritchSummoningSkillId ? 0.65 : summon.range
+  return attackRange + getEntityCollisionRadius(target) * 0.7
+}
+
+export function resolveSummonExplosion(state: SimulationState, summon: SummonedUnit) {
+  const caster = state.arcanes.find((arcane) => arcane.id === summon.ownerId)
+  const skill = caster && getArcaneRuntimeSkills(caster).find((candidate) => candidate.id === summon.sourceSkillId)
+  const level = caster && skill ? getSimpleSkillLevel(caster, skill) : 0
+  const profile = skill && level > 0 ? getSkillEffectProfile(skill, level) : undefined
+  const radius = (profile?.summonEffectRadius || 400) / 140
+  const radiusSquared = radius * radius
+  const targets: CombatTarget[] = [
+    ...state.arcanes.filter((arcane) => arcane.team !== summon.team && arcane.stats.hp > 0 && arcane.respawn <= state.time),
+    ...state.creeps.filter((creep) => creep.team !== summon.team && creep.hp > 0),
+    ...state.summons.filter((candidate) => candidate.id !== summon.id && candidate.team !== summon.team && candidate.hp > 0),
+  ]
+  const source: CombatSource = {
+    id: summon.id,
+    label: summon.name,
+    team: summon.team,
+    damageType: 'magical',
+  }
+  targets.forEach((target) => {
+    if (distanceSquared(summon.pos, target.pos) <= radiusSquared) damageEntity(state, target.id, summon.damage, source)
+  })
+  const liveIndex = state.summons.findIndex((candidate) => candidate.id === summon.id)
+  if (liveIndex >= 0) {
+    state.summons[liveIndex] = { ...state.summons[liveIndex], hp: 0 }
+    teamVisionProviderCache.delete(state)
+  }
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `summon-explosion-${summon.id}-${state.time}`,
+      team: summon.team,
+      pos: { ...summon.pos },
+      label: 'Explosao do imp',
+      createdAt: state.time,
+      expiresAt: state.time + 0.8,
+    },
+  ]
 }
 
 export function shouldCommitOffensiveSkill(
@@ -10662,12 +10748,13 @@ export function resolveCombat(
     if (next.time < summon.lastAttack + summon.attackInterval) continue
     const target = summon.targetId ? getCombatTargetById(next, summon.targetId) : undefined
     if (!target || !isSummonTargetValid(next, summon, target)) continue
-    const attackRange = summon.range + getEntityCollisionRadius(target) * 0.7
+    const attackRange = getSummonAttackCenterRange(summon, target)
     if (distanceSquared(summon.pos, target.pos) > attackRange * attackRange) continue
     summon.lastAttack = next.time
+    const explodingImp = summon.sourceSkillId === eldritchSummoningSkillId
     next.effects = addAttackEffect(next.effects, {
       kind: 'creep',
-      action: 'attack',
+      action: explodingImp ? 'skill' : 'attack',
       sourceId: summon.id,
       targetKind: getCombatTargetKind(target),
       team: summon.team,
@@ -10675,6 +10762,10 @@ export function resolveCombat(
       to: target.pos,
       createdAt: next.time,
     })
+    if (explodingImp) {
+      resolveSummonExplosion(next, summon)
+      continue
+    }
     damageEntity(next, target.id, summon.damage, {
       id: summon.id,
       label: summon.name,
