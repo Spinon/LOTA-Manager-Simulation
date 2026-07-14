@@ -515,6 +515,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - A partida completa `performance-reference` terminou organicamente em 43:38, vitória Dusk por 4-57, digest `0ca82ffc583e9c37`, a 248,3x wall/175,6x CPU nesta execução. Dados em `reports/skill-channeling-audit.json`.
 - Próxima rodada da T16: substituir pressão temporária de summons por entidades reais, começando por um contrato genérico de unidade invocada antes das famílias específicas de ilusões, wards e summons persistentes.
 
+**Progresso de summons como entidades (2026-07-14)**:
+- Skills ativas de summon deixaram de conceder um buff abstrato ao caster. O runtime agora cria `SummonedUnit` independentes com owner, skill de origem, vida, dano, alcance, visão, movimento, intervalo de ataque, duração e bounty.
+- Summons seguem o dono quando ociosos, escolhem alvos visíveis por proximidade, atacam Arcanes, creeps, outros summons e objetivos liberados. Creeps, torres e Arcanes também podem revidar; ouro vai ao last hitter e XP é dividido entre Arcanes próximos.
+- A coleção separada evita misturar summons com pathfinding, deny, lane equilibrium e armazenamento SoA dos creeps. A decisão é deliberadamente simples para preservar a velocidade do pré-cálculo.
+- Replay compacto, interpolação visual, fog compartilhado, relógio dirigido a eventos, expiração e serialização foram integrados. Testes cobrem spawn, autoria, duração, ataque, bounty, despawn e ida/volta pelo replay comprimido.
+- O import deixou de tratar todo `count`, todo `spirit` e todo parâmetro de ilusão como summon. A família auditada caiu de 105 falsos/ambíguos para 39 skills reais: 32 ativas parciais e sete passivas ausentes. Auditoria geral: 6 completas, 624 parciais, 12 aproximações e 92 ausentes.
+- Suíte completa, lint e build verdes. Benchmark de 5 minutos: mediana 291,5x wall / 259,0x CPU, digest `534bd00e225a74ea`. Próxima rodada: templates por unidade, wards imóveis, ilusões, clones e gatilhos passivos.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

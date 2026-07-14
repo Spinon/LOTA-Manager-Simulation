@@ -30,4 +30,11 @@ namedControlValueKeys.forEach((valueKey) => {
   assert.ok(rows.every((row) => row.tags.includes(tag)), `${valueKey} skills should expose the canonical ${tag} runtime tag`)
 })
 
+const summonRows = audit.rows.filter((row) => row.families.some((family) => family.id === 'summon'))
+const materializedSummons = summonRows.filter((row) => row.families.some((family) => family.id === 'summon' && family.status === 'partial'))
+const pendingSummons = summonRows.filter((row) => row.families.some((family) => family.id === 'summon' && family.status === 'missing'))
+assert.equal(materializedSummons.length, 32, 'active count-driven summon skills should use independent units')
+assert.equal(pendingSummons.length, 7, 'only passive summon triggers should remain without materialization')
+assert.ok(pendingSummons.every((row) => row.kind === 'passive'), 'active summon skills must not remain missing')
+
 console.log('skill runtime audit tests passed')

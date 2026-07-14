@@ -110,7 +110,7 @@ import {
 export type TeamId = 'dawn' | 'dusk'
 export type TeamMatchOutcome = 'winner' | 'loser' | 'draw'
 export type LaneId = 'top' | 'mid' | 'bot'
-export type EntityKind = 'arcane' | 'creep' | 'tower' | 'structure' | 'base' | 'camp' | 'boss' | 'rune'
+export type EntityKind = 'arcane' | 'creep' | 'summon' | 'tower' | 'structure' | 'base' | 'camp' | 'boss' | 'rune'
 export type GamePhase = 'early' | 'mid' | 'late'
 export type DayCycle = 'day' | 'night'
 export type CampStrength = 'weak' | 'medium' | 'strong'
@@ -359,6 +359,28 @@ export type Creep = {
   pullUntil?: number
   motionPlan?: CreepMotionPlan
 }
+export type SummonedUnit = {
+  id: string
+  ownerId: string
+  sourceSkillId: string
+  name: string
+  team: TeamId
+  pos: Point
+  hp: number
+  maxHp: number
+  damage: number
+  range: number
+  visionRange: number
+  moveSpeed: number
+  attackInterval: number
+  lastAttack: number
+  spawnedAt: number
+  expiresAt: number
+  goldReward: number
+  xpReward: number
+  targetId?: string
+  lastHitBy?: CombatSource
+}
 export type Tower = {
   id: string
   team: TeamId
@@ -430,7 +452,7 @@ export type Boss = {
   aggroUntil?: number
   lastDamagedAt?: number
 }
-export type CombatTarget = Arcane | Creep | Tower | Structure | Base | Camp | Boss
+export type CombatTarget = Arcane | Creep | SummonedUnit | Tower | Structure | Base | Camp | Boss
 export type RouteCreepTargetMode = 'attack' | 'vision'
 export type TickFrameContext = {
   routeCreepTargetCache: Record<RouteCreepTargetMode, Map<string, CombatTarget | null>>
@@ -524,6 +546,7 @@ export type SimulationState = {
   recentTeleports: RecentTeleport[]
   arcanes: Arcane[]
   creeps: Creep[]
+  summons: SummonedUnit[]
   towers: Tower[]
   structures: Structure[]
   bases: Base[]
@@ -557,6 +580,7 @@ const teamVisionProviderCache = new WeakMap<SimulationState, {
   time: number
   arcanes: Arcane[]
   creeps: Creep[]
+  summons: SummonedUnit[]
   grids: Record<TeamId, SpatialGrid<TeamVisionProvider>>
   maxRanges: Record<TeamId, number>
 }>()
@@ -564,6 +588,7 @@ const teamVisionProviderCache = new WeakMap<SimulationState, {
 export type SimulationEntityIndexes = {
   arcane: Map<string, number>
   creep: Map<string, number>
+  summon: Map<string, number>
   tower: Map<string, number>
   structure: Map<string, number>
   base: Map<string, number>
@@ -576,6 +601,9 @@ const simulationEntityIndexesCache = new WeakMap<object, {
   creepCount: number
   firstCreepId?: string
   lastCreepId?: string
+  summonCount: number
+  firstSummonId?: string
+  lastSummonId?: string
 }>()
 const timedEffectsByTargetCache = new WeakMap<SimulationState, { source: TimedEffect[]; byTarget: Map<string, TimedEffect[]> }>()
 
@@ -1296,6 +1324,7 @@ export function createInitialState(seed = 'lota-default-seed', options: Simulati
     recentTeleports: [],
     arcanes,
     creeps: [],
+    summons: [],
     towers: createTowers(),
     structures: createStructures(),
     bases: [
@@ -1982,6 +2011,7 @@ export function tick(
     executionOptions.fineStepEntityIds,
     fineStepDelta,
   )
+  updateSummonedUnits(next, delta)
   // Separação de hitbox é cosmética (evita unidades empilhadas); rodar só nos
   // ticks de decisão (10Hz) é indistinguível no playback de 5Hz e poupa CPU.
   if (shouldDecide) {
@@ -2123,6 +2153,7 @@ function resolveTacticalArcaneBasicAttacks(state: SimulationState, arcaneIds: Re
 
 function hasDeadSimulationEntity(state: SimulationState) {
   return state.creeps.some((creep) => creep.hp <= 0) ||
+    state.summons.some((summon) => summon.hp <= 0 || summon.expiresAt <= state.time) ||
     state.camps.some((camp) => camp.hp <= 0 && camp.respawn <= state.time) ||
     (state.boss.hp <= 0 && state.boss.respawn <= state.time) ||
     state.arcanes.some((arcane) => arcane.stats.hp <= 0 && arcane.respawn <= state.time)
@@ -2212,6 +2243,11 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
     })),
     creepComponents: clonedCreeps?.store,
     creeps: clonedCreeps?.creeps ?? creepSnapshots,
+    summons: state.summons.map((summon) => ({
+      ...summon,
+      pos: { ...summon.pos },
+      lastHitBy: summon.lastHitBy ? { ...summon.lastHitBy } : undefined,
+    })),
     towers: state.towers.map((tower) => ({ ...tower, pos: { ...tower.pos } })),
     structures: state.structures.map((structure) => ({ ...structure, pos: { ...structure.pos } })),
     bases: state.bases.map((base) => ({ ...base, pos: { ...base.pos } })),
@@ -2254,6 +2290,10 @@ type RenderArcaneFrame = [
 ]
 
 type RenderCreepFrame = [string, TeamId, LaneId, LaneCreepKind, number, number, number, number, number]
+type RenderSummonFrame = [
+  string, string, string, string, TeamId, number, number, number, number, number,
+  number, number, number, number, number, number, number, number, number, string | undefined,
+]
 type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number, AttackEffect['action'], string]
 type RenderMarkerFrame = [TeamId, number, number, number, number]
 type RenderGoldMarkerFrame = [...RenderMarkerFrame, number]
@@ -2277,6 +2317,7 @@ export type MatchRenderFrame = {
   recentTeleports: Array<[TeamId, number, number, number]>
   arcanes: RenderArcaneFrame[]
   creeps: RenderCreepFrame[]
+  summons: RenderSummonFrame[]
   towerHp: number[]
   structureHp: number[]
   baseHp: number[]
@@ -2392,6 +2433,14 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
         renderNumber(creep.range),
       ]
     }),
+    summons: state.summons.map((summon) => [
+      summon.id, summon.ownerId, summon.sourceSkillId, summon.name, summon.team,
+      renderNumber(summon.pos.x), renderNumber(summon.pos.y), renderNumber(summon.hp),
+      renderNumber(summon.maxHp), renderNumber(summon.damage), renderNumber(summon.range),
+      renderNumber(summon.visionRange), renderNumber(summon.moveSpeed), renderNumber(summon.attackInterval),
+      renderNumber(summon.lastAttack), renderNumber(summon.spawnedAt), renderNumber(summon.expiresAt),
+      renderNumber(summon.goldReward), renderNumber(summon.xpReward), summon.targetId,
+    ]),
     towerHp: state.towers.map((tower) => renderNumber(tower.hp)),
     structureHp: state.structures.map((structure) => renderNumber(structure.hp)),
     baseHp: state.bases.map((base) => renderNumber(base.hp)),
@@ -2531,6 +2580,13 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
         goldReward: 0, xpReward: 0, lastAttack: 0,
       }
     }),
+    summons: frame.summons.map((summon): SummonedUnit => ({
+      id: summon[0], ownerId: summon[1], sourceSkillId: summon[2], name: summon[3], team: summon[4],
+      pos: { x: summon[5], y: summon[6] }, hp: summon[7], maxHp: summon[8], damage: summon[9],
+      range: summon[10], visionRange: summon[11], moveSpeed: summon[12], attackInterval: summon[13],
+      lastAttack: summon[14], spawnedAt: summon[15], expiresAt: summon[16], goldReward: summon[17],
+      xpReward: summon[18], targetId: summon[19],
+    })),
     towers: staticData.towers.map((tower, index): Tower => ({ ...tower, pos: tower.pos, hp: frame.towerHp[index] ?? 0, lastAttack: 0 })),
     structures: staticData.structures.map((structure, index): Structure => ({ ...structure, pos: structure.pos, hp: frame.structureHp[index] ?? 0, lastAttack: 0 })),
     bases: staticData.bases.map((base, index): Base => ({ ...base, pos: base.pos, hp: frame.baseHp[index] ?? 0 })),
@@ -8319,6 +8375,11 @@ export function getRouteCreepTarget(
 
   const enemyCreep = nearestRouteEnemyCreep(creep, nearbyCreeps, unitRange, mode)
   if (enemyCreep) return enemyCreep
+  const enemySummon = selectTarget(state.summons.filter((summon) => (
+    summon.team !== creep.team && summon.hp > 0 && summon.expiresAt > state.time &&
+    isNearRoute(summon.pos, lanePath, 12)
+  )), unitRange)
+  if (enemySummon) return enemySummon
 
   const attackableTowers = frameContext
     ? getCachedAttackableEnemyTowers(state, creep.team, frameContext)
@@ -8354,17 +8415,18 @@ export function isCreepRouteTargetValid(creep: Creep, target: CombatTarget, stat
   if ('team' in target && target.team === creep.team) return false
   if ('lane' in target && 'type' in target && target.lane !== creep.lane) return false
   if ('player' in target && (target.stats.hp <= 0 || target.respawn > state.time)) return false
+  if ('ownerId' in target && (target.hp <= 0 || target.expiresAt <= state.time)) return false
   if ('type' in target && target.hp <= 0) return false
   if ('tier' in target && target.hp <= 0) return false
   if ('kind' in target && 'hp' in target && target.hp <= 0) return false
-  if ('maxHp' in target && !('player' in target) && !('type' in target) && !('tier' in target) && target.hp <= 0) return false
+  if ('maxHp' in target && !('player' in target) && !('type' in target) && !('ownerId' in target) && !('tier' in target) && target.hp <= 0) return false
   if (isBoss(target)) return false
   if ('strength' in target && target.id !== creep.pullCampId) return false
   if (creep.aggroUntil && creep.aggroUntil > state.time && creep.aggroTargetId && target.id !== creep.aggroTargetId) return false
   if ('player' in target && !isNearRoute(target.pos, lanePaths[creep.team][creep.lane], 12)) return false
   if ('tier' in target && !isTowerUnlocked(state, creep.team, target as Tower)) return false
   if ('kind' in target && !isStructureUnlocked(state, creep.team, target as Structure)) return false
-  if ('maxHp' in target && !('player' in target) && !('type' in target) && !('tier' in target) && !('kind' in target) && !('strength' in target) && !isEnemyBaseUnlocked(state, creep.team)) return false
+  if ('maxHp' in target && !('player' in target) && !('type' in target) && !('ownerId' in target) && !('tier' in target) && !('kind' in target) && !('strength' in target) && !isEnemyBaseUnlocked(state, creep.team)) return false
 
   if (mode === 'vision') {
     const visionRange = getCreepVisionRange(creep)
@@ -9017,6 +9079,7 @@ export function resolveSimpleSkillEffects(
     if (alliedTargets.length === 0) return false
     alliedTargets.forEach((ally) => applySimplePositiveSkill(state, arcane, skill, level, ally))
     applySimpleSkillMobility(state, arcane, target, skill, profile)
+    applySimpleSkillSummonPressure(state, arcane, skill, profile, target.pos)
     addSimpleSkillEffect(state, arcane, target)
     if (commitCast) {
       finishSimpleSkillCast(state, arcane, skill, manaCost, target)
@@ -9070,7 +9133,7 @@ export function resolveSimpleSkillEffects(
   })
 
   applySimpleSkillMobility(state, arcane, target, skill, profile)
-  applySimpleSkillSummonPressure(state, arcane, skill, profile)
+  applySimpleSkillSummonPressure(state, arcane, skill, profile, target.pos)
 
   if (isBoss(target)) {
     state.boss = {
@@ -9408,21 +9471,101 @@ export function applySimpleSkillSummonPressure(
   caster: Arcane,
   skill: HeroSkillDefinition,
   profile: ReturnType<typeof getSkillEffectProfile>,
+  center: Point = caster.pos,
 ) {
   if (profile.summonCount <= 0) return
-  addTimedEffect(state, caster, {
-    sourceId: `${caster.id}-${skill.id}-summons`,
-    sourceName: `${skill.name}: summons`,
-    sourceTeam: caster.team,
-    kind: 'buff',
-    polarity: 'positive',
-    value: profile.summonCount,
-    modifiers: {
-      damagePct: Math.min(0.32, 0.045 * profile.summonCount),
-      attackSpeedPct: Math.min(0.24, 0.035 * profile.summonCount),
-    },
-    duration: profile.summonDuration || profile.duration,
+  const ownerSummons = state.summons.filter((summon) => summon.ownerId === caster.id && summon.hp > 0)
+  const count = Math.min(6, profile.summonCount, Math.max(0, 12 - ownerSummons.length))
+  if (count <= 0) return
+  const duration = Math.max(4, Math.min(120, profile.summonDuration || profile.duration))
+  const levelScale = 1 + Math.max(0, caster.stats.level - 1) * 0.035
+  const swarmScale = 1 / Math.sqrt(Math.max(1, count))
+  const maxHp = Math.round((115 + caster.stats.maxHp * 0.16) * levelScale * (0.72 + swarmScale * 0.28))
+  const damage = Math.round((12 + caster.stats.damage * 0.24) * levelScale * (0.7 + swarmScale * 0.3))
+  const ranged = hasAnySimpleSkillTag(skill, ['ward', 'spirit', 'archer', 'ranged'])
+  const timestamp = Math.round(state.time * 1000)
+  const spawned = Array.from({ length: count }, (_, index): SummonedUnit => {
+    const angle = ((index + 1) / count) * Math.PI * 2
+    const radius = 1.5 + (index % 2) * 0.55
+    const pos = clampToMapBounds({ x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius })
+    return {
+      id: `${caster.id}-summon-${skill.id}-${timestamp}-${index}`,
+      ownerId: caster.id,
+      sourceSkillId: skill.id,
+      name: `${skill.name} ${index + 1}`,
+      team: caster.team,
+      pos,
+      hp: maxHp,
+      maxHp,
+      damage,
+      range: ranged ? 5.8 : 2.2,
+      visionRange: ranged ? 8.5 : 7,
+      moveSpeed: ranged ? 3.8 : 4.4,
+      attackInterval: ranged ? 1.35 : 1.05,
+      lastAttack: state.time - 0.5,
+      spawnedAt: state.time,
+      expiresAt: state.time + duration,
+      goldReward: Math.max(8, Math.round((12 + caster.stats.level * 1.5) * swarmScale)),
+      xpReward: Math.max(12, Math.round((18 + caster.stats.level * 2) * swarmScale)),
+    }
   })
+  state.summons = [...state.summons, ...spawned]
+  teamVisionProviderCache.delete(state)
+}
+
+export function updateSummonedUnits(state: SimulationState, delta: number) {
+  for (const summon of state.summons) {
+    if (summon.hp <= 0 || summon.expiresAt <= state.time) continue
+    const retained = summon.targetId ? getCombatTargetById(state, summon.targetId) : undefined
+    const target = retained && isSummonTargetValid(state, summon, retained)
+      ? retained
+      : getSummonTarget(state, summon)
+    summon.targetId = target?.id
+    if (target) {
+      const stopDistance = summon.range + getEntityCollisionRadius(target) * 0.7
+      if (distanceSquared(summon.pos, target.pos) > stopDistance * stopDistance) {
+        summon.pos = moveToward(summon.pos, target.pos, summon.moveSpeed * delta)
+      }
+      continue
+    }
+    const owner = state.arcanes.find((arcane) => arcane.id === summon.ownerId)
+    if (!owner || owner.stats.hp <= 0 || owner.respawn > state.time) continue
+    const followPoint = formationPoint(owner.pos, summon.id)
+    if (distanceSquared(summon.pos, followPoint) > 4 * 4) {
+      summon.pos = moveToward(summon.pos, followPoint, summon.moveSpeed * delta)
+    }
+  }
+}
+
+export function getSummonTarget(state: SimulationState, summon: SummonedUnit): CombatTarget | undefined {
+  const enemyArcanes = state.arcanes.filter((arcane) => (
+    arcane.team !== summon.team && arcane.stats.hp > 0 && arcane.respawn <= state.time &&
+    isPointVisibleToTeam(state, summon.team, arcane.pos)
+  ))
+  const units: CombatTarget[] = [
+    ...enemyArcanes,
+    ...state.creeps.filter((creep) => creep.team !== summon.team && creep.hp > 0),
+    ...state.summons.filter((other) => other.team !== summon.team && other.hp > 0 && other.expiresAt > state.time),
+  ]
+  const unit = nearest(summon.pos, units, summon.visionRange)
+  if (unit) return unit
+  const objectives: CombatTarget[] = [
+    ...getAttackableEnemyTowers(state, summon.team),
+    ...getAttackableEnemyStructures(state, summon.team),
+    ...(isEnemyBaseUnlocked(state, summon.team) ? state.bases.filter((base) => base.team !== summon.team && base.hp > 0) : []),
+  ]
+  return nearest(summon.pos, objectives, summon.visionRange)
+}
+
+export function isSummonTargetValid(state: SimulationState, summon: SummonedUnit, target: CombatTarget) {
+  if ('team' in target && target.team === summon.team) return false
+  if ('player' in target && (target.stats.hp <= 0 || target.respawn > state.time || !isPointVisibleToTeam(state, summon.team, target.pos))) return false
+  if (!('player' in target) && target.hp <= 0) return false
+  if (distanceSquared(summon.pos, target.pos) > summon.visionRange * summon.visionRange) return false
+  if ('tier' in target && !isTowerUnlocked(state, summon.team, target)) return false
+  if ('kind' in target && !isStructureUnlocked(state, summon.team, target)) return false
+  if (isBoss(target) || 'strength' in target) return false
+  return true
 }
 
 export function shouldCommitOffensiveSkill(
@@ -10170,6 +10313,8 @@ export function getCombatTargetById(state: SimulationState, id: string): CombatT
   if (arcaneIndex !== undefined) return state.arcanes[arcaneIndex]
   const creepIndex = indexes.creep.get(id)
   if (creepIndex !== undefined) return state.creeps[creepIndex]
+  const summonIndex = indexes.summon.get(id)
+  if (summonIndex !== undefined) return state.summons[summonIndex]
   const towerIndex = indexes.tower.get(id)
   if (towerIndex !== undefined) return state.towers[towerIndex]
   const structureIndex = indexes.structure.get(id)
@@ -10230,6 +10375,9 @@ export function getRetainedArcaneCombatTarget(state: SimulationState, arcane: Ar
   }
   if ('type' in target && target.team !== arcane.team) {
     if (isLaningControlMicroDecision(arcane.microDecision) && target.lane === arcane.lane) return undefined
+    return { target, intent }
+  }
+  if ('ownerId' in target && target.team !== arcane.team && target.expiresAt > state.time) {
     return { target, intent }
   }
   return undefined
@@ -10296,6 +10444,33 @@ export function resolveCombat(
     }
   })
 
+  for (const summon of next.summons) {
+    if (actorFilter && !actorFilter.has(summon.id)) continue
+    if (pregame || summon.hp <= 0 || summon.expiresAt <= next.time) continue
+    if (next.time < summon.lastAttack + summon.attackInterval) continue
+    const target = summon.targetId ? getCombatTargetById(next, summon.targetId) : undefined
+    if (!target || !isSummonTargetValid(next, summon, target)) continue
+    const attackRange = summon.range + getEntityCollisionRadius(target) * 0.7
+    if (distanceSquared(summon.pos, target.pos) > attackRange * attackRange) continue
+    summon.lastAttack = next.time
+    next.effects = addAttackEffect(next.effects, {
+      kind: 'creep',
+      action: 'attack',
+      sourceId: summon.id,
+      targetKind: getCombatTargetKind(target),
+      team: summon.team,
+      from: summon.pos,
+      to: target.pos,
+      createdAt: next.time,
+    })
+    damageEntity(next, target.id, summon.damage, {
+      id: summon.id,
+      label: summon.name,
+      team: summon.team,
+      damageType: 'physical',
+    })
+  }
+
   for (const tower of next.towers) {
     if (actorFilter && !actorFilter.has(tower.id)) continue
     if (pregame) break
@@ -10306,6 +10481,7 @@ export function resolveCombat(
       : undefined
     const target = aggroTarget
       ?? nearestCreepAtIndices(tower.pos, next.creeps, enemyCreepIndicesByTeam[tower.team], tower.range, next.time)
+      ?? nearest(tower.pos, next.summons.filter((summon) => summon.team !== tower.team && summon.hp > 0), tower.range)
       ?? nearestAliveEnemyArcane(tower.pos, next.arcanes, tower.team, next.time, tower.range)
     if (target) {
       tower.lastAttack = next.time
@@ -10342,6 +10518,7 @@ export function resolveCombat(
       : undefined
     const target = aggroTarget
       ?? nearestCreepAtIndices(structure.pos, next.creeps, enemyCreepIndicesByTeam[structure.team], structure.range, next.time)
+      ?? nearest(structure.pos, next.summons.filter((summon) => summon.team !== structure.team && summon.hp > 0), structure.range)
       ?? nearestAliveEnemyArcane(structure.pos, next.arcanes, structure.team, next.time, structure.range)
     if (target) {
       structure.lastAttack = next.time
@@ -10552,7 +10729,10 @@ export function resolveCombat(
         : farmingJungle
           ? nearestReachableByArcane(arcane, next.camps.filter((camp) => camp.hp > 0))
           : undefined
-      target = enemyArcaneTarget ?? campTarget ?? nearestReachableByArcane(arcane, [
+      const enemySummonTarget = nearestReachableByArcane(arcane, next.summons.filter((summon) => (
+        summon.team !== arcane.team && summon.hp > 0 && summon.expiresAt > next.time
+      )))
+      target = enemyArcaneTarget ?? campTarget ?? enemySummonTarget ?? nearestReachableByArcane(arcane, [
         ...fallbackEnemyCreeps,
         ...(canAttackBoss ? [next.boss] : []),
       ])
@@ -10748,6 +10928,7 @@ export function getItemSplashTargets(state: SimulationState, arcane: Arcane, pri
   const candidates: CombatTarget[] = [
     ...state.arcanes.filter((target) => target.team !== arcane.team && target.id !== primaryTarget.id && target.stats.hp > 0 && target.respawn <= state.time),
     ...state.creeps.filter((target) => target.team !== arcane.team && target.id !== primaryTarget.id && target.hp > 0),
+    ...state.summons.filter((target) => target.team !== arcane.team && target.id !== primaryTarget.id && target.hp > 0),
     ...state.camps.filter((target) => target.id !== primaryTarget.id && target.hp > 0),
   ]
   return candidates
@@ -11176,6 +11357,7 @@ export function resolveDeaths(state: SimulationState): SimulationState {
   const next = state
   const deadCreeps = next.creeps.filter((creep) => creep.hp <= 0)
   const deadCreepIds = new Set(deadCreeps.map((creep) => creep.id))
+  const deadSummons = next.summons.filter((summon) => summon.hp <= 0 || summon.expiresAt <= next.time)
   const deadCamps = next.camps.filter((camp) => camp.hp <= 0 && camp.respawn <= next.time)
   const deadBoss = next.boss.hp <= 0 && next.boss.respawn <= next.time ? next.boss : undefined
   const deadArcanes = next.arcanes.filter((arcane) => arcane.stats.hp <= 0 && arcane.respawn <= next.time)
@@ -11225,6 +11407,37 @@ export function resolveDeaths(state: SimulationState): SimulationState {
       }, creepRewards.gold, creepRewards.xp)
     })
     next.creeps = next.creeps.filter((creep) => !deadCreepIds.has(creep.id))
+  }
+
+  if (deadSummons.length) {
+    const rewardByArcane = new Map<string, { gold: number; xp: number }>()
+    deadSummons.filter((summon) => summon.hp <= 0 && summon.lastHitBy).forEach((summon) => {
+      const source = summon.lastHitBy!
+      const killer = next.arcanes.find((arcane) => arcane.id === source.id || source.id.startsWith(`${arcane.id}-`))
+      if (!killer || killer.team === summon.team) return
+      const nearby = next.arcanes.filter((arcane) => (
+        arcane.team === killer.team && arcane.stats.hp > 0 && arcane.respawn <= next.time &&
+        distanceSquared(arcane.pos, summon.pos) <= 14 * 14
+      ))
+      const recipients = nearby.length > 0 ? nearby : [killer]
+      const killerReward = rewardByArcane.get(killer.id) ?? { gold: 0, xp: 0 }
+      rewardByArcane.set(killer.id, { ...killerReward, gold: killerReward.gold + summon.goldReward })
+      const sharedXp = Math.ceil(summon.xpReward / recipients.length)
+      recipients.forEach((recipient) => {
+        const reward = rewardByArcane.get(recipient.id) ?? { gold: 0, xp: 0 }
+        rewardByArcane.set(recipient.id, { ...reward, xp: reward.xp + sharedXp })
+      })
+      addGoldMarker(next, killer.team, summon.pos, summon.goldReward)
+    })
+    if (rewardByArcane.size > 0) {
+      next.arcanes = next.arcanes.map((arcane) => {
+        const reward = rewardByArcane.get(arcane.id)
+        return reward ? grantArcaneEconomy(arcane, reward.gold, reward.xp) : arcane
+      })
+    }
+    const deadIds = new Set(deadSummons.map((summon) => summon.id))
+    next.summons = next.summons.filter((summon) => !deadIds.has(summon.id))
+    teamVisionProviderCache.delete(next)
   }
 
   if (deadCamps.length) {
@@ -11521,6 +11734,8 @@ export function getSimulationEntityIndexes(state: SimulationState) {
   const cached = simulationEntityIndexesCache.get(state.runtimeToken)
   const firstCreepId = state.creeps[0]?.id
   const lastCreepId = state.creeps.at(-1)?.id
+  const firstSummonId = state.summons[0]?.id
+  const lastSummonId = state.summons.at(-1)?.id
   if (cached) {
     if (
       cached.creepCount !== state.creeps.length ||
@@ -11532,12 +11747,23 @@ export function getSimulationEntityIndexes(state: SimulationState) {
       cached.firstCreepId = firstCreepId
       cached.lastCreepId = lastCreepId
     }
+    if (
+      cached.summonCount !== state.summons.length ||
+      cached.firstSummonId !== firstSummonId ||
+      cached.lastSummonId !== lastSummonId
+    ) {
+      cached.indexes.summon = createEntityIndex(state.summons)
+      cached.summonCount = state.summons.length
+      cached.firstSummonId = firstSummonId
+      cached.lastSummonId = lastSummonId
+    }
     return cached.indexes
   }
 
   const indexes: SimulationEntityIndexes = {
     arcane: createEntityIndex(state.arcanes),
     creep: createEntityIndex(state.creeps),
+    summon: createEntityIndex(state.summons),
     tower: createEntityIndex(state.towers),
     structure: createEntityIndex(state.structures),
     base: createEntityIndex(state.bases),
@@ -11550,6 +11776,9 @@ export function getSimulationEntityIndexes(state: SimulationState) {
     creepCount: state.creeps.length,
     firstCreepId,
     lastCreepId,
+    summonCount: state.summons.length,
+    firstSummonId,
+    lastSummonId,
   })
   return indexes
 }
@@ -11580,12 +11809,14 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   const indexes = getSimulationEntityIndexes(state)
   const targetArcaneIndex = indexes.arcane.get(id)
   const targetCreepIndex = indexes.creep.get(id)
+  const targetSummonIndex = indexes.summon.get(id)
   const targetTowerIndex = indexes.tower.get(id)
   const targetStructureIndex = indexes.structure.get(id)
   const targetBaseIndex = indexes.base.get(id)
   const targetCampIndex = indexes.camp.get(id)
   const targetArcane = targetArcaneIndex === undefined ? undefined : state.arcanes[targetArcaneIndex]
   const targetCreep = targetCreepIndex === undefined ? undefined : state.creeps[targetCreepIndex]
+  const targetSummon = targetSummonIndex === undefined ? undefined : state.summons[targetSummonIndex]
   const targetTower = targetTowerIndex === undefined ? undefined : state.towers[targetTowerIndex]
   const targetStructure = targetStructureIndex === undefined ? undefined : state.structures[targetStructureIndex]
   const targetBase = targetBaseIndex === undefined ? undefined : state.bases[targetBaseIndex]
@@ -11608,7 +11839,7 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   } else if (targetBase) {
     finalDamage = getStructureIncomingDamage(state, targetBase, damage, source, damageType)
   }
-  const targetCurrentHp = targetArcane?.stats.hp ?? targetCreep?.hp ?? targetTower?.hp ?? targetStructure?.hp ?? targetBase?.hp ?? targetCamp?.hp ?? targetBoss?.hp ?? finalDamage
+  const targetCurrentHp = targetArcane?.stats.hp ?? targetCreep?.hp ?? targetSummon?.hp ?? targetTower?.hp ?? targetStructure?.hp ?? targetBase?.hp ?? targetCamp?.hp ?? targetBoss?.hp ?? finalDamage
 
   if (targetArcane?.travelPlan) {
     materializeArcaneTravelPlan(targetArcane, state.time)
@@ -11632,6 +11863,11 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
     if (remainingHp <= 0) {
       teamVisionProviderCache.delete(state)
     }
+  } else if (targetSummon && targetSummonIndex !== undefined) {
+    const summons = [...state.summons]
+    summons[targetSummonIndex] = { ...targetSummon, hp: hit(targetSummon.hp), lastHitBy: source }
+    state.summons = summons
+    if (summons[targetSummonIndex].hp <= 0) teamVisionProviderCache.delete(state)
   } else if (targetTower && targetTowerIndex !== undefined) {
     const towers = [...state.towers]
     towers[targetTowerIndex] = { ...targetTower, hp: hit(targetTower.hp) }
@@ -11769,8 +12005,9 @@ export function addAttackEffect(
   ]
 }
 
-export function getCombatTargetKind(target: Arcane | Creep | Tower | Structure | Base | Camp | Boss): EntityKind {
+export function getCombatTargetKind(target: CombatTarget): EntityKind {
   if ('player' in target) return 'arcane'
+  if ('ownerId' in target) return 'summon'
   if ('tier' in target) return 'tower'
   if ('kind' in target && ('side' in target || target.kind.startsWith('barracks'))) return 'structure'
   if ('level' in target) return 'camp'
@@ -12343,6 +12580,7 @@ export function getArcaneAttackCenterRange(arcane: Arcane, target: { pos: Point 
 
 export function getEntityCollisionRadius(entity: { pos: Point }) {
   if ('player' in entity) return 1.7
+  if ('ownerId' in entity) return 0.78
   if ('type' in entity) {
     if (entity.type === 'siege') return 0.95
     if (entity.type === 'mage' || entity.type === 'flagbearer') return 0.82
@@ -12382,7 +12620,7 @@ export function getVisibleEnemyArcanes(state: SimulationState, team: TeamId, fra
 
 export function getTeamVisionProviders(state: SimulationState) {
   const cached = teamVisionProviderCache.get(state)
-  if (cached && cached.time === state.time && cached.arcanes === state.arcanes && cached.creeps === state.creeps) return cached
+  if (cached && cached.time === state.time && cached.arcanes === state.arcanes && cached.creeps === state.creeps && cached.summons === state.summons) return cached
   const buildingVision = worldVisionToMapRadius(currentVision(1800, 800, state.time))
   const makeProviders = (team: TeamId): TeamVisionProvider[] => [
     ...state.arcanes
@@ -12391,6 +12629,9 @@ export function getTeamVisionProviders(state: SimulationState) {
     ...state.creeps
       .filter((creep) => creep.team === team && creep.hp > 0)
       .map((creep) => ({ pos: creep.pos, range: getCreepVisionRange(creep) })),
+    ...state.summons
+      .filter((summon) => summon.team === team && summon.hp > 0 && summon.expiresAt > state.time)
+      .map((summon) => ({ pos: summon.pos, range: summon.visionRange })),
     ...state.towers
       .filter((tower) => tower.team === team && tower.hp > 0)
       .map((tower) => ({ pos: tower.pos, range: buildingVision })),
@@ -12407,6 +12648,7 @@ export function getTeamVisionProviders(state: SimulationState) {
     time: state.time,
     arcanes: state.arcanes,
     creeps: state.creeps,
+    summons: state.summons,
     grids: {
       dawn: buildSpatialGrid(dawn, proximityGridCellSize),
       dusk: buildSpatialGrid(dusk, proximityGridCellSize),

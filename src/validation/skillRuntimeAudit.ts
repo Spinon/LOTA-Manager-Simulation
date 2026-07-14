@@ -220,8 +220,17 @@ function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
   if (hasPattern(tokens, /(?:^|_)(?:transform|transformation|metamorph|morph_rate|dragon_form)(?:_|$)/)) {
     add('transformation', 'approximate', 'self transformations become timed combat-stat buffs')
   }
-  if (hasToken(tokens, ['summon']) || 'summons' in skill.values || hasPattern(tokens, /(?:^|_)(?:illusion|clone|treant|golem|spiderling|zombie|ward_count|spirit_count)(?:_|$)/)) {
-    add('summon', 'approximate', 'summons become timed pressure modifiers; independent units are not spawned')
+  const summonCount = maxNumericValue(skill.values.summons)
+  const summonTagged = tags.some((tag) => tag.toLowerCase() === 'summon')
+  if (summonTagged || summonCount > 0) {
+    const materialized = skill.kind !== 'passive' && summonCount > 0
+    add(
+      'summon',
+      materialized ? 'partial' : 'missing',
+      materialized
+        ? 'active summons spawn independent combat units; source-specific illusions, wards, persistence, and unit templates remain pending'
+        : 'the skill declares summoned units but has no active count-driven materialization path',
+    )
   }
   if (skill.kind === 'passive') {
     add('passive', 'partial', 'common passive combat modifiers work; source-specific triggers and stacks require dedicated handlers')

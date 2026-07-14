@@ -116,9 +116,9 @@ import {
 import { createCreepMotionPlan, sampleCreepMotionPlan } from './creepMotionPlans.ts'
 import { sampleArcaneTravelPlan, scheduleArcaneTravelPlan } from './arcaneTravelPlans.ts'
 import { getSkillEffectProfile } from '../game-systems/skillRuntime.ts'
+import { ReplayChunkEncoder, ReplayFrameStore } from './replayStore.ts'
 import { parentSkillStateKey, ringmasterSouvenirAbilityIds, ringmasterSouvenirStateKey } from '../game-systems/skillUnlocks.ts'
 import type { HeroSkillDefinition } from '../game-systems/heroAttributes.ts'
-import { ReplayChunkEncoder, ReplayFrameStore } from './replayStore.ts'
 
 function assertFinitePoint(entity: { id: string; pos: { x: number; y: number } }) {
   assert.ok(Number.isFinite(entity.pos.x), `${entity.id} has invalid x`)
@@ -1896,15 +1896,46 @@ let state: SimulationState = initialState
   const removedBuffs = applySimpleSkillDispel(skillState, { ...areaRoot, tags: ['purge'] }, displacedEnemy, 'positive')
   assert.equal(removedBuffs, 1, 'purge skills should remove dispellable enemy buffs')
 
+  skillState.time = 120
   applySimpleSkillSummonPressure(skillState, caster, areaRoot, { ...profile, summonCount: 3, summonDuration: 20 })
-  assert.ok(
-    skillState.timedEffects.some((effect) => effect.targetId === caster.id && effect.sourceId.endsWith('-summons')),
-    'summon skills should add temporary combat pressure without spawning extra simulation entities',
-  )
+  assert.equal(skillState.summons.length, 3, 'summon skills should spawn independent simulation entities')
+  assert.ok(skillState.summons.every((summon) => (
+    summon.ownerId === caster.id && summon.sourceSkillId === areaRoot.id && summon.expiresAt === 140
+  )), 'summons should preserve ownership, source skill, and lifetime')
+
+  const summonFrame = createMatchRenderFrame(skillState)
+  const summonReplayState = materializeMatchRenderFrame(summonFrame, createMatchStaticData(skillState))
+  assert.equal(summonReplayState.summons.length, 3, 'summons should survive replay serialization')
+  assert.equal(summonReplayState.summons[0].ownerId, caster.id, 'replay summons should preserve their owner')
+  const summonReplayStore = new ReplayFrameStore()
+  summonReplayStore.appendChunk(new ReplayChunkEncoder().encode([summonFrame]))
+  assert.equal(summonReplayStore.get(0).summons.length, 3, 'compressed replay chunks should retain dynamic summons')
+
+  const attackingSummon = skillState.summons[0]
+  const summonTarget = skillState.arcanes.find((arcane) => arcane.id === enemies[0].id)!
+  attackingSummon.pos = { ...summonTarget.pos }
+  attackingSummon.targetId = summonTarget.id
+  attackingSummon.lastAttack = skillState.time - attackingSummon.attackInterval
+  const targetHpBeforeSummonAttack = summonTarget.stats.hp
+  resolveCombat(skillState, createTickFrameContext(), new Set([attackingSummon.id]))
+  assert.ok(skillState.arcanes.find((arcane) => arcane.id === summonTarget.id)!.stats.hp < targetHpBeforeSummonAttack, 'summons should perform independent basic attacks')
+
+  const bountySummon = skillState.summons[1]
+  bountySummon.team = summonTarget.team
+  const goldBeforeSummonKill = skillState.arcanes.find((arcane) => arcane.id === caster.id)!.stats.gold
+  damageEntity(skillState, bountySummon.id, bountySummon.hp + 1, { id: caster.id, label: caster.player, team: caster.team })
+  resolveDeaths(skillState)
+  assert.ok(skillState.arcanes.find((arcane) => arcane.id === caster.id)!.stats.gold > goldBeforeSummonKill, 'the enemy summon last hitter should receive its bounty')
+
+  const expiringSummon = skillState.summons[0]
+  expiringSummon.expiresAt = skillState.time
+  resolveDeaths(skillState)
+  assert.equal(skillState.summons.some((summon) => summon.id === expiringSummon.id), false, 'expired summons should despawn without a kill')
 
   const passiveCarrier = skillState.arcanes[0]
-  passiveCarrier.heroDefinitionId = 'h007_sword_tempest'
-  passiveCarrier.skillLevels = { E: 4 }
+  skillState.timedEffects = []
+  passiveCarrier.heroDefinitionId = 'h005_frost_marksman'
+  passiveCarrier.skillLevels = { Q: 4 }
   const passiveDamage = getEffectiveArcaneDamage(skillState, passiveCarrier)
   assert.ok(passiveDamage > passiveCarrier.stats.damage, 'leveled passive skills should modify continuous combat stats')
 }

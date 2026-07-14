@@ -186,8 +186,15 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
   assignAlias(values, skill, 'heal', ['heal', 'heal_amount', 'health_restore'])
   assignAlias(values, skill, 'barrier', ['barrier', 'shield', 'damage_absorb'])
   assignAlias(values, skill, 'slowPct', ['slow', 'movespeed_slow', 'movement_slow', 'enemy_slow'], true)
-  assignAlias(values, skill, 'summons', ['summons', 'max_treants', 'unit_count', 'count'])
-  assignAlias(values, skill, 'summonDuration', ['summon_duration', 'treant_duration', 'duration'])
+  if (isSummonAbility(skill)) {
+    assignAlias(values, skill, 'summons', [
+      'summons', 'max_treants', 'unit_count', 'count', 'ward_count', 'hawk_count', 'wolf_count',
+      'familiar_count', 'spirit_count', 'spirit_amount', 'images_count', 'aether_remnant_count',
+      'extra_spirit_count_exort', 'extra_spirit_count_quas',
+    ])
+    if (!hasPositiveNumber(Array.isArray(values.summons) ? values.summons : [])) values.summons = [1]
+    assignAlias(values, skill, 'summonDuration', ['summon_duration', 'treant_duration', 'duration'])
+  }
   assignAlias(values, skill, 'manaValue', ['mana_burned', 'mana_drain', 'mana_restore'])
   assignAlias(values, skill, 'attackSpeed', ['bonus_attack_speed', 'attack_speed'])
   assignAlias(values, skill, 'moveSpeedBonusPct', ['move_speed_bonus_pct', 'movespeed_bonus', 'bonus_movespeed'], true)
@@ -206,6 +213,17 @@ function assignAlias(target: HeroSkillDefinition['values'], skill: RuntimeSkill,
   const picked = pickSpecial(skill, names)
   if (picked.length === 0) return
   target[key] = absolute ? picked.map((value) => Math.abs(value)) : picked
+}
+
+function isSummonAbility(skill: RuntimeSkill) {
+  const internal = skill.sourceInternalName.toLowerCase()
+  const specialNames = skill.specialValues.map((special) => special.name.toLowerCase())
+  const explicitInternal = /(?:^|_)(?:summon|healing_ward|serpent_ward|plague_ward|death_ward|spawn_spiderlings?|treants?|golem|eidolons?|familiars?|skeletons?|zombies?|spirit_bear|spirit_wolf|forge_spirit|summon_boar|summon_hawk|mirror_image|doppelganger|phantasm|tempest_double)(?:_|$)/.test(internal)
+  const explicitSpecial = specialNames.some((name) => (
+    /(?:^|_)(?:summons|max_treants|unit_count|ward_count|hawk_count|wolf_count|familiar_count|spirit_count|spirit_amount|images_count|aether_remnant_count|spawn_zombie_on_attack)(?:_|$)/.test(name) ||
+    /(?:treant|golem|spiderling|eidolon|familiar|skeleton|zombie|healing_ward|serpent_ward|plague_ward)_(?:health|hp|damage|duration|bounty|count|hits)/.test(name)
+  ))
+  return explicitInternal || explicitSpecial
 }
 
 function assignControlDurationAlias(
@@ -271,7 +289,7 @@ function getSkillTags(skill: RuntimeSkill, values: HeroSkillDefinition['values']
   addSemanticTag(tags, internal, 'dash')
   addSemanticTag(tags, internal, 'summon')
   if (['teleport', 'blink', 'leap', 'dash', 'charge'].some((token) => internal.includes(token))) tags.add('mobility')
-  if (['summon', 'treant', 'golem', 'spider', 'spirit', 'ward'].some((token) => internal.includes(token))) tags.add('summon')
+  if (isSummonAbility(skill)) tags.add('summon')
   if ('stun' in values) tags.add('stun')
   if ('silence' in values) tags.add('silence')
   if ('root' in values) tags.add('root')

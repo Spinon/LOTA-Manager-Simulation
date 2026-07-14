@@ -100,7 +100,9 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
     critChance: clampPercent(getSkillValue(skill, 'critChance', level, 0)),
     critMultiplier: Math.max(1, getSkillValue(skill, 'critMultiplier', level, 100) / 100),
     lifestealPct: clampPercent(getSkillValue(skill, 'lifestealPct', level, 0)),
-    summonCount: Math.max(0, Math.round(getSkillValue(skill, 'summons', level, 0))),
+    summonCount: hasSkillTag(skill, ['summon'])
+      ? Math.max(0, Math.round(getSkillValue(skill, 'summons', level, 0)))
+      : 0,
     summonDuration: Math.max(0, getSkillValue(skill, 'summonDuration', level, duration)),
     isDamageOverTime: hasSkillTag(skill, ['damage_over_time', 'dot', 'poison', 'aura_dot', 'burn']),
     isHealingOverTime: hasSkillTag(skill, ['heal_over_time', 'hot', 'regen', 'regeneration']),

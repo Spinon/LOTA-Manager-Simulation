@@ -52,7 +52,8 @@ Transformar os arquivos de formulas em sistemas testaveis e visiveis na simulaca
 - [ ] Aplicar active item value na IA de compra/uso de itens.
 - [x] Integrar consumiveis basicos de vida/mana dos item seeds com compra na base, uso automatico e visual no HUD/inspetor.
 - [ ] Expandir consumiveis para wards, smoke, dust, TP, bottle e comandos de mapa.
-- [ ] Aplicar ilusoes/summons/clones como entidades de combate separadas.
+- [x] Aplicar summons ativos como entidades de combate separadas.
+- [ ] Especializar ilusoes, wards, clones, summons persistentes e gatilhos passivos.
 - [ ] Aplicar micro performance em controle de summons e clones.
 
 ## Fase 3 - Economia e Mapa

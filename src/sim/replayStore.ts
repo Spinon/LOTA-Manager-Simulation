@@ -11,7 +11,7 @@ const textDecoder = new TextDecoder()
 
 type FrameExtras = Pick<
   MatchRenderFrame,
-  'effects' | 'timedEffects' | 'deathMarkers' | 'denyMarkers' | 'goldMarkers' | 'skillMarkers' | 'recentTeleports' | 'runes' | 'details'
+  'effects' | 'timedEffects' | 'deathMarkers' | 'denyMarkers' | 'goldMarkers' | 'skillMarkers' | 'recentTeleports' | 'runes' | 'summons' | 'details'
 > & { channels: Array<ChannelingAction | null> }
 
 export type EncodedReplayChunk = {
@@ -138,6 +138,7 @@ export class ReplayChunkEncoder {
         skillMarkers: frame.skillMarkers,
         recentTeleports: frame.recentTeleports,
         runes: frame.runes,
+        summons: frame.summons ?? [],
         details: frame.details,
         channels: frame.arcanes.map((arcane) => arcane[8] ?? null),
       }
@@ -284,6 +285,7 @@ export class ReplayFrameStore {
       recentTeleports: extras.recentTeleports,
       arcanes,
       creeps,
+      summons: extras.summons ?? [],
       towerHp: readNumbers(chunk.towerHp, localIndex * chunk.towerCount, chunk.towerCount),
       structureHp: readNumbers(chunk.structureHp, localIndex * chunk.structureCount, chunk.structureCount),
       baseHp: readNumbers(chunk.baseHp, localIndex * chunk.baseCount, chunk.baseCount),
@@ -306,6 +308,7 @@ export class ReplayFrameStore {
     if (duration <= Number.EPSILON) return left
     const progress = Math.max(0, Math.min(1, (time - left.time) / duration))
     const rightCreeps = new Map(right.creeps.map((creep) => [creep[0], creep]))
+    const rightSummons = new Map(right.summons.map((summon) => [summon[0], summon]))
     return {
       ...left,
       time,
@@ -327,6 +330,16 @@ export class ReplayFrameStore {
           interpolate(creep[5], target[5], progress),
           ...creep.slice(6),
         ] as MatchRenderFrame['creeps'][number]
+      }),
+      summons: left.summons.map((summon) => {
+        const target = rightSummons.get(summon[0])
+        if (!target) return summon
+        return [
+          ...summon.slice(0, 5),
+          interpolate(summon[5], target[5], progress),
+          interpolate(summon[6], target[6], progress),
+          ...summon.slice(7),
+        ] as MatchRenderFrame['summons'][number]
       }),
       boss: [
         interpolate(left.boss[0], right.boss[0], progress),

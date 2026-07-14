@@ -89,6 +89,7 @@ import {
   type SimulationState,
   type Structure,
   type StructureKind,
+  type SummonedUnit,
   type TeamId,
   type TeamPlan,
   type TimedEffect,
@@ -1134,6 +1135,19 @@ function findNearestCompactCreepId(point: Point, frame: MatchRenderFrame, range:
   return closestId
 }
 
+function findNearestCompactSummonId(point: Point, frame: MatchRenderFrame, range: number) {
+  let closestId: string | undefined
+  let closestDistance = range
+  for (const summon of frame.summons ?? []) {
+    if (summon[7] <= 0) continue
+    const candidateDistance = distance(point, { x: summon[5], y: summon[6] })
+    if (candidateDistance > closestDistance) continue
+    closestId = summon[0]
+    closestDistance = candidateDistance
+  }
+  return closestId
+}
+
 function MapPanel({
   dayCycle,
   state,
@@ -1175,6 +1189,12 @@ function MapPanel({
 
     if (frame.boss[2] > 0 && frame.boss[4] <= frame.time && distance(point, { x: frame.boss[0], y: frame.boss[1] }) <= 4.2) {
       onSelect({ kind: 'boss', id: staticData.boss.id })
+      return
+    }
+
+    const summonId = findNearestCompactSummonId(point, frame, 2.8)
+    if (summonId) {
+      onSelect({ kind: 'summon', id: summonId })
       return
     }
 
@@ -1458,6 +1478,7 @@ function MapBackgroundCanvasLayer({
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const creepPositions = useRef(new Map<string, VisualPosition>())
+  const summonPositions = useRef(new Map<string, VisualPosition>())
   const rangePositions = useRef(new Map<string, VisualPosition>())
   const latest = useRef({ selected })
   const selectionRevision = useSelectionRevision(selected)
@@ -1482,6 +1503,7 @@ function MapBackgroundCanvasLayer({
         latest.current.selected,
         renderNow,
         creepPositions.current,
+        summonPositions.current,
         rangePositions.current,
       ))
     }, 20)
@@ -1630,6 +1652,7 @@ function drawMapBackgroundCanvas(
   selected: Selected,
   renderNow: number,
   creepPositions: Map<string, VisualPosition>,
+  summonPositions: Map<string, VisualPosition>,
   rangePositions: Map<string, VisualPosition>,
 ) {
   const context = prepareCanvasContext(canvas, metrics)
@@ -1641,6 +1664,14 @@ function drawMapBackgroundCanvas(
     frame.creeps,
     selected?.kind === 'creep' ? selected.id : undefined,
     creepPositions,
+    renderNow,
+  )
+  drawSummonLayer(
+    context,
+    metrics.viewport,
+    frame.summons ?? [],
+    selected?.kind === 'summon' ? selected.id : undefined,
+    summonPositions,
     renderNow,
   )
   context.restore()
@@ -1730,6 +1761,40 @@ function drawCreepLayer(
     context.beginPath()
     context.arc(x, y, radius + (creep[0] === selectedId ? 2 : 0.5), 0, Math.PI * 2)
     context.stroke()
+  }
+}
+
+function drawSummonLayer(
+  context: CanvasRenderingContext2D,
+  viewport: CanvasViewport,
+  summons: MatchRenderFrame['summons'],
+  selectedId: string | undefined,
+  visualPositions: Map<string, VisualPosition>,
+  renderNow: number,
+) {
+  pruneVisualPositionsOccasionally(visualPositions, summons.map((summon) => summon[0]), renderNow)
+  for (const summon of summons) {
+    if (summon[7] <= 0) continue
+    const visual = getBufferedVisualPosition(summon[0], { x: summon[5], y: summon[6] }, visualPositions, 10, renderNow)
+    const point = toCanvasPoint(visual, viewport)
+    const radius = 4.6
+    const hpRatio = clampNumber(summon[7] / Math.max(1, summon[8]), 0, 1)
+    context.save()
+    context.translate(point.x, point.y)
+    context.rotate(Math.PI / 4)
+    context.fillStyle = 'rgba(4, 8, 12, 0.82)'
+    context.fillRect(-radius - 1.5, -radius - 1.5, (radius + 1.5) * 2, (radius + 1.5) * 2)
+    context.fillStyle = teamInfo[summon[4]].primary
+    context.globalAlpha = 0.42 + hpRatio * 0.5
+    context.fillRect(-radius, -radius, radius * 2, radius * 2)
+    context.globalAlpha = 1
+    context.strokeStyle = summon[0] === selectedId ? '#f6c85d' : 'rgba(255, 255, 255, 0.72)'
+    context.lineWidth = summon[0] === selectedId ? 2.2 : 1
+    context.strokeRect(-radius, -radius, radius * 2, radius * 2)
+    if (summon[0] === selectedId) {
+      context.strokeRect(-radius - 3, -radius - 3, (radius + 3) * 2, (radius + 3) * 2)
+    }
+    context.restore()
   }
 }
 
@@ -2138,6 +2203,10 @@ function getCompactRangeEntity(frame: MatchRenderFrame, staticData: MatchStaticD
     const creep = frame.creeps.find((candidate) => candidate[0] === selected.id)
     return creep ? { id: selected.id, pos: { x: creep[4], y: creep[5] }, range: creep[8], snapDistance: 9 } : undefined
   }
+  if (selected.kind === 'summon') {
+    const summon = frame.summons.find((candidate) => candidate[0] === selected.id)
+    return summon ? { id: selected.id, pos: { x: summon[5], y: summon[6] }, range: summon[10], snapDistance: 10 } : undefined
+  }
   if (selected.kind === 'boss' && selected.id === staticData.boss.id) {
     return { id: selected.id, pos: { x: frame.boss[0], y: frame.boss[1] }, range: staticData.boss.range, snapDistance: 20 }
   }
@@ -2277,7 +2346,7 @@ function MapNode({
   )
 }
 
-function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structure | Base | Camp | Boss | MapRune | undefined; state: SimulationState }) {
+function Inspector({ entity, state }: { entity: Arcane | Creep | SummonedUnit | Tower | Structure | Base | Camp | Boss | MapRune | undefined; state: SimulationState }) {
   if (import.meta.env.DEV) playbackUiStats.inspectorRenders += 1
   if (!entity) return <div className="detail-empty">Selecione um Arcane, torre, base, creep ou campo neutro.</div>
 
@@ -2523,6 +2592,32 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
     )
   }
 
+  if ('ownerId' in entity) {
+    const owner = state.arcanes.find((arcane) => arcane.id === entity.ownerId)
+    return (
+      <div className="detail-panel unit-detail">
+        <div className="detail-icon"><Swords size={21} /></div>
+        <div className="detail-title">
+          <strong>{entity.name}</strong>
+          <span>{teamInfo[entity.team].name} / {owner?.player ?? 'dono ausente'}</span>
+        </div>
+        <MetricGroup
+          title="Combate"
+          items={[
+            ['Vida', `${Math.round(entity.hp)} / ${entity.maxHp}`],
+            ['Dano', `${entity.damage}`],
+            ['Alcance', `${entity.range}`],
+            ['Visao', `${entity.visionRange}`],
+            ['Ataque', `${entity.attackInterval.toFixed(2)}s`],
+            ['Duracao', `${Math.max(0, Math.ceil(entity.expiresAt - state.time))}s`],
+            ['Bounty', `${entity.goldReward} ouro / ${entity.xpReward} XP`],
+          ]}
+        />
+        <Meter value={entity.hp} max={entity.maxHp} tone="hp" />
+      </div>
+    )
+  }
+
   if ('lane' in entity) {
     return (
       <div className="detail-panel unit-detail">
@@ -2552,11 +2647,11 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | Tower | Structu
   return null
 }
 
-function isBoss(entity: Arcane | Creep | Tower | Structure | Base | Camp | Boss | MapRune): entity is Boss {
+function isBoss(entity: Arcane | Creep | SummonedUnit | Tower | Structure | Base | Camp | Boss | MapRune): entity is Boss {
   return entity.id === 'boss-world-serpent'
 }
 
-function isMapRune(entity: Arcane | Creep | Tower | Structure | Base | Camp | Boss | MapRune): entity is MapRune {
+function isMapRune(entity: Arcane | Creep | SummonedUnit | Tower | Structure | Base | Camp | Boss | MapRune): entity is MapRune {
   return entity.id.startsWith('rune-')
 }
 
@@ -3293,6 +3388,7 @@ function findSelected(state: SimulationState, selected: Selected) {
   if (!selected) return undefined
   if (selected.kind === 'arcane') return state.arcanes.find((entity) => entity.id === selected.id)
   if (selected.kind === 'creep') return state.creeps.find((entity) => entity.id === selected.id)
+  if (selected.kind === 'summon') return state.summons.find((entity) => entity.id === selected.id)
   if (selected.kind === 'tower') return state.towers.find((entity) => entity.id === selected.id)
   if (selected.kind === 'structure') return state.structures.find((entity) => entity.id === selected.id)
   if (selected.kind === 'base') return state.bases.find((entity) => entity.id === selected.id)

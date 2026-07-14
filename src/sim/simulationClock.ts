@@ -187,6 +187,10 @@ function collectTacticalEventBuckets(
     if (!tacticalIds.has(creep.id) || !creep.routeTargetId || creep.hp <= 0 || creep.motionPlan?.kind === 'route') continue
     offer(creep.id, creep.lastAttack + 1.25)
   }
+  for (const summon of state.summons ?? []) {
+    if (!tacticalIds.has(summon.id) || !summon.targetId || summon.hp <= 0 || summon.expiresAt <= state.time) continue
+    offer(summon.id, summon.lastAttack + summon.attackInterval)
+  }
   for (const tower of state.towers) {
     if (tacticalIds.has(tower.id) && tower.hp > 0) offer(tower.id, tower.lastAttack + 1.2)
   }
@@ -239,6 +243,7 @@ function collectNextSimulationEventAt(state: SimulationState) {
   }
 
   offer(state.boss.respawn)
+  for (const summon of state.summons ?? []) offer(summon.expiresAt)
 
   for (const effect of state.timedEffects) {
     offer(effect.nextTickAt)
@@ -293,6 +298,12 @@ function collectTacticalIslandSeeds(state: SimulationState) {
     const target = getCombatTargetById(state, creep.routeTargetId)
     if (!target) continue
     seeds.push(createLinkIsland(creep, target, 'lane-contact', creep.motionPlan?.kind !== 'route'))
+  }
+
+  for (const summon of state.summons ?? []) {
+    if (summon.hp <= 0 || summon.expiresAt <= state.time || !summon.targetId) continue
+    const target = getCombatTargetById(state, summon.targetId)
+    if (target) seeds.push(createLinkIsland(summon, target, 'summon-contact', true))
   }
 
   for (const camp of state.camps) {
@@ -441,6 +452,7 @@ function isArcaneMoving(arcane: Arcane, time: number) {
 
 function getTargetCategory(target: CombatTarget) {
   if ('player' in target) return 'arcane'
+  if ('ownerId' in target) return 'summon'
   if ('type' in target) return 'creep'
   if ('tier' in target) return 'tower'
   if ('kind' in target) return 'structure'
