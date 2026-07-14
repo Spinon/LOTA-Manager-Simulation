@@ -743,6 +743,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Após T29-T31, a comparação controlada alcançou 291,9x wall, ou 2,56x o baseline T24. O próximo custo relevante está nas passadas de combate/blackboard e no targeting de rota; ainda faltam 17,4% sobre a taxa atual para atingir 342,6x.
 - A T32 adicionou +2,5% wall e +4,7% CPU em comparação controlada. Aplicado ao melhor resultado normalizado anterior, o acumulado estimado chega a 299,3x (2,62x T24); ainda faltam cerca de 14,5% para 342,6x.
 - T33 e T34 acrescentaram aproximadamente +2,0% e +4,8% de taxa wall em comparações controladas. Aplicados ao acumulado anterior, levam a estimativa a 319,9x (2,80x T24); faltam cerca de 7,1% para 342,6x.
+- A T35 acrescentou +4,1% wall e +3,7% CPU em uma comparação pareada conservadora. O acumulado estimado chegou a 332,9x (2,91x T24); faltam cerca de 2,9% para 342,6x.
 - Soltar o relógio da cadência do replay chegou a 172,8x, porém alterou a partida de 56:13/29-48 para 41:50/7-59; a variante foi mantida apenas como opção de benchmark e não foi adotada no Worker.
 - Testes, lint, build, digest determinístico curto e smoke test visual aprovados. Dados completos em `reports/timing-wheel-audit.json`.
 
@@ -884,6 +885,29 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - No perfil, `getDangerScore` caiu de 2,63% para 1,93% inclusivo, `applySimpleActiveItemIfNeeded` de 2,39% para 1,48%, `getSimpleActiveItemCandidate` de 2,08% para 1,29% e `queryCreepSpatialGridInto` de 5,32% para 4,68%.
 - Reescrever os agregados do snapshot global com loops diretos ficou cerca de 5% mais lento no V8 e foi removido. O próximo gargalo isolado é `createAiGameSnapshot`, com aproximadamente 6,3% do perfil candidato.
 - Baseline e candidata terminaram em 42:43, vitória Dusk, placar 14-50 e digest `0870297d913be664`.
+
+---
+
+### [x] T35 - Snapshot global por dependências reais
+
+> Concluída em 2026-07-13 - O snapshot analisado agora atravessa cópias de estado cujas fontes reais permanecem idênticas, com invalidação explícita e telemetria opt-in no benchmark.
+
+**Objetivo**: evitar reconstruções de `createAiGameSnapshot` causadas apenas por cópias de `SimulationState` que não alteram nenhuma entrada da análise.
+
+**Escopo**:
+- Reutilizar o estado analisado entre cópias com o mesmo runtime, tempo e fontes de snapshot.
+- Invalidar por revisão espacial, entidades, efeitos, aura e boss.
+- Preservar o cache local por objeto e toda a cadência de decisão existente.
+- Rejeitar qualquer chave que altere o digest canônico.
+
+**Critérios**: digest, duração, vencedor e placar preservados; queda mensurável de `createAiGameSnapshot`; testes, lint e build verdes.
+
+**Resultado (2026-07-13)**:
+- O cache por objeto continua sendo a primeira via. Uma segunda chave por `runtimeToken` reaproveita a análise somente quando tempo, revisão espacial, entidades, efeitos, auras e boss mantêm as mesmas referências.
+- A partida de referência registrou 23.336 acertos locais, 1.643 acertos por dependência e 9.713 reconstruções. Isso evita 14,5% das construções de snapshot que ocorreriam sem a nova camada.
+- Em três partidas A/B pareadas, a mediana caiu de 18,19s para 17,48s wall e de 22,27s para 21,48s CPU. A taxa subiu 4,1% wall e 3,7% CPU.
+- Baseline e candidata terminaram em 42:43, vitória Dusk, placar 14-50 e digest `0870297d913be664`. O teste de regressão cobre tanto reutilização quanto invalidação por mudança de dependência.
+- O acumulado estimado alcança 332,9x (2,91x T24), a aproximadamente 2,9% da meta da T28. Dados completos em `reports/dependency-analyzed-state-audit.json`.
 
 ---
 

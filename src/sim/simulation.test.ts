@@ -23,6 +23,7 @@ import {
   enrichTeamPlanWithMapTarget,
   formatMatchTime,
   getGamePhase,
+  getAnalyzedGameState,
   getCombatCriticalEventSignature,
   getCombatFocusAssessment,
   getCombatStagingPoint,
@@ -1498,6 +1499,21 @@ let state: SimulationState = initialState
   assert.strictEqual(getArcanePassiveCombatModifiers(cacheState, arcane), first, 'passive modifiers should be cached while skill levels keep their identity')
   arcane.skillLevels = { E: 3 }
   assert.notStrictEqual(getArcanePassiveCombatModifiers(cacheState, arcane), first, 'a new skill-level object should invalidate passive modifiers')
+
+  const analyzedState = createInitialState('analyzed-state-dependency-cache')
+  const analyzed = getAnalyzedGameState(analyzedState)
+  const copiedState = { ...analyzedState, teamCalls: { ...analyzedState.teamCalls } }
+  assert.strictEqual(
+    getAnalyzedGameState(copiedState),
+    analyzed,
+    'state copies with unchanged snapshot dependencies should reuse analyzed state',
+  )
+  const changedArcanesState = { ...copiedState, arcanes: [...copiedState.arcanes] }
+  assert.notStrictEqual(
+    getAnalyzedGameState(changedArcanesState),
+    analyzed,
+    'changing a snapshot dependency should rebuild analyzed state',
+  )
 }
 
 {

@@ -1,10 +1,12 @@
 import { createHash } from 'node:crypto'
 
 import {
+  beginAnalyzedGameStateCacheDiagnostics,
   beginArcaneTravelDiagnostics,
   createInitialState,
   createMatchRenderFrame,
   createMatchStaticData,
+  endAnalyzedGameStateCacheDiagnostics,
   endArcaneTravelDiagnostics,
   loadGameData,
   matchPreparationStartSeconds,
@@ -105,6 +107,7 @@ function createStateDigest(state) {
 
 function runBenchmark() {
   if (typeof global.gc === 'function') global.gc()
+  beginAnalyzedGameStateCacheDiagnostics()
   beginArcaneTravelDiagnostics()
   let state = createInitialState(seed, { creepMotionMode, creepSpatialMode, creepStorageMode, arcaneTravelMode })
   const simulationClock = createSimulationClock(clockMode, clockMaxFrames)
@@ -224,6 +227,7 @@ function runBenchmark() {
   const cpuSeconds = (cpuUsage.user + cpuUsage.system) / 1_000_000
   if (typeof global.gc === 'function') global.gc()
   const finalMemory = process.memoryUsage()
+  const analyzedGameStateCacheDiagnostics = endAnalyzedGameStateCacheDiagnostics()
   const arcaneTravelDiagnostics = endArcaneTravelDiagnostics()
   return {
     wallSeconds,
@@ -241,6 +245,7 @@ function runBenchmark() {
       transfer: transferMilliseconds,
     },
     segments,
+    analyzedGameStateCacheDiagnostics,
     arcaneTravelDiagnostics,
     clockDiagnostics: readSimulationClockDiagnostics(simulationClock),
     memory: {
@@ -267,6 +272,13 @@ const results = Array.from({ length: runCount }, (_, index) => {
     `(${result.simulationRate.toFixed(1)}x wall; ${result.cpuSimulationRate.toFixed(1)}x CPU) | digest ${result.digest}`,
   )
   if (result.winner) console.log(`    resultado: ${result.winner} | kills ${result.kills.dawn}-${result.kills.dusk}`)
+  if (result.analyzedGameStateCacheDiagnostics) {
+    const diagnostics = result.analyzedGameStateCacheDiagnostics
+    console.log(
+      `    analyzed state: ${diagnostics.objectHits} acertos locais / ` +
+      `${diagnostics.dependencyHits} acertos por dependencia / ${diagnostics.misses} reconstrucoes`,
+    )
+  }
   if (result.arcaneTravelDiagnostics) {
     const diagnostics = result.arcaneTravelDiagnostics
     console.log(

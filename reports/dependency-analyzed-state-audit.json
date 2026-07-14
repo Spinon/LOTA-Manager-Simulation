@@ -1,0 +1,49 @@
+{
+  "task": "T35",
+  "date": "2026-07-13",
+  "seed": "performance-reference",
+  "mode": "full-match-event-clock-replay-capture",
+  "runs": 3,
+  "baseline": {
+    "commit": "7b4ee61",
+    "wallSeconds": [17.79, 19.68, 18.19],
+    "wallSecondsMedian": 18.19,
+    "wallRateMedian": 140.9,
+    "cpuSeconds": [20.66, 22.73, 22.27],
+    "cpuSecondsMedian": 22.27,
+    "cpuRateMedian": 115.1
+  },
+  "candidate": {
+    "wallSeconds": [18.28, 17.48, 16.94],
+    "wallSecondsMedian": 17.48,
+    "wallRateMedian": 146.6,
+    "cpuSeconds": [21.88, 21.48, 20.11],
+    "cpuSecondsMedian": 21.48,
+    "cpuRateMedian": 119.3
+  },
+  "improvement": {
+    "wallTimePercent": 3.9,
+    "wallRatePercent": 4.1,
+    "cpuTimePercent": 3.5,
+    "cpuRatePercent": 3.7
+  },
+  "cacheDiagnostics": {
+    "objectHits": 23336,
+    "dependencyHits": 1643,
+    "misses": 9713,
+    "avoidedSnapshotBuildPercent": 14.5
+  },
+  "determinism": {
+    "simulatedSeconds": 2562.5,
+    "winner": "dusk",
+    "kills": "14-50",
+    "digest": "0870297d913be664",
+    "preserved": true
+  },
+  "estimatedCumulative": {
+    "wallRate": 332.9,
+    "multipleOfT24": 2.91,
+    "targetWallRate": 342.6,
+    "remainingPercent": 2.9
+  }
+}

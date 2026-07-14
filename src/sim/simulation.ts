@@ -147,6 +147,11 @@ export type ArcaneTravelDiagnostics = {
   kinematicUpdates: number
   fullUpdates: number
 }
+export type AnalyzedGameStateCacheDiagnostics = {
+  objectHits: number
+  dependencyHits: number
+  misses: number
+}
 export type CreepMotionDiagnostics = {
   candidates: number
   movementUpdates: number
@@ -159,6 +164,23 @@ export type Selected = { kind: EntityKind; id: string } | undefined
 
 let activeCreepMotionDiagnostics: CreepMotionDiagnostics | undefined
 let activeArcaneTravelDiagnostics: ArcaneTravelDiagnostics | undefined
+let activeAnalyzedGameStateCacheDiagnostics: AnalyzedGameStateCacheDiagnostics | undefined
+
+export function beginAnalyzedGameStateCacheDiagnostics() {
+  activeAnalyzedGameStateCacheDiagnostics = {
+    objectHits: 0,
+    dependencyHits: 0,
+    misses: 0,
+  }
+}
+
+export function endAnalyzedGameStateCacheDiagnostics() {
+  const diagnostics = activeAnalyzedGameStateCacheDiagnostics
+    ? { ...activeAnalyzedGameStateCacheDiagnostics }
+    : undefined
+  activeAnalyzedGameStateCacheDiagnostics = undefined
+  return diagnostics
+}
 
 export function beginCreepMotionDiagnostics() {
   activeCreepMotionDiagnostics = {
@@ -508,6 +530,20 @@ export type SimulationState = {
 }
 
 export const analyzedGameStateCache = new WeakMap<SimulationState, { time: number; analyzed: AnalyzedGameState }>()
+const analyzedGameStateDependencyCache = new WeakMap<object, {
+  time: number
+  creepSpatialRevision: number
+  arcanes: Arcane[]
+  creeps: Creep[]
+  towers: Tower[]
+  structures: Structure[]
+  bases: Base[]
+  camps: Camp[]
+  boss: Boss
+  timedEffects: TimedEffect[]
+  teamAuras: Partial<Record<TeamId, TeamAura>>
+  analyzed: AnalyzedGameState
+}>()
 export const playerAiProfileCache = new Map<string, ReturnType<typeof buildPlayerAiProfile>>()
 export type CreepSpatialGrid = SpatialGrid<Creep> | PersistentSpatialGrid<Creep>
 export const creepSpatialGridCache = new WeakMap<object, { revision: number; time: number; grid: CreepSpatialGrid }>()
@@ -3654,9 +3690,45 @@ export function enrichTeamPlanWithMapTarget(state: SimulationState, team: TeamId
 
 export function getAnalyzedGameState(state: SimulationState) {
   const cached = analyzedGameStateCache.get(state)
-  if (cached && cached.time === state.time) return cached.analyzed
+  if (cached && cached.time === state.time) {
+    if (activeAnalyzedGameStateCacheDiagnostics) activeAnalyzedGameStateCacheDiagnostics.objectHits += 1
+    return cached.analyzed
+  }
+  const dependencyCached = analyzedGameStateDependencyCache.get(state.runtimeToken)
+  if (
+    dependencyCached?.time === state.time &&
+    dependencyCached.creepSpatialRevision === state.creepSpatialRevision &&
+    dependencyCached.arcanes === state.arcanes &&
+    dependencyCached.creeps === state.creeps &&
+    dependencyCached.towers === state.towers &&
+    dependencyCached.structures === state.structures &&
+    dependencyCached.bases === state.bases &&
+    dependencyCached.camps === state.camps &&
+    dependencyCached.boss === state.boss &&
+    dependencyCached.timedEffects === state.timedEffects &&
+    dependencyCached.teamAuras === state.teamAuras
+  ) {
+    if (activeAnalyzedGameStateCacheDiagnostics) activeAnalyzedGameStateCacheDiagnostics.dependencyHits += 1
+    analyzedGameStateCache.set(state, { time: state.time, analyzed: dependencyCached.analyzed })
+    return dependencyCached.analyzed
+  }
+  if (activeAnalyzedGameStateCacheDiagnostics) activeAnalyzedGameStateCacheDiagnostics.misses += 1
   const analyzed = analyzeGameState(createAiGameSnapshot(state))
   analyzedGameStateCache.set(state, { time: state.time, analyzed })
+  analyzedGameStateDependencyCache.set(state.runtimeToken, {
+    time: state.time,
+    creepSpatialRevision: state.creepSpatialRevision,
+    arcanes: state.arcanes,
+    creeps: state.creeps,
+    towers: state.towers,
+    structures: state.structures,
+    bases: state.bases,
+    camps: state.camps,
+    boss: state.boss,
+    timedEffects: state.timedEffects,
+    teamAuras: state.teamAuras,
+    analyzed,
+  })
   return analyzed
 }
 
