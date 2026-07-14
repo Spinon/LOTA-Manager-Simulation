@@ -33,7 +33,7 @@ namedControlValueKeys.forEach((valueKey) => {
 const summonRows = audit.rows.filter((row) => row.families.some((family) => family.id === 'summon'))
 const materializedSummons = summonRows.filter((row) => row.families.some((family) => family.id === 'summon' && family.status === 'partial'))
 const pendingSummons = summonRows.filter((row) => row.families.some((family) => family.id === 'summon' && family.status === 'missing'))
-assert.equal(materializedSummons.length, 25, 'all imported summon triggers should use independent units')
+assert.equal(materializedSummons.length, 28, 'all imported summon triggers should use independent units')
 assert.equal(pendingSummons.length, 0, 'event-driven summon triggers should be materialized')
 
 console.log('skill runtime audit tests passed')

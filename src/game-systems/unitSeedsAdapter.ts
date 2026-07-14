@@ -17,6 +17,8 @@ export type SummonUnitRuntimeSeed = {
   hp: number
   healthRegen: number
   damage: number
+  armor: number
+  magicResistance: number
   range: number
   vision: number
   movementSpeed: number
@@ -138,6 +140,8 @@ export function getSummonUnitRuntimeSeed(seedId: string): SummonUnitRuntimeSeed 
     hp: seed.baseStats.maxHealth,
     healthRegen: seed.baseStats.healthRegen,
     damage: Math.round(average(seed.baseStats.damageMin, seed.baseStats.damageMax)),
+    armor: seed.baseStats.armor,
+    magicResistance: seed.baseStats.magicResistance,
     range: seed.baseStats.attackRange,
     vision: seed.baseStats.dayVision,
     movementSpeed: seed.baseStats.movementSpeed,

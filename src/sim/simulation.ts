@@ -372,6 +372,8 @@ export type SummonedUnit = {
   hp: number
   maxHp: number
   damage: number
+  armor: number
+  magicResistance: number
   range: number
   visionRange: number
   moveSpeed: number
@@ -384,6 +386,7 @@ export type SummonedUnit = {
   canMove: boolean
   canAttack: boolean
   damageTakenMultiplier: number
+  buildingDamageMultiplier: number
   healingAuraPct: number
   channelBound: boolean
   variant?: SummonVariant
@@ -2312,6 +2315,7 @@ type RenderSummonFrame = [
   SkillSummonArchetype, boolean, boolean, number, number, boolean, string | undefined,
   SummonVariant | undefined, string | undefined, number | undefined, number | undefined, number | undefined,
   number | undefined, number | undefined, number | undefined,
+  number, number, number,
 ]
 type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number, AttackEffect['action'], string]
 type RenderMarkerFrame = [TeamId, number, number, number, number]
@@ -2464,6 +2468,7 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
       summon.variant,
       summon.unitSeedId, summon.nextAbilityAt, summon.recallStartedAt, summon.abilityCounter,
       summon.sharedBuffUntil, summon.cloakLayers, summon.cloakNextRecoveryAt,
+      renderNumber(summon.armor), renderNumber(summon.magicResistance), renderNumber(summon.buildingDamageMultiplier),
     ]),
     towerHp: state.towers.map((tower) => renderNumber(tower.hp)),
     structureHp: state.structures.map((structure) => renderNumber(structure.hp)),
@@ -2614,6 +2619,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       targetId: summon[25], variant: summon[26], unitSeedId: summon[27],
       nextAbilityAt: summon[28], recallStartedAt: summon[29], abilityCounter: summon[30],
       sharedBuffUntil: summon[31], cloakLayers: summon[32], cloakNextRecoveryAt: summon[33],
+      armor: summon[34] ?? 0, magicResistance: summon[35] ?? 0, buildingDamageMultiplier: summon[36] ?? 1,
     })),
     towers: staticData.towers.map((tower, index): Tower => ({ ...tower, pos: tower.pos, hp: frame.towerHp[index] ?? 0, lastAttack: 0 })),
     structures: staticData.structures.map((structure, index): Structure => ({ ...structure, pos: structure.pos, hp: frame.structureHp[index] ?? 0, lastAttack: 0 })),
@@ -9570,15 +9576,28 @@ export function applySimpleSkillSummonPressure(
   const archetype = profile.summonArchetype
   const illusion = archetype === 'illusion'
   const clone = archetype === 'clone'
+  const heroLike = illusion || clone
   const ward = archetype === 'ward'
   const healingWard = archetype === 'healing_ward'
   const unitSeed = profile.summonUnitSeedId ? getSummonUnitRuntimeSeed(profile.summonUnitSeedId) : undefined
   const importedHp = profile.summonHits > 0 ? profile.summonHits * 90 : profile.summonHp
   const genericHp = (115 + caster.stats.maxHp * 0.16) * levelScale * (0.72 + swarmScale * 0.28)
-  const maxHp = Math.max(1, Math.round(illusion || clone ? caster.stats.maxHp : importedHp || unitSeed?.hp || genericHp))
-  const outgoingDamage = profile.summonOutgoingDamagePct > 0 ? profile.summonOutgoingDamagePct / 100 : illusion ? 0.35 : 1
+  const maxHp = Math.max(1, Math.round(heroLike ? caster.stats.maxHp : importedHp || unitSeed?.hp || genericHp))
+  const unitRule = unitSeed?.abilities.find((ability) => ability.tags.includes('illusion') || ability.tags.includes('item_restriction'))
+  const getUnitRuleNumber = (key: string) => {
+    const value = unitRule?.values?.[key]
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  }
+  const outgoingDamage = profile.summonOutgoingDamagePct > 0
+    ? profile.summonOutgoingDamagePct / 100
+    : getUnitRuleNumber('outgoingDamagePct') ?? (illusion ? 0.35 : 1)
+  const incomingDamage = profile.summonIncomingDamagePct > 0
+    ? profile.summonIncomingDamagePct / 100
+    : getUnitRuleNumber('incomingDamagePct') ?? (illusion ? 2 : 1)
+  const buildingDamageMultiplier = getUnitRuleNumber('buildingDamagePct') ?? (illusion ? 0.35 : 1)
   const genericDamage = (12 + caster.stats.damage * 0.24) * levelScale * (0.7 + swarmScale * 0.3)
-  const baseDamage = clone ? caster.stats.damage : illusion ? caster.stats.damage * outgoingDamage : profile.summonDamage || unitSeed?.damage || genericDamage
+  const ownerDamage = getEffectiveArcaneDamage(state, caster)
+  const baseDamage = heroLike ? ownerDamage * outgoingDamage : profile.summonDamage || unitSeed?.damage || genericDamage
   const damage = healingWard ? 0 : Math.max(0, Math.round(baseDamage))
   const seedRange = unitSeed?.range ?? 0
   const ranged = ward || profile.summonRange >= 300 || seedRange >= 300 || hasAnySimpleSkillTag(skill, ['spirit', 'archer', 'ranged'])
@@ -9604,18 +9623,21 @@ export function applySimpleSkillSummonPressure(
       hp: maxHp,
       maxHp,
       damage,
-      range: profile.summonRange > 0 ? profile.summonRange / 140 : seedRange > 0 ? seedRange / 140 : ranged ? 5.8 : 2.2,
-      visionRange: profile.summonVision > 0 ? profile.summonVision / 140 : unitSeed?.vision ? unitSeed.vision / 140 : ranged ? 8.5 : 7,
-      moveSpeed: canMove ? (profile.summonMoveSpeed > 0 ? profile.summonMoveSpeed / 45 : unitSeed?.movementSpeed ? unitSeed.movementSpeed / 45 : ranged ? 3.8 : 4.4) : 0,
-      attackInterval: profile.summonAttackInterval > 0 ? profile.summonAttackInterval : unitSeed?.attackInterval || (ranged ? 1.35 : 1.05),
+      armor: heroLike ? getEffectiveArcaneArmor(state, caster) : unitSeed?.armor ?? 0,
+      magicResistance: heroLike ? caster.stats.magicResistance : unitSeed?.magicResistance ?? 0,
+      range: heroLike ? caster.stats.range : profile.summonRange > 0 ? profile.summonRange / 140 : seedRange > 0 ? seedRange / 140 : ranged ? 5.8 : 2.2,
+      visionRange: heroLike ? caster.visionRange : profile.summonVision > 0 ? profile.summonVision / 140 : unitSeed?.vision ? unitSeed.vision / 140 : ranged ? 8.5 : 7,
+      moveSpeed: canMove ? (heroLike ? getEffectiveArcaneMoveSpeed(state, caster) : profile.summonMoveSpeed > 0 ? profile.summonMoveSpeed / 45 : unitSeed?.movementSpeed ? unitSeed.movementSpeed / 45 : ranged ? 3.8 : 4.4) : 0,
+      attackInterval: heroLike ? getEffectiveArcaneAttackCooldown(state, caster) : profile.summonAttackInterval > 0 ? profile.summonAttackInterval : unitSeed?.attackInterval || (ranged ? 1.35 : 1.05),
       lastAttack: state.time - 0.5,
       spawnedAt: state.time,
       expiresAt: state.time + duration,
-      goldReward: Math.max(0, Math.round(profile.summonGoldBounty || unitSeed?.goldBounty || (12 + caster.stats.level * 1.5) * swarmScale)),
-      xpReward: Math.max(0, Math.round(profile.summonXpBounty || unitSeed?.xpBounty || (18 + caster.stats.level * 2) * swarmScale)),
+      goldReward: Math.max(0, Math.round(profile.summonGoldBounty || unitSeed?.goldBounty || (illusion ? 5 + caster.stats.level * 0.5 : 12 + caster.stats.level * 1.5) * swarmScale)),
+      xpReward: Math.max(0, Math.round(profile.summonXpBounty || unitSeed?.xpBounty || (illusion ? 5 + caster.stats.level : 18 + caster.stats.level * 2) * swarmScale)),
       canMove,
       canAttack,
-      damageTakenMultiplier: profile.summonIncomingDamagePct > 0 ? profile.summonIncomingDamagePct / 100 : illusion ? 3 : 1,
+      damageTakenMultiplier: incomingDamage,
+      buildingDamageMultiplier,
       healingAuraPct: healingWard ? Math.max(0.01, profile.summonHealPct / 100) : 0,
       channelBound: profile.summonMode === 'channel',
       unitSeedId: unitSeed?.id,
@@ -10028,6 +10050,8 @@ export function updateTombstoneZombieSpawning(state: SimulationState, tombstone:
     hp: maxHp,
     maxHp,
     damage,
+    armor: 0,
+    magicResistance: 0,
     range: 2.2,
     visionRange: 7,
     moveSpeed: 4.4,
@@ -10040,6 +10064,7 @@ export function updateTombstoneZombieSpawning(state: SimulationState, tombstone:
     canMove: true,
     canAttack: true,
     damageTakenMultiplier: 1,
+    buildingDamageMultiplier: 1,
     healingAuraPct: 0,
     channelBound: false,
     targetId: target.id,
@@ -10249,6 +10274,10 @@ function isWithinSpiritBearLeash(state: SimulationState, bear: SummonedUnit, poi
 export function getSummonAttackCenterRange(summon: SummonedUnit, target: CombatTarget) {
   const attackRange = summon.sourceSkillId === eldritchSummoningSkillId ? 0.65 : summon.range
   return attackRange + getEntityCollisionRadius(target) * 0.7
+}
+
+export function getSummonAttackDamage(summon: SummonedUnit, target: CombatTarget) {
+  return summon.damage * (isStructureLikeTarget(target) ? summon.buildingDamageMultiplier : 1)
 }
 
 export function resolveSummonExplosion(state: SimulationState, summon: SummonedUnit) {
@@ -11423,13 +11452,14 @@ export function resolveCombat(
       resolveSummonExplosion(next, summon)
       continue
     }
-    damageEntity(next, target.id, summon.damage, {
+    const attackDamage = getSummonAttackDamage(summon, target)
+    damageEntity(next, target.id, attackDamage, {
       id: summon.id,
       label: summon.name,
       team: summon.team,
       damageType: 'physical',
     })
-    applySpiritLinkSummonLifesteal(next, summon, target, summon.damage)
+    applySpiritLinkSummonLifesteal(next, summon, target, attackDamage)
     applySummonAttackSpecials(next, summon, target)
   }
 
@@ -12900,7 +12930,12 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   } else if (targetSummon && targetSummonIndex !== undefined) {
     const summons = [...state.summons]
     const updatedSummon = { ...targetSummon }
-    let summonDamage = finalDamage * Math.max(0, targetSummon.damageTakenMultiplier)
+    let summonDamage = resolveDamage({
+      baseDamage: finalDamage,
+      damageType,
+      targetArmor: targetSummon.armor,
+      targetMagicResistance: targetSummon.magicResistance,
+    }) * Math.max(0, targetSummon.damageTakenMultiplier)
     if (targetSummon.sourceSkillId === summonFamiliarsSkillId) {
       const cloak = getOwnerSkillProfileByAbility(state, targetSummon.ownerId, gravekeepersCloakAbilityId)
       const withinAura = cloak && distanceSquared(targetSummon.pos, cloak.caster.pos) <= cloak.profile.radius * cloak.profile.radius

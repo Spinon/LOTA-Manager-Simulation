@@ -49,11 +49,14 @@ import {
   getDenyTarget,
   getDenyCandidateFromCreeps,
   getEffectiveArcaneAttackCooldown,
+  getEffectiveArcaneArmor,
   getEffectiveArcaneDamage,
+  getEffectiveArcaneMoveSpeed,
   getEffectiveSummonAttackInterval,
   getEffectiveSummonMoveSpeed,
   getShopItemsForInventory,
   getSimulationEntityIndexes,
+  getSummonAttackDamage,
   getTeamMatchOutcome,
   getSimpleSkillAffectedTargets,
   getSimpleSkillExecuteMultiplier,
@@ -1998,10 +2001,56 @@ let state: SimulationState = initialState
   })
   const illusion = skillState.summons[0]
   assert.equal(illusion.maxHp, liveCaster.stats.maxHp, 'illusions should copy their owner health pool')
-  assert.equal(illusion.damage, Math.round(liveCaster.stats.damage * 0.25), 'illusions should scale owner damage by the official output percentage')
+  assert.equal(illusion.damage, Math.round(getEffectiveArcaneDamage(skillState, liveCaster) * 0.25), 'illusions should scale effective owner damage by the official output percentage')
+  assert.equal(illusion.armor, getEffectiveArcaneArmor(skillState, liveCaster), 'illusions should snapshot effective owner armor')
+  assert.equal(illusion.magicResistance, liveCaster.stats.magicResistance)
+  assert.equal(illusion.range, liveCaster.stats.range)
+  assert.equal(illusion.visionRange, liveCaster.visionRange)
+  assert.equal(illusion.moveSpeed, getEffectiveArcaneMoveSpeed(skillState, liveCaster))
+  assert.equal(illusion.attackInterval, getEffectiveArcaneAttackCooldown(skillState, liveCaster))
+  assert.equal(illusion.buildingDamageMultiplier, 0.35)
+  assert.equal(getSummonAttackDamage(illusion, skillState.towers.find((tower) => tower.team !== illusion.team)!), illusion.damage * 0.35)
   const illusionHp = illusion.hp
-  damageEntity(skillState, illusion.id, 20, { id: summonTarget.id, label: summonTarget.player, team: summonTarget.team })
+  damageEntity(skillState, illusion.id, 20, {
+    id: summonTarget.id,
+    label: summonTarget.player,
+    team: summonTarget.team,
+    damageType: 'pure',
+  })
   assert.equal(skillState.summons[0].hp, illusionHp - 70, 'illusion incoming damage should use the official amplification')
+  const inheritedReplay = materializeMatchRenderFrame(createMatchRenderFrame(skillState), createMatchStaticData(skillState)).summons[0]
+  assert.ok(Math.abs(inheritedReplay.armor - illusion.armor) < 0.001, 'replay should preserve illusion armor within frame precision')
+  assert.equal(inheritedReplay.magicResistance, illusion.magicResistance)
+  assert.equal(inheritedReplay.buildingDamageMultiplier, 0.35)
+
+  const cloneState = createInitialState('tempest-clone-inheritance')
+  cloneState.time = 600
+  const cloneOwner = cloneState.arcanes[0]
+  cloneOwner.heroDefinitionId = 'h105_arc_double'
+  cloneOwner.skillLevels = { R: 1 }
+  cloneOwner.stats.maxHp = cloneOwner.stats.hp = 2_400
+  cloneOwner.stats.damage = cloneOwner.stats.damageMin = cloneOwner.stats.damageMax = 160
+  cloneOwner.stats.armor = 11
+  cloneOwner.stats.magicResistance = 31
+  cloneOwner.stats.range = 6.2
+  cloneOwner.stats.moveSpeed = 7.1
+  cloneOwner.stats.attackSpeed = 0.72
+  cloneOwner.visionRange = 12
+  const tempestDouble = getHeroDefinition(cloneOwner.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5683)!
+  applySimpleSkillSummonPressure(cloneState, cloneOwner, tempestDouble, getSkillEffectProfile(tempestDouble, 1), cloneOwner.pos)
+  const clone = cloneState.summons[0]
+  assert.equal(clone.archetype, 'clone')
+  assert.equal(clone.maxHp, 2_400)
+  assert.equal(clone.damage, Math.round(getEffectiveArcaneDamage(cloneState, cloneOwner) * 0.75), 'the adapted clone restriction should apply 75% outgoing damage')
+  assert.equal(clone.damageTakenMultiplier, 1.5)
+  assert.equal(clone.armor, 11)
+  assert.equal(clone.magicResistance, 31)
+  assert.equal(clone.range, 6.2)
+  assert.equal(clone.visionRange, 12)
+  assert.equal(clone.moveSpeed, 7.1)
+  assert.equal(clone.attackInterval, 0.72)
+  assert.equal(clone.goldReward, 70)
+  assert.equal(clone.xpReward, 70)
 
   skillState.summons = []
   const woundedAlly = skillState.arcanes.find((arcane) => arcane.team === liveCaster.team && arcane.id !== liveCaster.id)!
@@ -2420,6 +2469,7 @@ let state: SimulationState = initialState
     id: golemKiller.id,
     label: golemKiller.player,
     team: golemKiller.team,
+    damageType: 'pure',
   })
   resolveDeaths(unitAbilityState)
   assert.ok(unitAbilityTargets.every((_, index) => getUnitAbilityTarget(index).stats.hp < impactTargetHp[index]), 'a killed Infernal Golem should apply its on-death impact in area')

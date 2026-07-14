@@ -80,6 +80,9 @@ const summonImportProfiles: Record<string, SummonImportProfile> = {
   undying_tombstone: { archetype: 'ward', mode: 'cast' },
   undying_flesh_golem: { archetype: 'unit', mode: 'on_attack' },
   naga_siren_mirror_image: { archetype: 'illusion', mode: 'cast' },
+  phantom_lancer_spirit_lance: { archetype: 'illusion', mode: 'cast' },
+  phantom_lancer_doppelwalk: { archetype: 'illusion', mode: 'cast' },
+  terrorblade_conjure_image: { archetype: 'illusion', mode: 'cast' },
   visage_summon_familiars: { archetype: 'unit', mode: 'cast' },
   arc_warden_tempest_double: { archetype: 'clone', mode: 'cast' },
   ringmaster_funhouse_mirror: { archetype: 'illusion', mode: 'cast' },
@@ -103,6 +106,9 @@ const summonUnitSeedIds: Record<string, string> = {
   lone_druid_spirit_bear: 'summon_spirit_bear',
   chaos_knight_phantasm: 'summon_strong_illusion',
   naga_siren_mirror_image: 'summon_basic_illusion',
+  phantom_lancer_spirit_lance: 'summon_basic_illusion',
+  phantom_lancer_doppelwalk: 'summon_basic_illusion',
+  terrorblade_conjure_image: 'summon_basic_illusion',
   visage_summon_familiars: 'summon_stone_familiar',
   arc_warden_tempest_double: 'summon_tempest_clone',
   ringmaster_funhouse_mirror: 'summon_basic_illusion',
@@ -257,7 +263,7 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
       'summons', 'spawn_count', 'max_treants', 'max_skeleton_charges', 'count', 'ward_count',
       'hawk_count', 'wolf_count', 'familiar_count', 'images_count', 'skeleton_count',
       'extra_spirit_count_exort', 'extra_spirit_count_quas', 'shard_skeleton_count',
-      'spawn_zombie_on_attack',
+      'spawn_zombie_on_attack', 'illusion_2_amount',
     ])
     if (!hasPositiveNumber(Array.isArray(values.summons) ? values.summons : [])) values.summons = [1]
     assignAlias(values, skill, 'summonDuration', [
@@ -302,8 +308,21 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
       'eidolon_xp_bounty', 'boar_base_xp_bounty', 'hawk_base_xp_bounty', 'xp_bounty',
       'treant_xp_bounty', 'familiar_bounty', 'bounty_xp',
     ])
-    assignAlias(values, skill, 'summonOutgoingDamagePct', ['outgoing_damage_tooltip', 'tooltip_damage_outgoing_melee'])
-    assignAlias(values, skill, 'summonIncomingDamagePct', ['incoming_damage_tooltip', 'tooltip_incoming_damage_total_pct', 'tooltip_damage_incoming_total_pct'])
+    assignAlias(values, skill, 'summonOutgoingDamagePct', [
+      'outgoing_damage_tooltip', 'illusion_outgoing_tooltip', 'tooltip_illusion_damage',
+      'tooltip_damage_outgoing_melee', 'tooltip_damage_outgoing_ranged',
+    ])
+    assignAlias(values, skill, 'summonIncomingDamagePct', [
+      'incoming_damage_tooltip', 'tooltip_incoming_damage_total_pct', 'tooltip_damage_incoming_total_pct',
+      'tooltip_illusion_total_damage_in_pct', 'illusion_incoming_damage_total_tooltip',
+      'tooltip_total_illusion_incoming_damage', 'tooltip_illusion_total_damage_incoming',
+    ])
+    if (skill.sourceInternalName === 'phantom_lancer_doppelwalk') {
+      const outgoingReduction = pickSpecial(skill, ['illusion_2_damage_out_pct'])
+      const incomingIncrease = pickSpecial(skill, ['illusion_2_damage_in_pct'])
+      if (outgoingReduction.length > 0) values.summonOutgoingDamagePct = outgoingReduction.map((value) => Math.max(0, 100 + value))
+      if (incomingIncrease.length > 0) values.summonIncomingDamagePct = incomingIncrease.map((value) => Math.max(0, 100 + value))
+    }
     assignAlias(values, skill, 'summonHealPct', ['healing_ward_heal_amount'])
     if (skill.sourceInternalName === 'warlock_eldritch_summoning') {
       assignAlias(values, skill, 'summonEffectRadius', ['tooltip_imp_explode_radius'])

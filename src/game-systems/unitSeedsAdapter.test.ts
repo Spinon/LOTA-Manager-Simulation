@@ -49,7 +49,13 @@ import {
   assert.equal(familiar.damage, 30)
   assert.equal(familiar.abilities.find((ability) => ability.id === 'stone_drop')?.values?.cooldown, 20)
   assert.equal(bear.damage, 55)
+  assert.equal(bear.armor, 3)
+  assert.equal(bear.magicResistance, 25)
   assert.equal(bear.abilities.find((ability) => ability.id === 'entangling_claws')?.values?.chance, 20)
+  const basicIllusion = getSummonUnitRuntimeSeed('summon_basic_illusion')!
+  assert.equal(basicIllusion.armor, 0)
+  assert.equal(basicIllusion.magicResistance, 25)
+  assert.equal(basicIllusion.abilities[0].values?.buildingDamagePct, 0.35)
   assert.equal(getSummonUnitRuntimeSeed('missing-summon'), undefined)
 }
 

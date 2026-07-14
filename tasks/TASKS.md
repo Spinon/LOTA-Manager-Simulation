@@ -584,6 +584,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Auditoria: 6 completas, 633 parciais, 12 aproximações e 83 ausentes. Suíte completa, lint e build verdes; benchmark de 5 minutos: mediana 306,6x wall / 240,0x CPU, digest `51a125c1f69f4a2a`.
 - Próxima rodada da T16: revisar clones e ilusões contra as regras adaptadas, começando por cópia de atributos/itens, restrições de skills e tratamento de morte/XP/bounty.
 
+**Progresso de clones e ilusões (2026-07-14)**:
+- Unidades hero-like agora copiam o snapshot efetivo do owner: vida, dano após itens/passivas, armadura, resistência mágica, alcance, visão, movimento e intervalo de ataque. Tempest Double usa as restrições do unit seed para 75% de dano causado e 150% recebido; ilusões preservam seus multiplicadores específicos.
+- Dano recebido por summons passa pela armadura/resistência antes da amplificação da ilusão. O dano contra estruturas usa a restrição do unit seed, com fallback de 35% para ilusões, sem penalizar ataques de summons comuns.
+- Spirit Lance, Doppelwalk e Conjure Image foram ligados ao runtime de ilusões com quantidade, duração e escalas oficiais. O Doppelwalk converte corretamente os campos negativos de redução de dano para 20% causado e 600% recebido.
+- Bounty e XP usam primeiro os valores da skill, depois o unit seed e por fim um fallback próprio para ilusões. Os novos atributos atravessam replay normal/comprimido com fallback compatível para frames anteriores e aparecem no painel de dados.
+- Testes headless cobrem import, herança, mitigação, dano estrutural, bounty do Tempest Double e replay. Auditoria: 6 completas, 634 parciais, 12 aproximações e 82 ausentes. Suíte completa, lint e build verdes; benchmark de 5 minutos: mediana 309,9x wall / 230,5x CPU, digest `51a125c1f69f4a2a` preservado.
+- Próxima rodada da T16: modelar ilusões que copiam inimigos ou nascem de gatilhos passivos/diferidos, como Reflection, Disruption, Dark Portrait, Haunt e Juxtapose; depois revisar restrições de skills e itens por família de clone.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens
