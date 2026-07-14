@@ -96,6 +96,26 @@ assert.equal(spiritBearProfile.summonRegen, 1.5)
 assert.equal(spiritBearProfile.summonLeashRange, 1100)
 assert.equal(spiritBearProfile.summonBacklashPct, 0.2)
 
+const spiritLink = getSkillEffectProfile(findOfficialSkill('h072_druid_dual', 7309), 2)
+assert.equal(spiritLink.moveSpeedPct, 0.2)
+assert.equal(spiritLink.linkedSummonMoveSpeedPct, 0.4)
+assert.equal(spiritLink.lifestealPct, 0.3)
+assert.equal(spiritLink.linkedLifestealPct, 0.3)
+
+const savageRoar = getSkillEffectProfile(findOfficialSkill('h072_druid_dual', 5414), 2)
+assert.equal(savageRoar.fearDuration, 1.4)
+
+const graveChill = getSkillEffectProfile(findOfficialSkill('h084_gargoyle_brood', 5480), 3)
+assert.equal(graveChill.duration, 5)
+assert.equal(graveChill.moveSpeedPct, 0.24)
+assert.equal(graveChill.attackSpeedPct, 0.55)
+
+const gravekeepersCloak = getSkillEffectProfile(findOfficialSkill('h084_gargoyle_brood', 5482), 4)
+assert.equal(gravekeepersCloak.cloakMaxLayers, 4)
+assert.equal(gravekeepersCloak.cloakDamageReductionPct, 0.2)
+assert.equal(gravekeepersCloak.cloakRecoveryTime, 4)
+assert.equal(gravekeepersCloak.cloakMinimumDamage, 40)
+
 const tombstone = getSkillEffectProfile(findOfficialSkill('h077_decay_zombie', 5444), 1)
 assert.equal(tombstone.summonSpawnInterval, 4)
 assert.equal(tombstone.summonChildDamage, 34)

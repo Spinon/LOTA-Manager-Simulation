@@ -575,6 +575,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Testes headless cobrem valores, procs, ticks, stacks, splash, explosão, split, replay e limite de geração. Suíte completa, lint e build verdes; benchmark de 5 minutos: mediana 294,5x wall / 258,8x CPU, digest `534bd00e225a74ea` preservado.
 - Próxima rodada da T16: integrar efeitos compartilhados entre dono e summon (Grave Chill/Cloak nos Familiars e Spirit Link/Savage Roar no Bear) e revisar as regras adaptadas de clones/ilusões.
 
+**Progresso de efeitos compartilhados entre owner e summon (2026-07-14)**:
+- Spirit Link agora aplica ao Druid e ao Spirit Bear os bônus distintos de movimento importados. Ataques de qualquer um curam os dois lados do vínculo com o lifesteal oficial por nível; alvos não heroicos recebem a penalidade importada de 40% e estruturas não geram cura.
+- Savage Roar nasce simultaneamente no Druid e no Spirit Bear. Inimigos dentro dos 350 pontos oficiais de qualquer origem recebem fear pela duração de cada nível, com um único custo e cooldown no owner.
+- Grave Chill rouba movimento e attack speed do alvo por 5s, fortalece o caster e compartilha o mesmo buff com Familiars dentro das 900 unidades oficiais. Movimento e intervalo de ataque dos summons consultam o buff apenas quando necessário.
+- Familiars nascem com as quatro camadas de Gravekeeper's Cloak aprendidas pelo owner. Cada camada usa a redução oficial por nível, impactos a partir de 40 consomem uma camada e a recuperação sequencial respeita 7/6/5/4s enquanto o Familiar permanece na aura de 900 unidades.
+- O replay compacto preserva somente timestamp do buff, camadas e próxima recuperação. Testes headless cobrem import, movimento, intervalos de ataque, lifesteal nos dois sentidos, Roar pelo Bear, mitigação/recuperação do Cloak e replay normal/comprimido.
+- Auditoria: 6 completas, 633 parciais, 12 aproximações e 83 ausentes. Suíte completa, lint e build verdes; benchmark de 5 minutos: mediana 306,6x wall / 240,0x CPU, digest `51a125c1f69f4a2a`.
+- Próxima rodada da T16: revisar clones e ilusões contra as regras adaptadas, começando por cópia de atributos/itens, restrições de skills e tratamento de morte/XP/bounty.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

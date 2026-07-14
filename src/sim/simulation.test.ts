@@ -50,6 +50,8 @@ import {
   getDenyCandidateFromCreeps,
   getEffectiveArcaneAttackCooldown,
   getEffectiveArcaneDamage,
+  getEffectiveSummonAttackInterval,
+  getEffectiveSummonMoveSpeed,
   getShopItemsForInventory,
   getSimulationEntityIndexes,
   getTeamMatchOutcome,
@@ -95,6 +97,7 @@ import {
   queryCreepSpatialGrid,
   resolveDeaths,
   resolveCombat,
+  resolveSimpleSkillEffects,
   resolveCompletedChannels,
   simulationFrameSeconds,
   spawnWave,
@@ -2163,7 +2166,7 @@ let state: SimulationState = initialState
   familiarState.time = 600
   const gargoyle = familiarState.arcanes[0]
   gargoyle.heroDefinitionId = 'h084_gargoyle_brood'
-  gargoyle.skillLevels = { R: 1 }
+  gargoyle.skillLevels = { Q: 2, E: 2, R: 1 }
   const familiarTarget = familiarState.arcanes.find((candidate) => candidate.team !== gargoyle.team)!
   gargoyle.pos = { x: 50, y: 50 }
   familiarTarget.pos = { x: 51, y: 50 }
@@ -2172,6 +2175,13 @@ let state: SimulationState = initialState
   const familiars = familiarState.summons.filter((summon) => summon.sourceSkillId === familiarSkill.id)
   assert.equal(familiars.length, 2)
   assert.ok(familiars.every((familiar) => familiar.unitSeedId === 'summon_stone_familiar'))
+  assert.ok(familiars.every((familiar) => familiar.cloakLayers === 4), 'Familiars should inherit the owner Cloak layers when spawned')
+  const graveChillSkill = getHeroDefinition(gargoyle.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5480)!
+  const familiarBaseAttackInterval = familiars[0].attackInterval
+  resolveSimpleSkillEffects(familiarState, gargoyle, graveChillSkill, 2, familiarTarget)
+  assert.ok(familiars.every((familiar) => familiar.sharedBuffUntil === 605), 'Grave Chill should share its imported duration with nearby Familiars')
+  assert.ok(getEffectiveSummonMoveSpeed(familiarState, familiars[0]) > familiars[0].moveSpeed)
+  assert.ok(getEffectiveSummonAttackInterval(familiarState, familiars[0]) < familiarBaseAttackInterval)
   familiars.forEach((familiar) => {
     familiar.pos = { ...familiarTarget.pos }
     familiar.targetId = familiarTarget.id
@@ -2190,11 +2200,15 @@ let state: SimulationState = initialState
   const familiarReplay = materializeMatchRenderFrame(familiarFrame, familiarStaticData)
   assert.equal(familiarReplay.summons[0].unitSeedId, 'summon_stone_familiar')
   assert.equal(familiarReplay.summons[0].nextAbilityAt, 620)
+  assert.equal(familiarReplay.summons[0].sharedBuffUntil, 605)
+  assert.equal(familiarReplay.summons[0].cloakLayers, 4)
   const familiarReplayStore = new ReplayFrameStore()
   familiarReplayStore.appendChunk(new ReplayChunkEncoder().encode([familiarFrame]))
   const compressedFamiliarReplay = materializeMatchRenderFrame(familiarReplayStore.get(0), familiarStaticData)
   assert.equal(compressedFamiliarReplay.summons[0].unitSeedId, 'summon_stone_familiar')
   assert.equal(compressedFamiliarReplay.summons[0].nextAbilityAt, 620)
+  assert.equal(compressedFamiliarReplay.summons[0].sharedBuffUntil, 605)
+  assert.equal(compressedFamiliarReplay.summons[0].cloakLayers, 4)
   resolveCombat(familiarState, createTickFrameContext(), new Set(familiars.map((familiar) => familiar.id)))
   const familiarCorrosion = familiarState.timedEffects.filter((effect) => (
     effect.targetId === familiarTarget.id && effect.modifiers?.armorFlat === -1
@@ -2208,6 +2222,21 @@ let state: SimulationState = initialState
   updateSummonedUnits(familiarState, 0.5)
   assert.equal(familiars[0].recallStartedAt, undefined)
   assert.ok(distance(familiars[0].pos, gargoyle.pos) < 4, 'recall should return the Familiar to its owner after the imported duration')
+  const cloakTarget = familiarState.summons.find((summon) => summon.id === familiars[1].id)!
+  cloakTarget.pos = { ...gargoyle.pos }
+  const cloakHpBefore = cloakTarget.hp
+  damageEntity(familiarState, cloakTarget.id, 100, {
+    id: familiarTarget.id,
+    label: familiarTarget.player,
+    team: familiarTarget.team,
+    damageType: 'pure',
+  })
+  const damagedFamiliar = familiarState.summons.find((summon) => summon.id === cloakTarget.id)!
+  assert.equal(damagedFamiliar.hp, cloakHpBefore - 52, 'four level-two Cloak layers should reduce Familiar damage by 48%')
+  assert.equal(damagedFamiliar.cloakLayers, 3)
+  familiarState.time += 6
+  updateSummonedUnits(familiarState, 0.5)
+  assert.equal(familiarState.summons.find((summon) => summon.id === cloakTarget.id)!.cloakLayers, 4, 'Cloak should recover one layer after its imported delay')
 
   const bearState = createInitialState('spirit-bear-runtime')
   bearState.time = 600
@@ -2215,15 +2244,38 @@ let state: SimulationState = initialState
   const bearKiller = bearState.arcanes.find((candidate) => candidate.team !== druid.team)!
   druid.heroDefinitionId = 'h072_druid_dual'
   const bearSkill = getHeroDefinition(druid.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 1342)!
-  druid.skillLevels = { [bearSkill.key]: 1 }
+  druid.skillLevels = { [bearSkill.key]: 1, W: 2, E: 2 }
   druid.pos = { x: 50, y: 50 }
   applySimpleSkillSummonPressure(bearState, druid, bearSkill, getSkillEffectProfile(bearSkill, 1), druid.pos)
   const spiritBear = bearState.summons[0]
   assert.equal(spiritBear.unitSeedId, 'summon_spirit_bear')
   assert.equal(spiritBear.damage, 55, 'Spirit Bear should use the adapted unit seed when the official summon skill omits attack damage')
+  assert.equal(getEffectiveSummonMoveSpeed(bearState, spiritBear), spiritBear.moveSpeed * 1.4, 'Spirit Link should apply the Bear-specific movement bonus')
   spiritBear.pos = { x: 51, y: 50 }
   bearKiller.pos = { x: 51, y: 50 }
   bearKiller.stats.maxHp = bearKiller.stats.hp = 100_000
+  spiritBear.hp -= 100
+  druid.stats.hp -= 100
+  spiritBear.targetId = bearKiller.id
+  spiritBear.lastAttack = bearState.time - spiritBear.attackInterval
+  const bearHpBeforeLink = spiritBear.hp
+  const druidHpBeforeLink = druid.stats.hp
+  resolveCombat(bearState, createTickFrameContext(), new Set([spiritBear.id]))
+  assert.ok(spiritBear.hp > bearHpBeforeLink, 'Spirit Bear attacks should lifesteal into the Bear')
+  assert.ok(bearState.arcanes.find((arcane) => arcane.id === druid.id)!.stats.hp > druidHpBeforeLink, 'Spirit Bear attacks should share lifesteal with the owner')
+  spiritBear.hp -= 100
+  const bearHpBeforeOwnerAttack = spiritBear.hp
+  const linkedDruid = bearState.arcanes.find((arcane) => arcane.id === druid.id)!
+  performArcaneBasicAttack(bearState, linkedDruid, bearKiller)
+  assert.ok(spiritBear.hp > bearHpBeforeOwnerAttack, 'owner attacks should share Spirit Link lifesteal with the Bear')
+  spiritBear.pos = { x: 56, y: 50 }
+  bearKiller.pos = { x: 56, y: 50 }
+  const savageRoarSkill = getHeroDefinition(druid.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5414)!
+  const roaringDruid = bearState.arcanes.find((arcane) => arcane.id === druid.id)!
+  resolveSimpleSkillEffects(bearState, roaringDruid, savageRoarSkill, 2, roaringDruid)
+  assert.equal(hasTimedEffect(bearState, bearKiller.id, 'fear'), true, 'Savage Roar should also originate from the Spirit Bear')
+  spiritBear.pos = { x: 51, y: 50 }
+  bearKiller.pos = { x: 51, y: 50 }
   for (let attempt = 0; attempt < 60 && !hasTimedEffect(bearState, bearKiller.id, 'root'); attempt += 1) {
     bearState.time += spiritBear.attackInterval
     spiritBear.targetId = bearKiller.id
@@ -2239,7 +2291,8 @@ let state: SimulationState = initialState
   assert.equal(spiritBear.hp, bearHpBeforeRegen + 1.5, 'Spirit Bear should apply its imported flat regeneration')
   assert.ok(spiritBear.pos.x < 70, 'Spirit Bear should return toward its owner after breaking the attack leash')
   assert.equal(spiritBear.targetId, undefined)
-  const druidHpBeforeBacklash = druid.stats.hp
+  const druidBeforeBacklash = bearState.arcanes.find((arcane) => arcane.id === druid.id)!
+  const druidHpBeforeBacklash = druidBeforeBacklash.stats.hp
   damageEntity(bearState, spiritBear.id, spiritBear.hp + 1, {
     id: bearKiller.id,
     label: bearKiller.player,
@@ -2249,7 +2302,7 @@ let state: SimulationState = initialState
   resolveDeaths(bearState)
   assert.equal(
     bearState.arcanes.find((arcane) => arcane.id === druid.id)!.stats.hp,
-    druidHpBeforeBacklash - druid.stats.maxHp * 0.2,
+    druidHpBeforeBacklash - druidBeforeBacklash.stats.maxHp * 0.2,
     'a killed Spirit Bear should deal imported backlash damage to its owner',
   )
 

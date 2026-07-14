@@ -54,7 +54,7 @@ Transformar os arquivos de formulas em sistemas testaveis e visiveis na simulaca
 - [ ] Expandir consumiveis para wards, smoke, dust, TP, bottle e comandos de mapa.
 - [x] Aplicar summons ativos como entidades de combate separadas.
 - [x] Especializar casts ativos de wards, healing wards, ilusoes, clones e summons persistentes.
-- [ ] Materializar summons condicionais em gatilhos de morte, morte do alvo e ataque.
+- [x] Materializar summons condicionais em gatilhos de morte, morte do alvo e ataque.
 - [ ] Aplicar micro performance em controle de summons e clones.
 
 ## Fase 3 - Economia e Mapa

@@ -334,11 +334,28 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
     }
   }
   assignAlias(values, skill, 'manaValue', ['mana_burned', 'mana_drain', 'mana_restore'])
-  assignAlias(values, skill, 'attackSpeed', ['bonus_attack_speed', 'attack_speed'])
+  assignAlias(values, skill, 'attackSpeed', ['bonus_attack_speed', 'attack_speed', 'attackspeed_bonus'])
   assignAlias(values, skill, 'moveSpeedBonusPct', ['move_speed_bonus_pct', 'movespeed_bonus', 'bonus_movespeed'], true)
   assignAlias(values, skill, 'critChance', ['crit_chance', 'critical_chance'])
   assignAlias(values, skill, 'critMultiplier', ['crit_multiplier', 'crit_damage'])
-  assignAlias(values, skill, 'lifestealPct', ['lifesteal', 'lifesteal_pct'])
+  assignAlias(values, skill, 'lifestealPct', ['lifesteal', 'lifesteal_pct', 'lifesteal_percent'])
+  if (skill.sourceInternalName === 'lone_druid_spirit_link') {
+    assignAlias(values, skill, 'moveSpeedBonusPct', ['bonus_movement_speed_druid'])
+    assignAlias(values, skill, 'linkedSummonMoveSpeedPct', ['bonus_movement_speed_bear'])
+    assignAlias(values, skill, 'linkedLifestealPct', ['lifesteal_percent'])
+  }
+  if (skill.sourceInternalName === 'lone_druid_savage_roar') {
+    assignAlias(values, skill, 'fearDuration', ['duration'])
+  }
+  if (skill.sourceInternalName === 'visage_grave_chill') {
+    assignAlias(values, skill, 'duration', ['chill_duration'])
+  }
+  if (skill.sourceInternalName === 'visage_gravekeepers_cloak') {
+    assignAlias(values, skill, 'cloakMaxLayers', ['max_layers'])
+    assignAlias(values, skill, 'cloakDamageReductionPct', ['damage_reduction'])
+    assignAlias(values, skill, 'cloakRecoveryTime', ['recovery_time'])
+    assignAlias(values, skill, 'cloakMinimumDamage', ['minimum_damage'])
+  }
   if (isGlobalAbility(skill.sourceInternalName)) values.global = true
   return values
 }

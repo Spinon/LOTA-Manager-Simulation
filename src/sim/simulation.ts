@@ -391,6 +391,9 @@ export type SummonedUnit = {
   nextAbilityAt?: number
   recallStartedAt?: number
   abilityCounter?: number
+  sharedBuffUntil?: number
+  cloakLayers?: number
+  cloakNextRecoveryAt?: number
   targetId?: string
   lastHitBy?: CombatSource
 }
@@ -2308,6 +2311,7 @@ type RenderSummonFrame = [
   number, number, number, number, number, number, number, number, number,
   SkillSummonArchetype, boolean, boolean, number, number, boolean, string | undefined,
   SummonVariant | undefined, string | undefined, number | undefined, number | undefined, number | undefined,
+  number | undefined, number | undefined, number | undefined,
 ]
 type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number, AttackEffect['action'], string]
 type RenderMarkerFrame = [TeamId, number, number, number, number]
@@ -2459,6 +2463,7 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
       renderNumber(summon.healingAuraPct), summon.channelBound, summon.targetId,
       summon.variant,
       summon.unitSeedId, summon.nextAbilityAt, summon.recallStartedAt, summon.abilityCounter,
+      summon.sharedBuffUntil, summon.cloakLayers, summon.cloakNextRecoveryAt,
     ]),
     towerHp: state.towers.map((tower) => renderNumber(tower.hp)),
     structureHp: state.structures.map((structure) => renderNumber(structure.hp)),
@@ -2608,6 +2613,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       damageTakenMultiplier: summon[22], healingAuraPct: summon[23], channelBound: summon[24],
       targetId: summon[25], variant: summon[26], unitSeedId: summon[27],
       nextAbilityAt: summon[28], recallStartedAt: summon[29], abilityCounter: summon[30],
+      sharedBuffUntil: summon[31], cloakLayers: summon[32], cloakNextRecoveryAt: summon[33],
     })),
     towers: staticData.towers.map((tower, index): Tower => ({ ...tower, pos: tower.pos, hp: frame.towerHp[index] ?? 0, lastAttack: 0 })),
     structures: staticData.structures.map((structure, index): Structure => ({ ...structure, pos: structure.pos, hp: frame.structureHp[index] ?? 0, lastAttack: 0 })),
@@ -7371,6 +7377,7 @@ export type ArcanePassiveCombatModifiers = {
   flatDamage: number
   damagePct: number
   armorFlat: number
+  moveSpeedPct: number
   attackSpeedPct: number
   lifestealPct: number
   incomingDamagePct: number
@@ -7380,6 +7387,7 @@ const emptyArcanePassiveCombatModifiers: ArcanePassiveCombatModifiers = {
   flatDamage: 0,
   damagePct: 0,
   armorFlat: 0,
+  moveSpeedPct: 0,
   attackSpeedPct: 0,
   lifestealPct: 0,
   incomingDamagePct: 0,
@@ -7421,6 +7429,7 @@ export function getArcanePassiveCombatModifiers(state: SimulationState, arcane: 
         flatDamage: modifiers.flatDamage + flatDamage,
         damagePct: modifiers.damagePct + expectedCritPct + auraDamage,
         armorFlat: modifiers.armorFlat + profile.armorDelta,
+        moveSpeedPct: modifiers.moveSpeedPct + profile.moveSpeedPct,
         attackSpeedPct: modifiers.attackSpeedPct + profile.attackSpeedPct,
         lifestealPct: Math.max(modifiers.lifestealPct, profile.lifestealPct),
         incomingDamagePct: Math.max(modifiers.incomingDamagePct, defensiveReduction),
@@ -7466,10 +7475,11 @@ export function getEffectiveArcaneArmor(state: SimulationState, arcane: Arcane) 
 
 export function getEffectiveArcaneMoveSpeed(state: SimulationState, arcane: Arcane) {
   const modifiers = getArcaneStatModifierEffects(state, arcane)
+  const passive = getArcanePassiveCombatModifiers(state, arcane)
   return applyFlatAndPercentModifiers(
     arcane.stats.moveSpeed,
     [],
-    modifiers.map((effect) => effect.modifiers?.moveSpeedPct ?? 0),
+    [...modifiers.map((effect) => effect.modifiers?.moveSpeedPct ?? 0), passive.moveSpeedPct],
   )
 }
 
@@ -9125,6 +9135,18 @@ export function resolveSimpleSkillEffects(
     return true
   }
 
+  const linkedSummonResolution = resolveLinkedSummonSkillEffects(
+    state,
+    arcane,
+    skill,
+    level,
+    target,
+    profile,
+    manaCost,
+    commitCast,
+  )
+  if (linkedSummonResolution !== undefined) return linkedSummonResolution
+
   if (isPositiveSimpleSkill(skill)) {
     const alliedTargets = affectedTargets.filter((candidate): candidate is Arcane => 'player' in candidate && candidate.team === arcane.team)
     if (alliedTargets.length === 0) return false
@@ -9564,6 +9586,9 @@ export function applySimpleSkillSummonPressure(
   const canAttack = damage > 0 && !healingWard && skill.id !== tombstoneSkillId
   const timestamp = Math.round(state.time * 1000)
   const sequence = state.summons.length
+  const familiarCloak = skill.sourceAbilityId === 5483
+    ? getOwnerSkillProfileByAbility(state, caster.id, 5482)
+    : undefined
   const spawned = Array.from({ length: count }, (_, index): SummonedUnit => {
     const angle = ((index + 1) / count) * Math.PI * 2
     const radius = 1.5 + (index % 2) * 0.55
@@ -9594,6 +9619,7 @@ export function applySimpleSkillSummonPressure(
       healingAuraPct: healingWard ? Math.max(0.01, profile.summonHealPct / 100) : 0,
       channelBound: profile.summonMode === 'channel',
       unitSeedId: unitSeed?.id,
+      cloakLayers: familiarCloak?.profile.cloakMaxLayers,
     }
   })
   state.summons = [...state.summons, ...spawned]
@@ -9611,6 +9637,115 @@ const tombstoneSkillId = 'h077_decay_zombie_standard_3_5444'
 const spiritBearSkillId = 'h072_druid_dual_innate_1_1342'
 const summonFamiliarsSkillId = 'h084_gargoyle_brood_standard_4_5483'
 const deathWardSkillId = 'h023_witch_shaman_standard_4_5141'
+const spiritLinkAbilityId = 7309
+const savageRoarAbilityId = 5414
+const graveChillAbilityId = 5480
+const gravekeepersCloakAbilityId = 5482
+
+function getOwnerSkillProfileByAbility(state: SimulationState, ownerId: string, sourceAbilityId: number) {
+  const caster = state.arcanes.find((arcane) => arcane.id === ownerId)
+  const skill = caster && getArcaneRuntimeSkills(caster).find((candidate) => candidate.sourceAbilityId === sourceAbilityId)
+  const level = caster && skill ? getSimpleSkillLevel(caster, skill) : 0
+  if (!caster || !skill || level <= 0) return undefined
+  return { caster, skill, profile: getSkillEffectProfile(skill, level) }
+}
+
+function resolveLinkedSummonSkillEffects(
+  state: SimulationState,
+  caster: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+  target: CombatTarget,
+  profile: ReturnType<typeof getSkillEffectProfile>,
+  manaCost: number,
+  commitCast: boolean,
+) {
+  if (skill.sourceAbilityId === graveChillAbilityId) {
+    if (!('player' in target) || target.team === caster.team) return false
+    applyTowerAggro(state, target.team, caster.id)
+    applyCreepAggro(state, target.team, caster.id)
+    addTimedEffect(state, target, {
+      sourceId: `${caster.id}-${skill.id}`,
+      sourceName: skill.name,
+      sourceTeam: caster.team,
+      kind: 'slow',
+      polarity: 'negative',
+      value: profile.moveSpeedPct,
+      modifiers: { attackSpeedPct: -profile.attackSpeedPct },
+      duration: profile.duration,
+    })
+    addTimedEffect(state, caster, {
+      sourceId: `${caster.id}-${skill.id}`,
+      sourceName: skill.name,
+      sourceTeam: caster.team,
+      kind: 'buff',
+      polarity: 'positive',
+      value: 1,
+      modifiers: { moveSpeedPct: profile.moveSpeedPct, attackSpeedPct: profile.attackSpeedPct },
+      duration: profile.duration,
+    })
+    const sharedRadiusSquared = profile.radius * profile.radius
+    state.summons.forEach((summon) => {
+      if (
+        summon.ownerId === caster.id &&
+        summon.sourceSkillId === summonFamiliarsSkillId &&
+        summon.hp > 0 &&
+        summon.expiresAt > state.time &&
+        distanceSquared(summon.pos, caster.pos) <= sharedRadiusSquared
+      ) {
+        summon.sharedBuffUntil = state.time + profile.duration
+      }
+    })
+    addSimpleSkillEffect(state, caster, target)
+    if (commitCast) {
+      finishSimpleSkillCast(state, caster, skill, manaCost, target)
+      registerCombatSkillReservation(state, caster, skill, level, target, profile)
+    }
+    return true
+  }
+
+  if (skill.sourceAbilityId !== savageRoarAbilityId) return undefined
+  const centers = [
+    caster.pos,
+    ...state.summons
+      .filter((summon) => summon.ownerId === caster.id && summon.sourceSkillId === spiritBearSkillId && summon.hp > 0 && summon.expiresAt > state.time)
+      .map((summon) => summon.pos),
+  ]
+  const radiusSquared = profile.radius * profile.radius
+  const enemies = state.arcanes.filter((enemy) => (
+    enemy.team !== caster.team &&
+    enemy.stats.hp > 0 &&
+    enemy.respawn <= state.time &&
+    centers.some((center) => distanceSquared(center, enemy.pos) <= radiusSquared)
+  ))
+  if (enemies.length === 0) return false
+  enemies.forEach((enemy) => addTimedEffect(state, enemy, {
+    sourceId: `${caster.id}-${skill.id}-fear`,
+    sourceName: skill.name,
+    sourceTeam: caster.team,
+    kind: 'fear',
+    polarity: 'negative',
+    value: 1,
+    duration: profile.fearDuration,
+  }))
+  centers.forEach((center) => {
+    state.effects = addAttackEffect(state.effects, {
+      kind: 'arcane',
+      action: 'skill',
+      sourceId: caster.id,
+      targetKind: 'arcane',
+      team: caster.team,
+      from: center,
+      to: center,
+      createdAt: state.time,
+    })
+  })
+  if (commitCast) {
+    finishSimpleSkillCast(state, caster, skill, manaCost, caster)
+    registerCombatSkillReservation(state, caster, skill, level, enemies[0], profile)
+  }
+  return true
+}
 
 type ConditionalSummonDeathTarget = {
   id: string
@@ -9922,8 +10057,92 @@ function updateSpiritBearRuntime(state: SimulationState, bear: SummonedUnit, del
   const leashRange = (source.profile.summonLeashRange || 1100) / 140
   if (distanceSquared(bear.pos, source.caster.pos) <= leashRange * leashRange) return false
   bear.targetId = undefined
-  bear.pos = moveToward(bear.pos, source.caster.pos, bear.moveSpeed * delta)
+  bear.pos = moveToward(bear.pos, source.caster.pos, getEffectiveSummonMoveSpeed(state, bear) * delta)
   return true
+}
+
+function updateFamiliarCloak(state: SimulationState, familiar: SummonedUnit) {
+  if (familiar.sourceSkillId !== summonFamiliarsSkillId) return
+  const cloak = getOwnerSkillProfileByAbility(state, familiar.ownerId, gravekeepersCloakAbilityId)
+  if (!cloak || cloak.profile.cloakMaxLayers <= 0) return
+  if (distanceSquared(familiar.pos, cloak.caster.pos) > cloak.profile.radius * cloak.profile.radius) return
+  if (familiar.cloakLayers === undefined) familiar.cloakLayers = cloak.profile.cloakMaxLayers
+  if (familiar.cloakLayers >= cloak.profile.cloakMaxLayers) {
+    familiar.cloakNextRecoveryAt = undefined
+    return
+  }
+  if (familiar.cloakNextRecoveryAt === undefined) {
+    familiar.cloakNextRecoveryAt = state.time + cloak.profile.cloakRecoveryTime
+    return
+  }
+  if (state.time < familiar.cloakNextRecoveryAt) return
+  familiar.cloakLayers = Math.min(cloak.profile.cloakMaxLayers, familiar.cloakLayers + 1)
+  familiar.cloakNextRecoveryAt = familiar.cloakLayers < cloak.profile.cloakMaxLayers
+    ? state.time + cloak.profile.cloakRecoveryTime
+    : undefined
+}
+
+export function getEffectiveSummonMoveSpeed(state: SimulationState, summon: SummonedUnit) {
+  let bonusPct = 0
+  if (summon.sourceSkillId === spiritBearSkillId) {
+    bonusPct += getOwnerSkillProfileByAbility(state, summon.ownerId, spiritLinkAbilityId)?.profile.linkedSummonMoveSpeedPct ?? 0
+  }
+  if (summon.sourceSkillId === summonFamiliarsSkillId && (summon.sharedBuffUntil ?? 0) > state.time) {
+    bonusPct += getOwnerSkillProfileByAbility(state, summon.ownerId, graveChillAbilityId)?.profile.moveSpeedPct ?? 0
+  }
+  return summon.moveSpeed * (1 + bonusPct)
+}
+
+export function getEffectiveSummonAttackInterval(state: SimulationState, summon: SummonedUnit) {
+  const attackSpeedPct = summon.sourceSkillId === summonFamiliarsSkillId && (summon.sharedBuffUntil ?? 0) > state.time
+    ? getOwnerSkillProfileByAbility(state, summon.ownerId, graveChillAbilityId)?.profile.attackSpeedPct ?? 0
+    : 0
+  return summon.attackInterval / Math.max(0.2, 1 + attackSpeedPct)
+}
+
+function getSpiritLinkLifestealScale(target: CombatTarget) {
+  return isStructureLikeTarget(target) ? 0 : 'player' in target ? 1 : 0.6
+}
+
+function applySpiritLinkSummonLifesteal(
+  state: SimulationState,
+  summon: SummonedUnit,
+  target: CombatTarget,
+  dealtDamage: number,
+) {
+  if (summon.sourceSkillId !== spiritBearSkillId) return
+  const link = getOwnerSkillProfileByAbility(state, summon.ownerId, spiritLinkAbilityId)
+  const scale = getSpiritLinkLifestealScale(target)
+  if (!link || link.profile.linkedLifestealPct <= 0 || scale <= 0) return
+  const healing = dealtDamage * link.profile.linkedLifestealPct * scale
+  const liveBear = state.summons.find((candidate) => candidate.id === summon.id)
+  const liveOwner = state.arcanes.find((arcane) => arcane.id === summon.ownerId)
+  if (liveBear) liveBear.hp = Math.min(liveBear.maxHp, liveBear.hp + healing)
+  if (liveOwner) {
+    const applied = Math.min(liveOwner.stats.maxHp - liveOwner.stats.hp, healing)
+    liveOwner.stats.hp += applied
+    liveOwner.healingReceived += applied
+    liveOwner.healingDone += applied
+  }
+}
+
+function applySpiritLinkOwnerLifestealToBear(
+  state: SimulationState,
+  owner: Arcane,
+  target: CombatTarget,
+  dealtDamage: number,
+) {
+  const link = getOwnerSkillProfileByAbility(state, owner.id, spiritLinkAbilityId)
+  const scale = getSpiritLinkLifestealScale(target)
+  if (!link || link.profile.linkedLifestealPct <= 0 || scale <= 0) return
+  const bear = state.summons.find((summon) => (
+    summon.ownerId === owner.id &&
+    summon.sourceSkillId === spiritBearSkillId &&
+    summon.hp > 0 &&
+    summon.expiresAt > state.time
+  ))
+  if (!bear) return
+  bear.hp = Math.min(bear.maxHp, bear.hp + dealtDamage * link.profile.linkedLifestealPct * scale)
 }
 
 export function updateSummonedUnits(state: SimulationState, delta: number) {
@@ -9940,6 +10159,7 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
       updateTombstoneZombieSpawning(state, summon)
       continue
     }
+    updateFamiliarCloak(state, summon)
     if (summon.sourceSkillId === spiritBearSkillId && updateSpiritBearRuntime(state, summon, delta)) continue
     if (summon.sourceSkillId === summonFamiliarsSkillId && updateFamiliarRecall(state, summon)) continue
     if (summon.healingAuraPct > 0) applySummonHealingAura(state, summon, delta)
@@ -9954,7 +10174,7 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
     if (target) {
       const stopDistance = getSummonAttackCenterRange(summon, target)
       if (summon.canMove && distanceSquared(summon.pos, target.pos) > stopDistance * stopDistance) {
-        summon.pos = moveToward(summon.pos, target.pos, summon.moveSpeed * delta)
+        summon.pos = moveToward(summon.pos, target.pos, getEffectiveSummonMoveSpeed(state, summon) * delta)
       }
       continue
     }
@@ -9963,7 +10183,7 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
     if (!owner || owner.stats.hp <= 0 || owner.respawn > state.time) continue
     const followPoint = formationPoint(owner.pos, summon.id)
     if (distanceSquared(summon.pos, followPoint) > 4 * 4) {
-      summon.pos = moveToward(summon.pos, followPoint, summon.moveSpeed * delta)
+      summon.pos = moveToward(summon.pos, followPoint, getEffectiveSummonMoveSpeed(state, summon) * delta)
     }
   }
 }
@@ -11182,7 +11402,7 @@ export function resolveCombat(
   for (const summon of next.summons) {
     if (actorFilter && !actorFilter.has(summon.id)) continue
     if (pregame || !summon.canAttack || summon.hp <= 0 || summon.expiresAt <= next.time) continue
-    if (next.time < summon.lastAttack + summon.attackInterval) continue
+    if (next.time < summon.lastAttack + getEffectiveSummonAttackInterval(next, summon)) continue
     const target = summon.targetId ? getCombatTargetById(next, summon.targetId) : undefined
     if (!target || !isSummonTargetValid(next, summon, target)) continue
     const attackRange = getSummonAttackCenterRange(summon, target)
@@ -11209,6 +11429,7 @@ export function resolveCombat(
       team: summon.team,
       damageType: 'physical',
     })
+    applySpiritLinkSummonLifesteal(next, summon, target, summon.damage)
     applySummonAttackSpecials(next, summon, target)
   }
 
@@ -12678,8 +12899,21 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
     }
   } else if (targetSummon && targetSummonIndex !== undefined) {
     const summons = [...state.summons]
-    const summonDamage = finalDamage * Math.max(0, targetSummon.damageTakenMultiplier)
-    summons[targetSummonIndex] = { ...targetSummon, hp: Math.max(0, targetSummon.hp - summonDamage), lastHitBy: source }
+    const updatedSummon = { ...targetSummon }
+    let summonDamage = finalDamage * Math.max(0, targetSummon.damageTakenMultiplier)
+    if (targetSummon.sourceSkillId === summonFamiliarsSkillId) {
+      const cloak = getOwnerSkillProfileByAbility(state, targetSummon.ownerId, gravekeepersCloakAbilityId)
+      const withinAura = cloak && distanceSquared(targetSummon.pos, cloak.caster.pos) <= cloak.profile.radius * cloak.profile.radius
+      const layers = withinAura ? Math.max(0, targetSummon.cloakLayers ?? cloak.profile.cloakMaxLayers) : 0
+      if (cloak && layers > 0) {
+        summonDamage *= Math.max(0.05, 1 - layers * cloak.profile.cloakDamageReductionPct)
+        if (finalDamage >= cloak.profile.cloakMinimumDamage) {
+          updatedSummon.cloakLayers = layers - 1
+          updatedSummon.cloakNextRecoveryAt ??= state.time + cloak.profile.cloakRecoveryTime
+        }
+      }
+    }
+    summons[targetSummonIndex] = { ...updatedSummon, hp: Math.max(0, targetSummon.hp - summonDamage), lastHitBy: source }
     state.summons = summons
     if (summons[targetSummonIndex].hp <= 0) teamVisionProviderCache.delete(state)
   } else if (targetTower && targetTowerIndex !== undefined) {
@@ -13162,6 +13396,7 @@ export function performArcaneBasicAttack(state: SimulationState, arcane: Arcane,
     damageType: 'physical',
   })
   applyPostAttackItemEffects(state, arcane, target, itemAttack, dealtPhysicalDamage)
+  applySpiritLinkOwnerLifestealToBear(state, arcane, target, dealtPhysicalDamage)
   triggerOnAttackSummons(state, arcane, target)
 }
 

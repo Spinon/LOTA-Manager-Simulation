@@ -28,6 +28,12 @@ export type SkillEffectProfile = {
   critChance: number
   critMultiplier: number
   lifestealPct: number
+  linkedSummonMoveSpeedPct: number
+  linkedLifestealPct: number
+  cloakMaxLayers: number
+  cloakDamageReductionPct: number
+  cloakRecoveryTime: number
+  cloakMinimumDamage: number
   summonCount: number
   summonDuration: number
   summonTriggerDuration: number
@@ -137,6 +143,12 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
     critChance: clampPercent(getSkillValue(skill, 'critChance', level, 0)),
     critMultiplier: Math.max(1, getSkillValue(skill, 'critMultiplier', level, 100) / 100),
     lifestealPct: clampPercent(getSkillValue(skill, 'lifestealPct', level, 0)),
+    linkedSummonMoveSpeedPct: clampPercent(getSkillValue(skill, 'linkedSummonMoveSpeedPct', level, 0)),
+    linkedLifestealPct: clampPercent(getSkillValue(skill, 'linkedLifestealPct', level, 0)),
+    cloakMaxLayers: Math.max(0, Math.round(getSkillValue(skill, 'cloakMaxLayers', level, 0))),
+    cloakDamageReductionPct: clampPercent(getSkillValue(skill, 'cloakDamageReductionPct', level, 0)),
+    cloakRecoveryTime: Math.max(0, getSkillValue(skill, 'cloakRecoveryTime', level, 0)),
+    cloakMinimumDamage: Math.max(0, getSkillValue(skill, 'cloakMinimumDamage', level, 0)),
     summonCount: hasSkillTag(skill, ['summon'])
       ? Math.max(0, Math.round(getSkillValue(skill, 'summons', level, 0)))
       : 0,

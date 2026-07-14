@@ -56,6 +56,10 @@ const runtimeValueKeys = new Set([
   'barrier',
   'breakDuration',
   'channelTime',
+  'cloakDamageReductionPct',
+  'cloakMaxLayers',
+  'cloakMinimumDamage',
+  'cloakRecoveryTime',
   'cooldown',
   'critChance',
   'critMultiplier',
@@ -69,6 +73,8 @@ const runtimeValueKeys = new Set([
   'hexDuration',
   'leashDuration',
   'lifestealPct',
+  'linkedLifestealPct',
+  'linkedSummonMoveSpeedPct',
   'manaCost',
   'manaValue',
   'moveSpeedBonusPct',
@@ -263,6 +269,9 @@ function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
         : `summon trigger ${summonMode} still requires event-driven materialization`,
     )
   }
+  if ([5480, 5482, 7309].includes(skill.sourceAbilityId ?? 0)) {
+    add('linked_summon', 'complete', 'source-specific owner/summon sharing is implemented with imported values')
+  }
   if (skill.kind === 'passive') {
     add('passive', 'partial', 'common passive combat modifiers work; source-specific triggers and stacks require dedicated handlers')
   }
@@ -271,6 +280,7 @@ function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
     'damage', 'stun', 'slow', 'silence', 'root', 'fear', 'taunt', 'sleep', 'hex', 'disarm', 'break', 'mute',
     'leash', 'dispel', 'immunity', 'barrier', 'damage_over_time', 'healing_over_time', 'healing', 'mana', 'aura',
     'mobility', 'displacement', 'channeling', 'transformation', 'summon', 'passive',
+    'linked_summon',
   ])
   if (!families.some((family) => coreFamilyIds.has(family.id))) {
     add('special', 'missing', 'no declared runtime effect beyond generic targeting/cost metadata')
