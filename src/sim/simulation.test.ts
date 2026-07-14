@@ -90,6 +90,7 @@ import {
   runeSpawnPoints,
   processJungleStacks,
   processTimedEffects,
+  performArcaneBasicAttack,
   queryCreepSpatialGrid,
   resolveDeaths,
   resolveCombat,
@@ -2016,6 +2017,87 @@ let state: SimulationState = initialState
   updateSummonedUnits(skillState, 1)
   assert.equal(healingWard.canAttack, false, 'healing wards should not perform generic attacks')
   assert.ok(woundedAlly.stats.hp > woundedHp, 'healing wards should restore nearby allied health over time')
+
+  const spiderlingState = createInitialState('target-death-summon-runtime')
+  spiderlingState.time = 600
+  const brood = spiderlingState.arcanes[0]
+  const spiderlingTarget = spiderlingState.arcanes.find((candidate) => candidate.team !== brood.team)!
+  brood.heroDefinitionId = 'h053_brood_matriarch'
+  brood.skillLevels = { R: 1 }
+  brood.stats.mana = brood.stats.maxMana = 1_000
+  brood.pos = { x: 50, y: 50 }
+  spiderlingTarget.pos = { x: 51, y: 50 }
+  spiderlingTarget.stats.hp = 1
+  const spawnSpiderlings = getHeroDefinition(brood.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5279)!
+  assert.equal(castSimpleSkill(spiderlingState, brood, spawnSpiderlings, 1, spiderlingTarget, true), true)
+  assert.equal(spiderlingState.timedEffects.some((effect) => effect.kind === 'summon_mark' && effect.targetId === spiderlingTarget.id), true, 'target-death summons should mark their victim')
+  resolveDeaths(spiderlingState)
+  assert.equal(spiderlingState.summons.filter((summon) => summon.sourceSkillId === spawnSpiderlings.id).length, 4, 'a marked target death should materialize the imported spiderling count')
+
+  const eldritchState = createInitialState('debuff-death-summon-runtime')
+  eldritchState.time = 600
+  const warlock = eldritchState.arcanes[0]
+  const afflictedTarget = eldritchState.arcanes.find((candidate) => candidate.team !== warlock.team)!
+  warlock.heroDefinitionId = 'h029_soul_warlock'
+  warlock.stats.mana = warlock.stats.maxMana = 1_000
+  warlock.pos = { x: 50, y: 50 }
+  afflictedTarget.pos = { x: 51, y: 50 }
+  afflictedTarget.stats.hp = 1
+  const warlockDefinition = getHeroDefinition(warlock.heroDefinitionId)
+  const eldritchSummoning = warlockDefinition.skills!.find((candidate) => candidate.sourceAbilityId === 1274)!
+  const offensiveWarlockSkill = warlockDefinition.skills!.find((candidate) => candidate.kind === 'active' && candidate.damageType !== 'none')!
+  warlock.skillLevels = { [offensiveWarlockSkill.key]: 1 }
+  assert.equal(castSimpleSkill(eldritchState, warlock, offensiveWarlockSkill, 1, afflictedTarget, true), true)
+  resolveDeaths(eldritchState)
+  assert.equal(eldritchState.summons.filter((summon) => summon.sourceSkillId === eldritchSummoning.id).length, 1, 'an enemy dying under a Warlock skill should summon one minor imp')
+
+  const reincarnationState = createInitialState('self-death-summon-runtime')
+  reincarnationState.time = 600
+  const monarch = reincarnationState.arcanes[0]
+  const monarchKiller = reincarnationState.arcanes.find((candidate) => candidate.team !== monarch.team)!
+  monarch.heroDefinitionId = 'h034_skeleton_monarch'
+  monarch.skillLevels = { R: 1 }
+  monarch.stats.mana = 500
+  monarch.stats.hp = 0
+  monarch.lastHitBy = { id: monarchKiller.id, label: monarchKiller.player, team: monarchKiller.team }
+  const reincarnation = getHeroDefinition(monarch.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5089)!
+  resolveDeaths(reincarnationState)
+  assert.equal(reincarnationState.summons.filter((summon) => summon.sourceSkillId === reincarnation.id).length, 2, 'Reincarnation should summon the level-one skeleton count on death')
+  assert.equal(reincarnationState.arcanes[0].itemCooldowns[reincarnation.id], 780, 'death-triggered summons should enter the official cooldown')
+
+  const noManaReincarnationState = createInitialState('self-death-summon-no-mana')
+  noManaReincarnationState.time = 600
+  const exhaustedMonarch = noManaReincarnationState.arcanes[0]
+  exhaustedMonarch.heroDefinitionId = 'h034_skeleton_monarch'
+  exhaustedMonarch.skillLevels = { R: 1 }
+  exhaustedMonarch.stats.mana = 0
+  exhaustedMonarch.stats.hp = 0
+  resolveDeaths(noManaReincarnationState)
+  assert.equal(noManaReincarnationState.summons.length, 0, 'Reincarnation should not trigger without its mana cost')
+
+  const fleshGolemState = createInitialState('on-attack-summon-runtime')
+  fleshGolemState.time = 600
+  const undying = fleshGolemState.arcanes[0]
+  const fleshGolemTarget = fleshGolemState.arcanes.find((candidate) => candidate.team !== undying.team)!
+  undying.heroDefinitionId = 'h077_decay_zombie'
+  undying.skillLevels = { R: 1 }
+  undying.stats.mana = undying.stats.maxMana = 1_000
+  undying.pos = { x: 50, y: 50 }
+  fleshGolemTarget.pos = { x: 51, y: 50 }
+  const fleshGolem = getHeroDefinition(undying.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5447)!
+  assert.equal(castSimpleSkill(fleshGolemState, undying, fleshGolem, 1, undefined, true), false, 'the transformation should wait for a combat target')
+  assert.equal(castSimpleSkill(fleshGolemState, undying, fleshGolem, 1, fleshGolemTarget, true), true)
+  performArcaneBasicAttack(fleshGolemState, undying, fleshGolemTarget)
+  assert.equal(fleshGolemState.summons.filter((summon) => summon.sourceSkillId === fleshGolem.id).length, 1, 'a transformed attack should summon one zombie')
+  for (let attack = 0; attack < 20; attack += 1) {
+    fleshGolemState.time += 1
+    performArcaneBasicAttack(fleshGolemState, undying, fleshGolemTarget)
+  }
+  assert.equal(fleshGolemState.summons.filter((summon) => summon.sourceSkillId === fleshGolem.id).length, 12, 'repeated transformed attacks should respect the per-owner summon cap')
+  fleshGolemState.timedEffects = []
+  const transformedSummonCount = fleshGolemState.summons.length
+  performArcaneBasicAttack(fleshGolemState, undying, fleshGolemTarget)
+  assert.equal(fleshGolemState.summons.length, transformedSummonCount, 'attacks outside the transformation should not summon zombies')
 
   const passiveCarrier = skillState.arcanes[0]
   skillState.timedEffects = []

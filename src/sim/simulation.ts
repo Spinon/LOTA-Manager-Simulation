@@ -44,7 +44,7 @@ import {
   wisdomRuneXp,
 } from '../game-systems/nonCombatFormulas.ts'
 import { expectedTimeToKillStructure, isBackdoorProtected, structureDamageTaken } from '../game-systems/structureFormulas.ts'
-import { getPrimarySkillUsageSituation, getSkillAiUsageScore, getSkillEffectProfile, hasSkillTag, isConfirmedGlobalSkill, type SkillSummonArchetype } from '../game-systems/skillRuntime.ts'
+import { getPrimarySkillUsageSituation, getSkillAiUsageScore, getSkillEffectProfile, hasSkillTag, isConfirmedGlobalSkill, type SkillSummonArchetype, type SkillSummonMode } from '../game-systems/skillRuntime.ts'
 import {
   abilityUpgradeItemIds,
   getContextualSkillIds,
@@ -670,7 +670,7 @@ export type TimedEffect = {
   sourceId: string
   sourceName: string
   sourceTeam: TeamId
-  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot'
+  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot' | 'summon_mark'
   polarity: 'positive' | 'negative'
   value: number
   stacks: number
@@ -9002,14 +9002,16 @@ export function castSimpleSkill(
   if (skill.sourceAbilityId === 1497) return castTwinBladeStanceSwitch(state, arcane, skill, level)
   if (skill.sourceAbilityId === 5607) return castStoredRemnantSkill(state, arcane, skill, level, fallbackTarget)
   if (isConfirmedGlobalSkill(skill) && !shouldCastGlobalSkill(state, arcane, skill)) return false
-  const target = getSimpleSkillTarget(state, arcane, skill, level, fallbackTarget, preferFallbackTarget)
+  const profile = getSkillEffectProfile(skill, level)
+  const target = profile.summonMode === 'on_attack'
+    ? fallbackTarget ? arcane : undefined
+    : getSimpleSkillTarget(state, arcane, skill, level, fallbackTarget, preferFallbackTarget)
   if (!target) return false
   if ('player' in target && target.team !== arcane.team && !shouldCommitOffensiveSkill(state, arcane, target, skill)) {
     return false
   }
   const manaCost = getSimpleSkillManaCost(arcane, skill, level)
   if (arcane.stats.mana < manaCost) return false
-  const profile = getSkillEffectProfile(skill, level)
   if (!canCommitCoordinatedSkill(state, arcane, skill, level, target, profile)) return false
   if (isSimpleSkillChanneled(skill)) {
     return startSimpleSkillChannel(state, arcane, skill, level, target, profile, manaCost)
@@ -9090,6 +9092,28 @@ export function resolveSimpleSkillEffects(
     damageType: getSimpleSkillDamageType(skill),
   }
 
+  if (profile.summonMode === 'on_attack' && profile.summonCount > 0) {
+    addTimedEffect(state, arcane, {
+      sourceId: source.id,
+      sourceName: skill.name,
+      sourceTeam: arcane.team,
+      kind: 'buff',
+      polarity: 'positive',
+      value: 1,
+      modifiers: {
+        damagePct: Math.min(0.35, profile.damage / 100),
+        moveSpeedPct: Math.min(0.25, getSimpleSkillNumericValue(skill, 'movement_bonus', level, 0) / 100),
+      },
+      duration: profile.duration,
+    })
+    addSimpleSkillEffect(state, arcane, arcane)
+    if (commitCast) {
+      finishSimpleSkillCast(state, arcane, skill, manaCost, arcane)
+      registerCombatSkillReservation(state, arcane, skill, level, arcane, profile)
+    }
+    return true
+  }
+
   if (isPositiveSimpleSkill(skill)) {
     const alliedTargets = affectedTargets.filter((candidate): candidate is Arcane => 'player' in candidate && candidate.team === arcane.team)
     if (alliedTargets.length === 0) return false
@@ -9146,6 +9170,7 @@ export function resolveSimpleSkillEffects(
         })
       }
     }
+    markConditionalSummonDeathTarget(state, arcane, skill, profile, affectedTarget)
   })
 
   applySimpleSkillMobility(state, arcane, target, skill, profile)
@@ -9488,8 +9513,14 @@ export function applySimpleSkillSummonPressure(
   skill: HeroSkillDefinition,
   profile: ReturnType<typeof getSkillEffectProfile>,
   center: Point = caster.pos,
+  triggerMode?: SkillSummonMode,
+  countOverride?: number,
 ) {
-  if (profile.summonCount <= 0 || !['cast', 'channel'].includes(profile.summonMode)) return
+  const requestedCount = countOverride ?? profile.summonCount
+  const supportsTrigger = triggerMode
+    ? profile.summonMode === triggerMode
+    : profile.summonMode === 'cast' || profile.summonMode === 'channel'
+  if (requestedCount <= 0 || !supportsTrigger) return
   const duration = Math.max(4, Math.min(7200, profile.summonDuration || profile.duration))
   if (duration >= 3600) {
     state.summons = state.summons.filter((summon) => (
@@ -9499,7 +9530,7 @@ export function applySimpleSkillSummonPressure(
   const ownerSummons = state.summons.filter((summon) => summon.ownerId === caster.id && summon.hp > 0)
   const ownerLimit = profile.summonArchetype === 'ward' ? 24 : 12
   const castLimit = profile.summonArchetype === 'ward' ? 12 : 10
-  const count = Math.min(castLimit, profile.summonCount, Math.max(0, ownerLimit - ownerSummons.length))
+  const count = Math.min(castLimit, requestedCount, Math.max(0, ownerLimit - ownerSummons.length))
   if (count <= 0) return
   const levelScale = 1 + Math.max(0, caster.stats.level - 1) * 0.035
   const swarmScale = 1 / Math.sqrt(Math.max(1, count))
@@ -9519,12 +9550,13 @@ export function applySimpleSkillSummonPressure(
   const canMove = !ward && (healingWard || profile.summonMoveSpeed > 0 || illusion || clone || archetype === 'unit')
   const canAttack = damage > 0 && !healingWard
   const timestamp = Math.round(state.time * 1000)
+  const sequence = state.summons.length
   const spawned = Array.from({ length: count }, (_, index): SummonedUnit => {
     const angle = ((index + 1) / count) * Math.PI * 2
     const radius = 1.5 + (index % 2) * 0.55
     const pos = clampToMapBounds({ x: center.x + Math.cos(angle) * radius, y: center.y + Math.sin(angle) * radius })
     return {
-      id: `${caster.id}-summon-${skill.id}-${timestamp}-${index}`,
+      id: `${caster.id}-summon-${skill.id}-${timestamp}-${sequence}-${index}`,
       ownerId: caster.id,
       sourceSkillId: skill.id,
       name: `${skill.name} ${index + 1}`,
@@ -9552,6 +9584,120 @@ export function applySimpleSkillSummonPressure(
   })
   state.summons = [...state.summons, ...spawned]
   teamVisionProviderCache.delete(state)
+}
+
+const eldritchSummoningSkillId = 'h029_soul_warlock_innate_1_1274'
+const reincarnationSummonSkillId = 'h034_skeleton_monarch_standard_4_5089'
+const soulWarlockHeroId = 'h029_soul_warlock'
+const decayZombieHeroId = 'h077_decay_zombie'
+const fleshGolemSkillId = 'h077_decay_zombie_standard_4_5447'
+
+export function markConditionalSummonDeathTarget(
+  state: SimulationState,
+  caster: Arcane,
+  skill: HeroSkillDefinition,
+  profile: ReturnType<typeof getSkillEffectProfile>,
+  target: CombatTarget,
+) {
+  if (target.id === caster.id || ('team' in target && target.team === caster.team)) return
+
+  if (profile.summonMode === 'target_death' && profile.summonCount > 0) {
+    addSummonDeathMark(state, target.id, caster, skill, Math.max(1, profile.summonTriggerDuration || profile.duration))
+  }
+
+  if (skill.id === eldritchSummoningSkillId || caster.heroDefinitionId !== soulWarlockHeroId) return
+  const deathTrigger = getArcaneRuntimeSkills(caster).find((candidate) => {
+    if (candidate.id !== eldritchSummoningSkillId) return false
+    const candidateLevel = getSimpleSkillLevel(caster, candidate)
+    return candidateLevel > 0 && getSkillEffectProfile(candidate, candidateLevel).summonMode === 'on_death'
+  })
+  if (deathTrigger) {
+    addSummonDeathMark(state, target.id, caster, deathTrigger, Math.max(1, profile.duration))
+  }
+}
+
+function addSummonDeathMark(
+  state: SimulationState,
+  targetId: string,
+  caster: Arcane,
+  skill: HeroSkillDefinition,
+  duration: number,
+) {
+  const sourceId = `${caster.id}-${skill.id}`
+  const id = `summon_mark-${targetId}-${sourceId}`
+  const mark: TimedEffect = {
+    id,
+    targetId,
+    sourceId,
+    sourceName: skill.name,
+    sourceTeam: caster.team,
+    kind: 'summon_mark',
+    polarity: 'negative',
+    value: 1,
+    stacks: 1,
+    dispelType: 'basic',
+    createdAt: state.time,
+    expiresAt: state.time + duration,
+  }
+  state.timedEffects = [mark, ...state.timedEffects.filter((effect) => effect.id !== id)].slice(0, 160)
+}
+
+export function resolveConditionalSummonDeathTriggers(
+  state: SimulationState,
+  deadTargets: Array<{ id: string; pos: Point }>,
+  deadArcanes: Arcane[],
+) {
+  const deadTargetIds = new Set(deadTargets.map((target) => target.id))
+  const consumedMarkIds = new Set<string>()
+
+  for (const mark of state.timedEffects) {
+    if (mark.kind !== 'summon_mark' || mark.expiresAt <= state.time || !deadTargetIds.has(mark.targetId)) continue
+    const caster = state.arcanes.find((arcane) => mark.sourceId.startsWith(`${arcane.id}-`))
+    const target = deadTargets.find((candidate) => candidate.id === mark.targetId)
+    const skill = caster && getArcaneRuntimeSkills(caster).find((candidate) => mark.sourceId === `${caster.id}-${candidate.id}`)
+    if (!caster || !target || !skill) continue
+    const level = getSimpleSkillLevel(caster, skill)
+    if (level <= 0) continue
+    const profile = getSkillEffectProfile(skill, level)
+    if (profile.summonMode !== 'target_death' && profile.summonMode !== 'on_death') continue
+    applySimpleSkillSummonPressure(state, caster, skill, profile, target.pos, profile.summonMode)
+    consumedMarkIds.add(mark.id)
+  }
+
+  if (consumedMarkIds.size > 0) {
+    state.timedEffects = state.timedEffects.filter((effect) => !consumedMarkIds.has(effect.id))
+  }
+
+  for (const caster of deadArcanes) {
+    if (hasTimedEffect(state, caster.id, 'break')) continue
+    const skill = getArcaneRuntimeSkills(caster).find((candidate) => candidate.id === reincarnationSummonSkillId)
+    if (!skill) continue
+    const level = getSimpleSkillLevel(caster, skill)
+    if (level <= 0 || caster.stats.mana < getSimpleSkillManaCost(caster, skill, level)) continue
+    if ((caster.itemCooldowns[skill.id] ?? 0) > state.time) continue
+    const profile = getSkillEffectProfile(skill, level)
+    if (profile.summonMode !== 'on_death' || profile.summonCount <= 0) continue
+    caster.stats.mana -= getSimpleSkillManaCost(caster, skill, level)
+    setArcaneSkillCooldown(state, caster, skill.id, state.time + getSimpleSkillCooldown(skill, level))
+    applySimpleSkillSummonPressure(state, caster, skill, profile, caster.pos, 'on_death')
+  }
+}
+
+export function triggerOnAttackSummons(state: SimulationState, caster: Arcane, target: CombatTarget) {
+  if (caster.heroDefinitionId !== decayZombieHeroId) return
+  for (const skill of getArcaneRuntimeSkills(caster)) {
+    if (skill.id !== fleshGolemSkillId) continue
+    const level = getSimpleSkillLevel(caster, skill)
+    if (level <= 0) continue
+    const profile = getSkillEffectProfile(skill, level)
+    if (profile.summonMode !== 'on_attack' || profile.summonCount <= 0) continue
+    const sourceId = `${caster.id}-${skill.id}`
+    const active = state.timedEffects.some((effect) => (
+      effect.targetId === caster.id && effect.sourceId === sourceId && effect.kind === 'buff' && effect.expiresAt > state.time
+    ))
+    if (!active) continue
+    applySimpleSkillSummonPressure(state, caster, skill, profile, target.pos, 'on_attack')
+  }
 }
 
 export function updateSummonedUnits(state: SimulationState, delta: number) {
@@ -11428,6 +11574,14 @@ export function resolveDeaths(state: SimulationState): SimulationState {
   const deadBoss = next.boss.hp <= 0 && next.boss.respawn <= next.time ? next.boss : undefined
   const deadArcanes = next.arcanes.filter((arcane) => arcane.stats.hp <= 0 && arcane.respawn <= next.time)
 
+  resolveConditionalSummonDeathTriggers(next, [
+    ...deadCreeps,
+    ...deadSummons.filter((summon) => summon.hp <= 0),
+    ...deadCamps,
+    ...(deadBoss ? [deadBoss] : []),
+    ...deadArcanes,
+  ], deadArcanes)
+
   if (deadCreeps.length) {
     const deniedCreeps = deadCreeps.filter(isDeniedCreep)
     deniedCreeps.forEach((creep) => {
@@ -12415,6 +12569,7 @@ export function performArcaneBasicAttack(state: SimulationState, arcane: Arcane,
     damageType: 'physical',
   })
   applyPostAttackItemEffects(state, arcane, target, itemAttack, dealtPhysicalDamage)
+  triggerOnAttackSummons(state, arcane, target)
 }
 
 export const creepTacticalActivationMargin = 6

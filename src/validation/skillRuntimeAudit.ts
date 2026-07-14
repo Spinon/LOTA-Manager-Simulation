@@ -82,6 +82,7 @@ const runtimeValueKeys = new Set([
   'slowPct',
   'stun',
   'summonDuration',
+  'summonTriggerDuration',
   'summonArchetype',
   'summonMode',
   'summonHp',
@@ -238,12 +239,12 @@ function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
   const summonTagged = tags.some((tag) => tag.toLowerCase() === 'summon')
   if (summonTagged || summonCount > 0) {
     const summonMode = typeof skill.values.summonMode === 'string' ? skill.values.summonMode : 'unknown'
-    const materialized = ['cast', 'channel'].includes(summonMode) && summonCount > 0
+    const materialized = ['cast', 'channel', 'target_death', 'on_attack', 'on_death'].includes(summonMode) && summonCount > 0
     add(
       'summon',
       materialized ? 'partial' : 'missing',
       materialized
-        ? 'cast summons use imported unit stats and specialized unit, ward, healing ward, illusion, or clone behavior'
+        ? 'summons use imported unit stats and cast, channel, target-death, attack, or death event materialization'
         : `summon trigger ${summonMode} still requires event-driven materialization`,
     )
   }

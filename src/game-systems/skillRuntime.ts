@@ -30,6 +30,7 @@ export type SkillEffectProfile = {
   lifestealPct: number
   summonCount: number
   summonDuration: number
+  summonTriggerDuration: number
   summonArchetype: SkillSummonArchetype
   summonMode: SkillSummonMode
   summonHp: number
@@ -125,6 +126,7 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
       ? Math.max(0, Math.round(getSkillValue(skill, 'summons', level, 0)))
       : 0,
     summonDuration: Math.max(0, getSkillValue(skill, 'summonDuration', level, duration)),
+    summonTriggerDuration: Math.max(0, getSkillValue(skill, 'summonTriggerDuration', level, duration)),
     summonArchetype: getSkillStringValue(skill, 'summonArchetype', 'unit' as SkillSummonArchetype),
     summonMode: getSkillStringValue(skill, 'summonMode', 'cast' as SkillSummonMode),
     summonHp: Math.max(0, getSkillValue(skill, 'summonHp', level, 0)),

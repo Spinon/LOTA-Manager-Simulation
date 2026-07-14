@@ -33,10 +33,7 @@ namedControlValueKeys.forEach((valueKey) => {
 const summonRows = audit.rows.filter((row) => row.families.some((family) => family.id === 'summon'))
 const materializedSummons = summonRows.filter((row) => row.families.some((family) => family.id === 'summon' && family.status === 'partial'))
 const pendingSummons = summonRows.filter((row) => row.families.some((family) => family.id === 'summon' && family.status === 'missing'))
-assert.equal(materializedSummons.length, 21, 'cast and channeled summon skills should use independent units')
-assert.equal(pendingSummons.length, 4, 'only event-driven summon triggers should remain without materialization')
-assert.ok(pendingSummons.every((row) => row.tags.some((tag) => (
-  ['summon_target_death', 'summon_on_attack', 'summon_on_death'].includes(tag)
-))), 'pending summons must declare an event-driven trigger')
+assert.equal(materializedSummons.length, 25, 'all imported summon triggers should use independent units')
+assert.equal(pendingSummons.length, 0, 'event-driven summon triggers should be materialized')
 
 console.log('skill runtime audit tests passed')

@@ -169,6 +169,7 @@ function toHeroSkillDefinition(kit: RuntimeKit, skill: RuntimeSkill, key: string
 }
 
 function getSkillKind(skill: RuntimeSkill): SkillKind {
+  if (skill.sourceInternalName === 'skeleton_king_reincarnation') return 'passive'
   if (skill.behaviorFlags.includes('PASSIVE')) return 'passive'
   if (skill.behaviorFlags.includes('ATTACK') && skill.behaviorFlags.includes('AUTOCAST')) return 'passive'
   if (skill.category === 'innate' && skill.sourceInternalName !== 'lone_druid_spirit_bear') return 'passive'
@@ -227,24 +228,25 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
   if (summonProfile) {
     values.summonArchetype = summonProfile.archetype
     values.summonMode = summonProfile.mode
-  }
-  if (summonProfile && (summonProfile.mode === 'cast' || summonProfile.mode === 'channel')) {
     assignAlias(values, skill, 'summons', [
       'summons', 'spawn_count', 'max_treants', 'max_skeleton_charges', 'count', 'ward_count',
       'hawk_count', 'wolf_count', 'familiar_count', 'images_count', 'skeleton_count',
-      'extra_spirit_count_exort', 'extra_spirit_count_quas',
+      'extra_spirit_count_exort', 'extra_spirit_count_quas', 'shard_skeleton_count',
+      'spawn_zombie_on_attack',
     ])
     if (!hasPositiveNumber(Array.isArray(values.summons) ? values.summons : [])) values.summons = [1]
     assignAlias(values, skill, 'summonDuration', [
       'summon_duration', 'golem_duration', 'skeleton_duration', 'treant_duration', 'spiderling_duration',
-      'spirit_duration', 'wolf_duration', 'illusion_duration', 'duration', 'AbilityDuration',
+      'spirit_duration', 'wolf_duration', 'illusion_duration', 'minor_imp_duration', 'zombie_duration',
+      'duration', 'AbilityDuration',
     ])
+    assignAlias(values, skill, 'summonTriggerDuration', ['buff_duration'])
     if (skill.sourceInternalName === 'witch_doctor_death_ward') values.summonDuration = [...skill.channelTimes]
     if (['lone_druid_spirit_bear', 'visage_summon_familiars'].includes(skill.sourceInternalName)) values.summonDuration = [7200]
     assignAlias(values, skill, 'summonHp', [
       'eidelon_max_health', 'golem_hp', 'boar_base_max_health', 'hawk_base_max_health',
       'ward_hp_tooltip', 'skeleton_health', 'treant_health', 'tooltip_spiderling_hp', 'spirit_hp',
-      'wolf_hp', 'bear_hp', 'familiar_hp',
+      'wolf_hp', 'bear_hp', 'familiar_hp', 'imp_health',
     ])
     assignAlias(values, skill, 'summonHits', [
       'healing_ward_hits_to_kill_tooltip', 'hits_to_destroy_tooltip', 'ward_health', 'tombstone_health',
@@ -252,15 +254,16 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
     assignAlias(values, skill, 'summonDamage', [
       'ward_damage_tooltip', 'eidelon_base_damage', 'golem_dmg', 'boar_base_damage',
       'skeleton_damage_tooltip', 'treant_damage', 'spirit_damage', 'wolf_damage',
-      'familiar_attack_damage', 'dive_damage', 'damage',
+      'familiar_attack_damage', 'dive_damage', 'imp_explode', 'damage',
     ])
+    if (skill.sourceInternalName === 'broodmother_spawn_spiderlings') delete values.summonDamage
     assignAlias(values, skill, 'summonRange', [
       'attack_range_tooltip', 'eidolon_attack_range', 'familiar_attack_range',
     ])
     assignAlias(values, skill, 'summonMoveSpeed', [
       'healing_ward_movespeed_tooltip', 'eidelon_base_movespeed', 'golem_movement_speed',
       'boar_base_movespeed', 'min_move_speed', 'treant_movespeed', 'wolf_movespeed',
-      'bear_movespeed', 'familiar_base_movespeed',
+      'bear_movespeed', 'familiar_base_movespeed', 'imp_speed',
     ])
     assignAlias(values, skill, 'summonAttackInterval', ['hawk_base_attack_interval', 'wolf_bat', 'bear_bat', 'attack_rate'])
     assignAlias(values, skill, 'summonVision', [

@@ -531,6 +531,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Auditoria geral: 6 completas, 627 parciais, 12 aproximações e 89 ausentes. Próxima rodada: implementar os quatro gatilhos condicionais e as habilidades próprias das unidades invocadas.
 - Suíte completa, lint, build e smoke visual verdes. Benchmark de 5 minutos: mediana 315,8x wall / 242,6x CPU, digest `534bd00e225a74ea` preservado.
 
+**Progresso de gatilhos condicionais de summon (2026-07-14)**:
+- Os quatro gatilhos restantes foram conectados aos eventos reais da simulação. Spawn Spiderlings marca o alvo por 20s e materializa 4/5/6 unidades se ele morrer; Eldritch Summoning marca inimigos afetados pelas skills do Warlock e cria um imp na morte.
+- Reincarnation deixou de entrar no seletor de casts comuns. Na morte do Arcane, valida break, nível, mana e cooldown antes de criar 2/3/4 skeletons; o cooldown oficial permanece no estado durante o respawn.
+- Flesh Golem virou uma transformação temporária de 40s. Cada ataque básico conectado durante o efeito cria um zombie de 15s, com limite de 12 summons vivos por dono para impedir crescimento irrestrito.
+- Quantidade, duração, janela de gatilho, HP, dano e velocidade usam aliases oficiais. O dano inicial de Spawn Spiderlings foi separado do ataque das unidades; quando o seed não traz dano próprio, o summon usa o escalonamento genérico.
+- Os hooks possuem fast path por herói e só consultam o kit relevante. Testes headless cobrem os quatro gatilhos, mana/cooldown, ausência do efeito fora da transformação, limite por dono e normalização dos valores.
+- Todos os 25 summons reais agora são materializados. Auditoria geral: 6 completas, 631 parciais, 12 aproximações e 85 ausentes. Suíte completa, lint e build verdes; benchmark de 5 minutos: mediana 294,0x wall / 258,8x CPU, digest `534bd00e225a74ea` preservado.
+- Próxima rodada da T16: implementar habilidades próprias das unidades invocadas, começando por explosão do imp, comportamento dos skeletons e propagação de spiderlings.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens
