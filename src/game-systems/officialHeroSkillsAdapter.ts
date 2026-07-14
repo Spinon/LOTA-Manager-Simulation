@@ -85,6 +85,29 @@ const summonImportProfiles: Record<string, SummonImportProfile> = {
   ringmaster_funhouse_mirror: { archetype: 'illusion', mode: 'cast' },
 }
 
+const summonUnitSeedIds: Record<string, string> = {
+  juggernaut_healing_ward: 'summon_healing_banner',
+  shadow_shaman_mass_serpent_ward: 'summon_serpent_ward',
+  enigma_demonic_conversion: 'summon_eidolon',
+  warlock_rain_of_chaos: 'summon_infernal_golem',
+  beastmaster_summon_razorback: 'summon_alpha_boar',
+  beastmaster_summon_raptor: 'summon_hawk_scout',
+  venomancer_plague_ward: 'summon_plague_ward',
+  skeleton_king_bone_guard: 'summon_skeleton_warrior',
+  skeleton_king_reincarnation: 'summon_skeleton_warrior',
+  furion_force_of_nature: 'summon_lesser_treant',
+  clinkz_wind_walk: 'summon_skeleton_archer',
+  broodmother_spawn_spiderlings: 'summon_spiderling',
+  invoker_forge_spirit: 'summon_forged_spirit',
+  lycan_summon_wolves: 'summon_spirit_wolf',
+  lone_druid_spirit_bear: 'summon_spirit_bear',
+  chaos_knight_phantasm: 'summon_strong_illusion',
+  naga_siren_mirror_image: 'summon_basic_illusion',
+  visage_summon_familiars: 'summon_stone_familiar',
+  arc_warden_tempest_double: 'summon_tempest_clone',
+  ringmaster_funhouse_mirror: 'summon_basic_illusion',
+}
+
 const runtimeKits = HERO_SKILL_RUNTIME_OFFICIAL as unknown as readonly RuntimeKit[]
 const runtimeKitByHeroId = new Map(runtimeKits.map((kit) => [kit.heroId, kit]))
 const deprecatedHeroAliases: Record<string, string> = {
@@ -228,6 +251,8 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
   if (summonProfile) {
     values.summonArchetype = summonProfile.archetype
     values.summonMode = summonProfile.mode
+    const summonUnitSeedId = summonUnitSeedIds[skill.sourceInternalName.toLowerCase()]
+    if (summonUnitSeedId) values.summonUnitSeedId = summonUnitSeedId
     assignAlias(values, skill, 'summons', [
       'summons', 'spawn_count', 'max_treants', 'max_skeleton_charges', 'count', 'ward_count',
       'hawk_count', 'wolf_count', 'familiar_count', 'images_count', 'skeleton_count',
@@ -302,6 +327,10 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
     if (skill.sourceInternalName === 'witch_doctor_death_ward') {
       assignUpgradeAlias(values, skill, 'summonScepterBounceRadius', ['bounce_radius'], 'scepter')
       assignUpgradeAlias(values, skill, 'summonScepterLifestealPct', ['scepter_lifesteal'], 'scepter')
+    }
+    if (skill.sourceInternalName === 'visage_summon_familiars') {
+      assignAlias(values, skill, 'summonReturnDistance', ['return_distance'])
+      assignAlias(values, skill, 'summonRecallDuration', ['recall_duration'])
     }
   }
   assignAlias(values, skill, 'manaValue', ['mana_burned', 'mana_drain', 'mana_restore'])

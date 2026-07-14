@@ -558,6 +558,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Auditoria permanece em 6 completas, 631 parciais, 12 aproximações e 85 ausentes. Suíte completa, lint e build verdes; benchmark headless de 5 minutos: mediana 314,2x wall / 232,9x CPU, digest `534bd00e225a74ea` preservado.
 - Próxima rodada da T16: auditar subskills ausentes do seed principal (Stone Form, Return e equivalentes) e as habilidades próprias das famílias restantes de summons.
 
+**Progresso de subskills via unit seeds (2026-07-14)**:
+- Vinte skills oficiais agora apontam para o `summonUnitSeedId` correspondente. HP, dano, alcance, visão, movimento, BAT e bounty do import oficial continuam prioritários; o unit seed preenche somente valores ausentes. Isso corrige, por exemplo, o ataque-base do Spirit Bear para a média adaptada de 55 sem sobrescrever HP, velocidade ou BAT oficiais.
+- Familiars usam `stone_drop` do unit seed: 60 de dano mágico, stun de 1s, raio de 250 e cooldown independente de 20s por unidade. A forma invulnerável com regeneração continua pendente porque nem o feed oficial do herói nem o unit seed adaptado fornecem duração/ritmo de cura; a aproximação atual cobre apenas o impacto declarado pelo seed.
+- O alt-cast de Summon Familiars virou recall automático da IA: ao ultrapassar as 1200 unidades importadas, o Familiar deixa de agir por 4s e reaparece na formação do dono. Estado de cooldown, recall e identidade do unit seed atravessam o replay.
+- Spirit Bear usa `entangling_claws` do unit seed em ataques: chance determinística de 20% e root de 1,2s. Seu Return defensivo continua representado pelo leash já implementado, que cancela alvos fora das 1100 unidades e o move de volta ao dono sem criar um cooldown inexistente no seed.
+- Testes headless cobrem mapeamento, prioridade de valores, fallback de stats, Stone Form/cooldown, recall/replay e proc de Entangling Claws. Auditoria permanece em 6 completas, 631 parciais, 12 aproximações e 85 ausentes. Suíte completa, lint e build verdes; benchmark de 5 minutos: mediana 302,9x wall / 239,9x CPU, digest `534bd00e225a74ea` preservado.
+- Próxima rodada da T16: executar as passivas restantes dos unit seeds: crítico dos wolves, slow do boar, venenos de wards/spiderlings, Melting Attack, splash/on-death do golem e split dos eidolons.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

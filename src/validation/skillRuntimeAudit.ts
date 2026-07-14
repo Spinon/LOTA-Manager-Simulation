@@ -85,6 +85,7 @@ const runtimeValueKeys = new Set([
   'summonTriggerDuration',
   'summonArchetype',
   'summonMode',
+  'summonUnitSeedId',
   'summonHp',
   'summonHits',
   'summonDamage',
@@ -109,6 +110,8 @@ const runtimeValueKeys = new Set([
   'summonBacklashPct',
   'summonScepterBounceRadius',
   'summonScepterLifestealPct',
+  'summonReturnDistance',
+  'summonRecallDuration',
   'summons',
   'tauntDuration',
 ])

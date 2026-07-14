@@ -3,12 +3,28 @@ import {
   LANE_CREEP_SEEDS,
   NEUTRAL_CREEP_SEEDS,
   STRUCTURE_UNIT_SEEDS,
+  SUMMON_UNIT_SEEDS,
   type CampTier,
+  type UnitAbilitySeed,
   type UnitSeed,
 } from '../data/unitSeeds.ts'
 import { worldVisionToMapRadius } from './visionFormulas.ts'
 
 export type LaneCreepKind = 'melee' | 'mage' | 'siege' | 'flagbearer'
+
+export type SummonUnitRuntimeSeed = {
+  id: string
+  hp: number
+  healthRegen: number
+  damage: number
+  range: number
+  vision: number
+  movementSpeed: number
+  attackInterval: number
+  goldBounty: number
+  xpBounty: number
+  abilities: readonly UnitAbilitySeed[]
+}
 
 const laneSeedByKind: Record<LaneCreepKind, string> = {
   melee: 'lane_melee_creep',
@@ -107,6 +123,31 @@ export function getBossSeed() {
   const seed = BOSS_UNIT_SEEDS.find((candidate) => candidate.id === 'ancient_boss_roshan_like') ?? BOSS_UNIT_SEEDS[0]
   if (!seed) throw new Error('Missing boss seed')
   return seed
+}
+
+const summonSeedById = new Map(SUMMON_UNIT_SEEDS.map((seed) => [seed.id, seed]))
+const summonRuntimeSeedById = new Map<string, SummonUnitRuntimeSeed>()
+
+export function getSummonUnitRuntimeSeed(seedId: string): SummonUnitRuntimeSeed | undefined {
+  const cached = summonRuntimeSeedById.get(seedId)
+  if (cached) return cached
+  const seed = summonSeedById.get(seedId)
+  if (!seed) return undefined
+  const runtimeSeed = {
+    id: seed.id,
+    hp: seed.baseStats.maxHealth,
+    healthRegen: seed.baseStats.healthRegen,
+    damage: Math.round(average(seed.baseStats.damageMin, seed.baseStats.damageMax)),
+    range: seed.baseStats.attackRange,
+    vision: seed.baseStats.dayVision,
+    movementSpeed: seed.baseStats.movementSpeed,
+    attackInterval: seed.baseStats.baseAttackTime,
+    goldBounty: Math.round(average(seed.bounty.goldMin, seed.bounty.goldMax)),
+    xpBounty: seed.bounty.xp,
+    abilities: seed.abilities,
+  }
+  summonRuntimeSeedById.set(seedId, runtimeSeed)
+  return runtimeSeed
 }
 
 export function getStructureSeedByRole(team: 'blue' | 'red', lane: 'top' | 'mid' | 'bottom' | 'base', tier: number, structureType = 'tower') {

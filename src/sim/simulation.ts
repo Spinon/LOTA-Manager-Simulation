@@ -70,6 +70,7 @@ import {
   getLaneCreepWaveKinds,
   getNeutralCampReward,
   getNeutralCampStats,
+  getSummonUnitRuntimeSeed,
   getStructureStatsByRole,
   type LaneCreepKind,
 } from '../game-systems/unitSeedsAdapter.ts'
@@ -386,6 +387,9 @@ export type SummonedUnit = {
   healingAuraPct: number
   channelBound: boolean
   variant?: SummonVariant
+  unitSeedId?: string
+  nextAbilityAt?: number
+  recallStartedAt?: number
   targetId?: string
   lastHitBy?: CombatSource
 }
@@ -2302,7 +2306,7 @@ type RenderSummonFrame = [
   string, string, string, string, TeamId, number, number, number, number, number,
   number, number, number, number, number, number, number, number, number,
   SkillSummonArchetype, boolean, boolean, number, number, boolean, string | undefined,
-  SummonVariant | undefined,
+  SummonVariant | undefined, string | undefined, number | undefined, number | undefined,
 ]
 type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number, AttackEffect['action'], string]
 type RenderMarkerFrame = [TeamId, number, number, number, number]
@@ -2453,6 +2457,7 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
       summon.canMove, summon.canAttack, renderNumber(summon.damageTakenMultiplier),
       renderNumber(summon.healingAuraPct), summon.channelBound, summon.targetId,
       summon.variant,
+      summon.unitSeedId, summon.nextAbilityAt, summon.recallStartedAt,
     ]),
     towerHp: state.towers.map((tower) => renderNumber(tower.hp)),
     structureHp: state.structures.map((structure) => renderNumber(structure.hp)),
@@ -2600,7 +2605,8 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       lastAttack: summon[14], spawnedAt: summon[15], expiresAt: summon[16], goldReward: summon[17],
       xpReward: summon[18], archetype: summon[19], canMove: summon[20], canAttack: summon[21],
       damageTakenMultiplier: summon[22], healingAuraPct: summon[23], channelBound: summon[24],
-      targetId: summon[25], variant: summon[26],
+      targetId: summon[25], variant: summon[26], unitSeedId: summon[27],
+      nextAbilityAt: summon[28], recallStartedAt: summon[29],
     })),
     towers: staticData.towers.map((tower, index): Tower => ({ ...tower, pos: tower.pos, hp: frame.towerHp[index] ?? 0, lastAttack: 0 })),
     structures: staticData.structures.map((structure, index): Structure => ({ ...structure, pos: structure.pos, hp: frame.structureHp[index] ?? 0, lastAttack: 0 })),
@@ -9543,14 +9549,16 @@ export function applySimpleSkillSummonPressure(
   const clone = archetype === 'clone'
   const ward = archetype === 'ward'
   const healingWard = archetype === 'healing_ward'
+  const unitSeed = profile.summonUnitSeedId ? getSummonUnitRuntimeSeed(profile.summonUnitSeedId) : undefined
   const importedHp = profile.summonHits > 0 ? profile.summonHits * 90 : profile.summonHp
   const genericHp = (115 + caster.stats.maxHp * 0.16) * levelScale * (0.72 + swarmScale * 0.28)
-  const maxHp = Math.max(1, Math.round(illusion || clone ? caster.stats.maxHp : importedHp || genericHp))
+  const maxHp = Math.max(1, Math.round(illusion || clone ? caster.stats.maxHp : importedHp || unitSeed?.hp || genericHp))
   const outgoingDamage = profile.summonOutgoingDamagePct > 0 ? profile.summonOutgoingDamagePct / 100 : illusion ? 0.35 : 1
   const genericDamage = (12 + caster.stats.damage * 0.24) * levelScale * (0.7 + swarmScale * 0.3)
-  const baseDamage = clone ? caster.stats.damage : illusion ? caster.stats.damage * outgoingDamage : profile.summonDamage || genericDamage
+  const baseDamage = clone ? caster.stats.damage : illusion ? caster.stats.damage * outgoingDamage : profile.summonDamage || unitSeed?.damage || genericDamage
   const damage = healingWard ? 0 : Math.max(0, Math.round(baseDamage))
-  const ranged = ward || profile.summonRange >= 300 || hasAnySimpleSkillTag(skill, ['spirit', 'archer', 'ranged'])
+  const seedRange = unitSeed?.range ?? 0
+  const ranged = ward || profile.summonRange >= 300 || seedRange >= 300 || hasAnySimpleSkillTag(skill, ['spirit', 'archer', 'ranged'])
   const canMove = !ward && (healingWard || profile.summonMoveSpeed > 0 || illusion || clone || archetype === 'unit')
   const canAttack = damage > 0 && !healingWard && skill.id !== tombstoneSkillId
   const timestamp = Math.round(state.time * 1000)
@@ -9570,20 +9578,21 @@ export function applySimpleSkillSummonPressure(
       hp: maxHp,
       maxHp,
       damage,
-      range: profile.summonRange > 0 ? profile.summonRange / 140 : ranged ? 5.8 : 2.2,
-      visionRange: profile.summonVision > 0 ? profile.summonVision / 140 : ranged ? 8.5 : 7,
-      moveSpeed: canMove ? (profile.summonMoveSpeed > 0 ? profile.summonMoveSpeed / 45 : ranged ? 3.8 : 4.4) : 0,
-      attackInterval: profile.summonAttackInterval > 0 ? profile.summonAttackInterval : ranged ? 1.35 : 1.05,
+      range: profile.summonRange > 0 ? profile.summonRange / 140 : seedRange > 0 ? seedRange / 140 : ranged ? 5.8 : 2.2,
+      visionRange: profile.summonVision > 0 ? profile.summonVision / 140 : unitSeed?.vision ? unitSeed.vision / 140 : ranged ? 8.5 : 7,
+      moveSpeed: canMove ? (profile.summonMoveSpeed > 0 ? profile.summonMoveSpeed / 45 : unitSeed?.movementSpeed ? unitSeed.movementSpeed / 45 : ranged ? 3.8 : 4.4) : 0,
+      attackInterval: profile.summonAttackInterval > 0 ? profile.summonAttackInterval : unitSeed?.attackInterval || (ranged ? 1.35 : 1.05),
       lastAttack: state.time - 0.5,
       spawnedAt: state.time,
       expiresAt: state.time + duration,
-      goldReward: Math.max(0, Math.round(profile.summonGoldBounty || (12 + caster.stats.level * 1.5) * swarmScale)),
-      xpReward: Math.max(0, Math.round(profile.summonXpBounty || (18 + caster.stats.level * 2) * swarmScale)),
+      goldReward: Math.max(0, Math.round(profile.summonGoldBounty || unitSeed?.goldBounty || (12 + caster.stats.level * 1.5) * swarmScale)),
+      xpReward: Math.max(0, Math.round(profile.summonXpBounty || unitSeed?.xpBounty || (18 + caster.stats.level * 2) * swarmScale)),
       canMove,
       canAttack,
       damageTakenMultiplier: profile.summonIncomingDamagePct > 0 ? profile.summonIncomingDamagePct / 100 : illusion ? 3 : 1,
       healingAuraPct: healingWard ? Math.max(0.01, profile.summonHealPct / 100) : 0,
       channelBound: profile.summonMode === 'channel',
+      unitSeedId: unitSeed?.id,
     }
   })
   state.summons = [...state.summons, ...spawned]
@@ -9757,6 +9766,99 @@ function getSummonOwnerSkillProfile(state: SimulationState, summon: SummonedUnit
   return { caster, skill, profile: getSkillEffectProfile(skill, level) }
 }
 
+function getSummonUnitAbility(summon: SummonedUnit, abilityId: string) {
+  return summon.unitSeedId
+    ? getSummonUnitRuntimeSeed(summon.unitSeedId)?.abilities.find((ability) => ability.id === abilityId)
+    : undefined
+}
+
+function getSummonAbilityNumber(
+  ability: ReturnType<typeof getSummonUnitAbility>,
+  key: string,
+  fallback = 0,
+) {
+  const value = ability?.values?.[key]
+  if (Array.isArray(value)) return typeof value[0] === 'number' ? value[0] : fallback
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback
+}
+
+function updateFamiliarRecall(state: SimulationState, familiar: SummonedUnit) {
+  const source = getSummonOwnerSkillProfile(state, familiar)
+  if (!source) return false
+  const recallDuration = source.profile.summonRecallDuration
+  const returnDistance = source.profile.summonReturnDistance / 140
+  if (recallDuration <= 0 || returnDistance <= 0) return false
+
+  if (familiar.recallStartedAt !== undefined) {
+    if (state.time < familiar.recallStartedAt + recallDuration) return true
+    familiar.pos = clampToMapBounds(formationPoint(source.caster.pos, familiar.id))
+    familiar.targetId = undefined
+    familiar.recallStartedAt = undefined
+    state.skillMarkers = [
+      ...state.skillMarkers.slice(-23),
+      {
+        id: `familiar-recall-${familiar.id}-${state.time}`,
+        team: familiar.team,
+        pos: { ...familiar.pos },
+        label: 'Recall do Familiar',
+        createdAt: state.time,
+        expiresAt: state.time + 0.8,
+      },
+    ]
+    return true
+  }
+
+  if (distanceSquared(familiar.pos, source.caster.pos) <= returnDistance * returnDistance) return false
+  familiar.targetId = undefined
+  familiar.recallStartedAt = state.time
+  return true
+}
+
+export function tryUseSummonActiveAbility(state: SimulationState, summon: SummonedUnit) {
+  if (summon.unitSeedId !== 'summon_stone_familiar') return false
+  const stoneDrop = getSummonUnitAbility(summon, 'stone_drop')
+  if (!stoneDrop || (summon.nextAbilityAt ?? 0) > state.time) return false
+  const radius = getSummonAbilityNumber(stoneDrop, 'radius', 250) / 140
+  const targets = state.arcanes.filter((arcane) => (
+    arcane.team !== summon.team && arcane.stats.hp > 0 && arcane.respawn <= state.time &&
+    distanceSquared(arcane.pos, summon.pos) <= radius * radius
+  ))
+  if (targets.length === 0) return false
+
+  const damage = getSummonAbilityNumber(stoneDrop, 'damage', 60)
+  const stunDuration = getSummonAbilityNumber(stoneDrop, 'stun', 1)
+  summon.nextAbilityAt = state.time + getSummonAbilityNumber(stoneDrop, 'cooldown', 20)
+  targets.forEach((target) => {
+    damageEntity(state, target.id, damage, {
+      id: summon.id,
+      label: `${summon.name}: Stone Form`,
+      team: summon.team,
+      damageType: 'magical',
+    })
+    addTimedEffect(state, target, {
+      sourceId: `${summon.id}:stone_drop`,
+      sourceName: `${summon.name}: Stone Form`,
+      sourceTeam: summon.team,
+      kind: 'stun',
+      polarity: 'negative',
+      value: 1,
+      duration: stunDuration,
+    })
+  })
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `stone-form-${summon.id}-${state.time}`,
+      team: summon.team,
+      pos: { ...summon.pos },
+      label: 'Stone Form',
+      createdAt: state.time,
+      expiresAt: state.time + 0.9,
+    },
+  ]
+  return true
+}
+
 export function updateTombstoneZombieSpawning(state: SimulationState, tombstone: SummonedUnit) {
   const source = getSummonOwnerSkillProfile(state, tombstone)
   if (!source) return
@@ -9838,7 +9940,9 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
       continue
     }
     if (summon.sourceSkillId === spiritBearSkillId && updateSpiritBearRuntime(state, summon, delta)) continue
+    if (summon.sourceSkillId === summonFamiliarsSkillId && updateFamiliarRecall(state, summon)) continue
     if (summon.healingAuraPct > 0) applySummonHealingAura(state, summon, delta)
+    if (tryUseSummonActiveAbility(state, summon)) continue
     const retained = summon.canAttack && summon.targetId ? getCombatTargetById(state, summon.targetId) : undefined
     const target = summon.canAttack
       ? retained && isSummonTargetValid(state, summon, retained)
@@ -9966,6 +10070,26 @@ export function resolveSummonExplosion(state: SimulationState, summon: SummonedU
 }
 
 export function applySummonAttackSpecials(state: SimulationState, summon: SummonedUnit, target: CombatTarget) {
+  const entanglingClaws = getSummonUnitAbility(summon, 'entangling_claws')
+  if (entanglingClaws && 'player' in target) {
+    const chance = getSummonAbilityNumber(entanglingClaws, 'chance', 20) / 100
+    const roll = seededRandomUnit(
+      state.matchSeed,
+      `summon-proc:${summon.id}:${target.id}:${Math.round(state.time * 1000)}`,
+    )
+    if (roll < chance) {
+      addTimedEffect(state, target, {
+        sourceId: `${summon.id}:entangling_claws`,
+        sourceName: `${summon.name}: Entangling Claws`,
+        sourceTeam: summon.team,
+        kind: 'root',
+        polarity: 'negative',
+        value: 1,
+        duration: getSummonAbilityNumber(entanglingClaws, 'root', 1.2),
+      })
+    }
+  }
+
   if (summon.sourceSkillId === summonFamiliarsSkillId && 'player' in target) {
     addTimedEffect(state, target, {
       sourceId: summon.id,

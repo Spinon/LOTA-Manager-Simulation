@@ -6,6 +6,7 @@ import {
   getLaneCreepWaveKinds,
   getNeutralCampReward,
   getNeutralCampStats,
+  getSummonUnitRuntimeSeed,
 } from './unitSeedsAdapter.ts'
 
 {
@@ -40,6 +41,16 @@ import {
 
 {
   assert.equal(getBossSeed().id, 'ancient_boss_roshan_like')
+}
+
+{
+  const familiar = getSummonUnitRuntimeSeed('summon_stone_familiar')!
+  const bear = getSummonUnitRuntimeSeed('summon_spirit_bear')!
+  assert.equal(familiar.damage, 30)
+  assert.equal(familiar.abilities.find((ability) => ability.id === 'stone_drop')?.values?.cooldown, 20)
+  assert.equal(bear.damage, 55)
+  assert.equal(bear.abilities.find((ability) => ability.id === 'entangling_claws')?.values?.chance, 20)
+  assert.equal(getSummonUnitRuntimeSeed('missing-summon'), undefined)
 }
 
 console.log('unitSeedsAdapter tests passed')

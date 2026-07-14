@@ -2170,16 +2170,43 @@ let state: SimulationState = initialState
   applySimpleSkillSummonPressure(familiarState, gargoyle, familiarSkill, getSkillEffectProfile(familiarSkill, 1), gargoyle.pos)
   const familiars = familiarState.summons.filter((summon) => summon.sourceSkillId === familiarSkill.id)
   assert.equal(familiars.length, 2)
+  assert.ok(familiars.every((familiar) => familiar.unitSeedId === 'summon_stone_familiar'))
   familiars.forEach((familiar) => {
     familiar.pos = { ...familiarTarget.pos }
     familiar.targetId = familiarTarget.id
     familiar.lastAttack = familiarState.time - familiar.attackInterval
   })
+  const familiarHpBeforeStoneForm = familiarTarget.stats.hp
+  updateSummonedUnits(familiarState, 0.5)
+  assert.ok(familiarState.arcanes.find((arcane) => arcane.id === familiarTarget.id)!.stats.hp < familiarHpBeforeStoneForm, 'Familiars should use their Stone Form unit ability against nearby Arcanes')
+  assert.equal(hasTimedEffect(familiarState, familiarTarget.id, 'stun'), true)
+  assert.ok(familiars.every((familiar) => familiar.nextAbilityAt === 620), 'each Familiar should track an independent Stone Form cooldown')
+  const familiarHpDuringCooldown = familiarState.arcanes.find((arcane) => arcane.id === familiarTarget.id)!.stats.hp
+  updateSummonedUnits(familiarState, 0.5)
+  assert.equal(familiarState.arcanes.find((arcane) => arcane.id === familiarTarget.id)!.stats.hp, familiarHpDuringCooldown, 'Stone Form should not repeat before its cooldown')
+  const familiarFrame = createMatchRenderFrame(familiarState)
+  const familiarStaticData = createMatchStaticData(familiarState)
+  const familiarReplay = materializeMatchRenderFrame(familiarFrame, familiarStaticData)
+  assert.equal(familiarReplay.summons[0].unitSeedId, 'summon_stone_familiar')
+  assert.equal(familiarReplay.summons[0].nextAbilityAt, 620)
+  const familiarReplayStore = new ReplayFrameStore()
+  familiarReplayStore.appendChunk(new ReplayChunkEncoder().encode([familiarFrame]))
+  const compressedFamiliarReplay = materializeMatchRenderFrame(familiarReplayStore.get(0), familiarStaticData)
+  assert.equal(compressedFamiliarReplay.summons[0].unitSeedId, 'summon_stone_familiar')
+  assert.equal(compressedFamiliarReplay.summons[0].nextAbilityAt, 620)
   resolveCombat(familiarState, createTickFrameContext(), new Set(familiars.map((familiar) => familiar.id)))
   const familiarCorrosion = familiarState.timedEffects.filter((effect) => (
     effect.targetId === familiarTarget.id && effect.modifiers?.armorFlat === -1
   ))
   assert.equal(familiarCorrosion.length, 2, 'each Familiar should maintain its own stacking armor-reduction debuff')
+  familiarState.arcanes.filter((arcane) => arcane.team !== gargoyle.team).forEach((enemy) => { enemy.pos = { x: 85, y: 85 } })
+  familiars[0].pos = { x: 70, y: 50 }
+  updateSummonedUnits(familiarState, 0.5)
+  assert.equal(familiars[0].recallStartedAt, 600, 'a distant Familiar should begin the imported recall channel')
+  familiarState.time += 4
+  updateSummonedUnits(familiarState, 0.5)
+  assert.equal(familiars[0].recallStartedAt, undefined)
+  assert.ok(distance(familiars[0].pos, gargoyle.pos) < 4, 'recall should return the Familiar to its owner after the imported duration')
 
   const bearState = createInitialState('spirit-bear-runtime')
   bearState.time = 600
@@ -2191,6 +2218,18 @@ let state: SimulationState = initialState
   druid.pos = { x: 50, y: 50 }
   applySimpleSkillSummonPressure(bearState, druid, bearSkill, getSkillEffectProfile(bearSkill, 1), druid.pos)
   const spiritBear = bearState.summons[0]
+  assert.equal(spiritBear.unitSeedId, 'summon_spirit_bear')
+  assert.equal(spiritBear.damage, 55, 'Spirit Bear should use the adapted unit seed when the official summon skill omits attack damage')
+  spiritBear.pos = { x: 51, y: 50 }
+  bearKiller.pos = { x: 51, y: 50 }
+  bearKiller.stats.maxHp = bearKiller.stats.hp = 100_000
+  for (let attempt = 0; attempt < 60 && !hasTimedEffect(bearState, bearKiller.id, 'root'); attempt += 1) {
+    bearState.time += spiritBear.attackInterval
+    spiritBear.targetId = bearKiller.id
+    spiritBear.lastAttack = bearState.time - spiritBear.attackInterval
+    resolveCombat(bearState, createTickFrameContext(), new Set([spiritBear.id]))
+  }
+  assert.equal(hasTimedEffect(bearState, bearKiller.id, 'root'), true, 'Spirit Bear attacks should deterministically roll Entangling Claws')
   spiritBear.pos = { x: 70, y: 50 }
   spiritBear.hp -= 100
   spiritBear.targetId = bearKiller.id

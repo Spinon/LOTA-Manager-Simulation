@@ -33,6 +33,7 @@ export type SkillEffectProfile = {
   summonTriggerDuration: number
   summonArchetype: SkillSummonArchetype
   summonMode: SkillSummonMode
+  summonUnitSeedId: string
   summonHp: number
   summonHits: number
   summonDamage: number
@@ -57,6 +58,8 @@ export type SkillEffectProfile = {
   summonBacklashPct: number
   summonScepterBounceRadius: number
   summonScepterLifestealPct: number
+  summonReturnDistance: number
+  summonRecallDuration: number
   isDamageOverTime: boolean
   isHealingOverTime: boolean
   isArea: boolean
@@ -141,6 +144,7 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
     summonTriggerDuration: Math.max(0, getSkillValue(skill, 'summonTriggerDuration', level, duration)),
     summonArchetype: getSkillStringValue(skill, 'summonArchetype', 'unit' as SkillSummonArchetype),
     summonMode: getSkillStringValue(skill, 'summonMode', 'cast' as SkillSummonMode),
+    summonUnitSeedId: getSkillStringValue(skill, 'summonUnitSeedId', ''),
     summonHp: Math.max(0, getSkillValue(skill, 'summonHp', level, 0)),
     summonHits: Math.max(0, getSkillValue(skill, 'summonHits', level, 0)),
     summonDamage: Math.max(0, getSkillValue(skill, 'summonDamage', level, 0)),
@@ -165,6 +169,8 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
     summonBacklashPct: clampPercent(getSkillValue(skill, 'summonBacklashPct', level, 0)),
     summonScepterBounceRadius: Math.max(0, getSkillValue(skill, 'summonScepterBounceRadius', level, 0)),
     summonScepterLifestealPct: clampPercent(getSkillValue(skill, 'summonScepterLifestealPct', level, 0)),
+    summonReturnDistance: Math.max(0, getSkillValue(skill, 'summonReturnDistance', level, 0)),
+    summonRecallDuration: Math.max(0, getSkillValue(skill, 'summonRecallDuration', level, 0)),
     isDamageOverTime: hasSkillTag(skill, ['damage_over_time', 'dot', 'poison', 'aura_dot', 'burn']),
     isHealingOverTime: hasSkillTag(skill, ['heal_over_time', 'hot', 'regen', 'regeneration']),
     isArea: skill.target === 'area' || getSkillValue(skill, 'radius', level, 0) > 0,
