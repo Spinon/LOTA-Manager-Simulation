@@ -1,0 +1,42 @@
+{
+  "task": "T32",
+  "date": "2026-07-13",
+  "seed": "performance-reference",
+  "mode": "full-match-event-clock-replay-off",
+  "runs": 3,
+  "baseline": {
+    "commit": "c16f46f",
+    "wallSecondsMedian": 10.18,
+    "wallRateMedian": 251.8,
+    "cpuSecondsMedian": 12.80,
+    "cpuRateMedian": 200.2
+  },
+  "candidate": {
+    "wallSecondsMedian": 9.93,
+    "wallRateMedian": 258.2,
+    "cpuSecondsMedian": 12.22,
+    "cpuRateMedian": 209.7
+  },
+  "improvement": {
+    "wallTimePercent": 2.5,
+    "wallRatePercent": 2.5,
+    "cpuTimePercent": 4.5,
+    "cpuRatePercent": 4.7
+  },
+  "profile": {
+    "enrichCombatScenarioBlackboardsInclusivePercent": [6.37, 5.81],
+    "updateCombatAiFoundationInclusivePercent": [11.40, 10.90],
+    "createPlayerAiContextInclusivePercent": [6.49, 6.09],
+    "getRouteCreepTargetSelfPercent": [2.57, 1.79]
+  },
+  "determinism": {
+    "simulatedSeconds": 2562.5,
+    "winner": "dusk",
+    "kills": "14-50",
+    "digest": "0870297d913be664",
+    "preserved": true
+  },
+  "rejectedExperiments": [
+    "carrying the analyzed game-state cache across updateTeamPlans and updateTeamCalls"
+  ]
+}

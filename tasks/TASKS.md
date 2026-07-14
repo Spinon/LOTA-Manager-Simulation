@@ -722,7 +722,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ### [!] T28 - Ilhas táticas e timing wheel de eventos
 
-> Bloqueada - A arquitetura, o estado SoA, o replay por trajetórias e os campos de ameaça chegaram a 2,56x o baseline T24, mas o critério desta task exige 3x.
+> Bloqueada - A arquitetura, o estado SoA, o replay por trajetórias e os frames compartilhados chegaram a aproximadamente 2,62x o baseline T24, mas o critério desta task exige 3x.
 
 **Objetivo**: reservar 30Hz para regiões realmente contestadas e saltar períodos sem interação relevante.
 
@@ -741,6 +741,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Benchmark completo (`performance-reference`): `fixed` 100,2x wall / 79,3x CPU; `event` 144,3x wall / 116,1x CPU, com 77,0% menos ticks globais.
 - Ganho normalizado da primeira entrega: +44,0% wall e +46,4% CPU. Naquele estágio, o candidato alcançou 1,26x o baseline T24 (114,2x) e abriu as T29/T30.
 - Após T29-T31, a comparação controlada alcançou 291,9x wall, ou 2,56x o baseline T24. O próximo custo relevante está nas passadas de combate/blackboard e no targeting de rota; ainda faltam 17,4% sobre a taxa atual para atingir 342,6x.
+- A T32 adicionou +2,5% wall e +4,7% CPU em comparação controlada. Aplicado ao melhor resultado normalizado anterior, o acumulado estimado chega a 299,3x (2,62x T24); ainda faltam cerca de 14,5% para 342,6x.
 - Soltar o relógio da cadência do replay chegou a 172,8x, porém alterou a partida de 56:13/29-48 para 41:50/7-59; a variante foi mantida apenas como opção de benchmark e não foi adotada no Worker.
 - Testes, lint, build, digest determinístico curto e smoke test visual aprovados. Dados completos em `reports/timing-wheel-audit.json`.
 
@@ -809,6 +810,31 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Índices compartilhados de Arcanes foram rejeitados porque atualizações transitórias durante o `.map` tornam referências anteriores obsoletas. Um índice persistente de creeps também foi rejeitado porque a coleção pode trocar membros mantendo referência e tamanho. Ambos foram removidos após o digest detectar a diferença.
 - Em comparação A/B de três partidas no mesmo ambiente, a mediana caiu de 9,34s para 8,78s wall (-6,0%) e de 12,31s para 10,63s CPU (-13,6%). A taxa subiu de 274,4x para 291,9x wall e de 208,1x para 241,2x CPU.
 - Os dois lados terminaram em 42:43, vitória Dusk, placar 14-50 e digest `0870297d913be664`. Dados completos em `reports/arcane-threat-hotpath-audit.json`.
+
+---
+
+### [x] T32 - Frames compartilhados de percepção da IA
+
+> Concluída em 2026-07-13 - Cenários de combate e targeting de rota passaram a compartilhar dados estáveis dentro do frame sem alterar a partida.
+
+**Objetivo**: eliminar reconstruções idênticas de dados dos Arcanes, visão e objetivos dentro do mesmo frame de IA.
+
+**Escopo**:
+- Preparar uma vez por atualização os descritores estáveis de prontidão, poder, resistência e movimento dos Arcanes.
+- Reutilizar visibilidade de heróis e creeps por equipe entre encontros simultâneos.
+- Manter dentro de cada encontro apenas os campos que dependem do tipo, centro ou torre daquele combate.
+- Reutilizar candidatos de Arcanes e estruturas por time/rota entre creeps no mesmo frame.
+- Comparar a partida canônica sem render contra o baseline controlado da T31: 8,78s wall / 10,63s CPU.
+
+**Critérios**: digest, duração, vencedor e placar preservados; redução mensurável do custo de `enrichCombatScenarioBlackboards`; testes, lint e build verdes.
+
+**Resultado (2026-07-13)**:
+- Descritores de prontidão, poder, resistência e movimento dos Arcanes são preparados uma vez por atualização de combate. Visibilidade de heróis e creeps é reutilizada por equipe; apenas rotação e tank de torre continuam específicos do encontro.
+- Creeps da mesma equipe/rota compartilham candidatos visíveis e objetivos estruturais no frame. O cache de Arcanes é renovado depois do movimento dos heróis; aggro explícito continua sendo validado individualmente.
+- Contextos individuais reutilizam a seleção de creeps da própria rota e calculam GPM/contagem de luta sem arrays temporários. Uma tentativa de transportar o snapshot global através de `updateTeamPlans` alterou o digest e foi integralmente removida.
+- Em três partidas A/B no mesmo ambiente, a mediana caiu de 10,18s para 9,93s wall (-2,5%) e de 12,80s para 12,22s CPU (-4,5%). As taxas subiram de 251,8x para 258,2x wall e de 200,2x para 209,7x CPU.
+- O perfil reduziu o custo próprio de `getRouteCreepTarget` de 2,57% para 1,79%; `createPlayerAiContext` caiu de 6,49% para 6,09% e `updateCombatAiFoundation` de 11,40% para 10,90%.
+- Baseline e candidata terminaram em 42:43, vitória Dusk, placar 14-50 e digest `0870297d913be664`. Dados completos em `reports/shared-ai-frame-audit.json`.
 
 ---
 

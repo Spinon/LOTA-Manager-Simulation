@@ -418,6 +418,8 @@ export type TickFrameContext = {
   arcaneNearRouteCache: Map<Point[], Map<string, boolean>>
   attackableTowersCache: Partial<Record<TeamId, Tower[]>>
   attackableStructuresCache: Partial<Record<TeamId, Structure[]>>
+  routeArcanesCache?: Map<string, Arcane[]>
+  routeObjectivesCache?: Map<string, Array<Tower | Structure | Base>>
   visibleEnemiesCache?: Map<TeamId, Arcane[]>
   baseThreatCache?: Map<TeamId, ReturnType<typeof getBaseThreat>>
 }
@@ -1923,6 +1925,7 @@ export function tick(
     frameContext,
     executionOptions.deferArcaneSafetyUntilDecision,
   ))
+  frameContext.routeArcanesCache?.clear()
   if (next.time >= 0) next = collectRunes(next)
   if (passiveGold > 0) {
     next.arcanes = next.arcanes.map((arcane) => (
@@ -1970,6 +1973,8 @@ export function createTickFrameContext(): TickFrameContext {
     arcaneNearRouteCache: new Map(),
     attackableTowersCache: {},
     attackableStructuresCache: {},
+    routeArcanesCache: new Map(),
+    routeObjectivesCache: new Map(),
     visibleEnemiesCache: new Map(),
     baseThreatCache: new Map(),
   }
@@ -2761,26 +2766,37 @@ export function getCampFarmValueForAi(state: SimulationState, arcane: Arcane, ca
 }
 
 export function getEstimatedLaneFarmGpm(state: SimulationState, arcane: Arcane, laneCreeps: Creep[]) {
-  const farmableCreeps = laneCreeps.filter((creep) => creep.hp > 0)
-  if (farmableCreeps.length === 0) return 0
+  let firstFarmableCreep: Creep | undefined
+  let expectedGold = 0
+  const lastHitDamage = getArcaneLastHitDamage(state, arcane)
+  for (const creep of laneCreeps) {
+    if (creep.hp <= 0) continue
+    firstFarmableCreep ??= creep
+    const lastHitReadiness = creep.hp <= lastHitDamage * 1.8 ? 0.82 : 0.38
+    expectedGold += getCreepGoldReward(creep) * lastHitReadiness
+  }
+  if (!firstFarmableCreep) return 0
 
-  const expectedGold = farmableCreeps.reduce((total, creep) => {
-    const lastHitReadiness = creep.hp <= getArcaneLastHitDamage(state, arcane) * 1.8 ? 0.82 : 0.38
-    return total + getCreepGoldReward(creep) * lastHitReadiness
-  }, 0)
-  const travelSeconds = Math.min(8, distance(arcane.pos, farmableCreeps[0].pos) / Math.max(0.8, arcane.stats.moveSpeed))
+  const travelSeconds = Math.min(8, distance(arcane.pos, firstFarmableCreep.pos) / Math.max(0.8, arcane.stats.moveSpeed))
   const cycleSeconds = clampNumber(16 + travelSeconds, 14, 36)
 
   return Math.round((expectedGold / cycleSeconds) * 60)
 }
 
 export function getEstimatedLanePushGpm(arcane: Arcane, creeps: Creep[]) {
-  const visibleCreeps = creeps.filter((creep) => creep.hp > 0)
-  if (visibleCreeps.length === 0) return 0
+  let firstVisibleCreep: Creep | undefined
+  let visibleCreepCount = 0
+  let expectedGold = 0
+  for (const creep of creeps) {
+    if (creep.hp <= 0) continue
+    firstVisibleCreep ??= creep
+    visibleCreepCount += 1
+    expectedGold += getCreepGoldReward(creep) * 0.44
+  }
+  if (!firstVisibleCreep) return 0
 
-  const expectedGold = visibleCreeps.reduce((total, creep) => total + getCreepGoldReward(creep) * 0.44, 0)
-  const waveDensityBonus = Math.min(1.28, 1 + visibleCreeps.length * 0.035)
-  const cycleSeconds = clampNumber(20 + distance(arcane.pos, visibleCreeps[0].pos) / Math.max(0.9, arcane.stats.moveSpeed), 18, 44)
+  const waveDensityBonus = Math.min(1.28, 1 + visibleCreepCount * 0.035)
+  const cycleSeconds = clampNumber(20 + distance(arcane.pos, firstVisibleCreep.pos) / Math.max(0.9, arcane.stats.moveSpeed), 18, 44)
 
   return Math.round((expectedGold * waveDensityBonus / cycleSeconds) * 60)
 }
@@ -3074,6 +3090,24 @@ export function updateCombatAiFoundation(state: SimulationState): SimulationStat
   }
 }
 
+function createCombatScenarioHeroInput(state: SimulationState, arcane: Arcane) {
+  return {
+    arcane,
+    readiness: getCombatScenarioHeroReadiness(state, arcane),
+    id: arcane.id,
+    team: arcane.team,
+    role: arcane.role,
+    pos: arcane.pos,
+    healthPct: arcane.stats.hp / Math.max(1, arcane.stats.maxHp),
+    manaPct: arcane.stats.maxMana > 0 ? arcane.stats.mana / arcane.stats.maxMana : 1,
+    level: arcane.stats.level,
+    levelProgress: getLevelProgress(arcane.stats.xp),
+    moveSpeed: getEffectiveArcaneMoveSpeed(state, arcane),
+    combatPower: getCombatScenarioPower(state, arcane),
+    effectiveHealth: arcane.stats.maxHp * (1 + Math.max(0, getEffectiveArcaneArmor(state, arcane)) * 0.055),
+  }
+}
+
 export function enrichCombatScenarioBlackboards(state: SimulationState, blackboards: CombatBlackboardState): CombatBlackboardState {
   const towers = [
     ...state.towers.map((tower) => ({
@@ -3103,6 +3137,28 @@ export function enrichCombatScenarioBlackboards(state: SimulationState, blackboa
       healthPct: creep.hp / Math.max(1, creep.maxHp),
       damage: creep.damage,
     }))
+  let heroInputs: ReturnType<typeof createCombatScenarioHeroInput>[] | undefined
+  const heroVisibility: Record<TeamId, Map<string, boolean>> = { dawn: new Map(), dusk: new Map() }
+  const visibleCreeps: Partial<Record<TeamId, typeof creeps>> = {}
+
+  const getHeroInputs = () => {
+    heroInputs ??= state.arcanes
+      .filter((arcane) => arcane.stats.hp > 0 && arcane.respawn <= state.time)
+      .map((arcane) => createCombatScenarioHeroInput(state, arcane))
+    return heroInputs
+  }
+  const isHeroVisible = (team: TeamId, arcane: Arcane) => {
+    if (arcane.team === team) return true
+    const cached = heroVisibility[team].get(arcane.id)
+    if (cached !== undefined) return cached
+    const visible = isPointVisibleToTeam(state, team, arcane.pos)
+    heroVisibility[team].set(arcane.id, visible)
+    return visible
+  }
+  const getVisibleCreeps = (team: TeamId) => {
+    visibleCreeps[team] ??= creeps.filter((creep) => creep.team === team || isPointVisibleToTeam(state, team, creep.pos))
+    return visibleCreeps[team]
+  }
 
   const enrichTeam = (team: TeamId) => blackboards[team].map((board) => {
     if (board.phase === 'disengage' || board.phase === 'reset') return board
@@ -3110,29 +3166,16 @@ export function enrichCombatScenarioBlackboards(state: SimulationState, blackboa
       .filter((tower) => tower.team !== team && tower.hp > 0 && distance(tower.pos, board.center) <= tower.range + 3)
       .sort((left, right) => distance(left.pos, board.center) - distance(right.pos, board.center))[0]
     const towerTankId = enemyTower ? getTowerTankCandidate(state, team, enemyTower)?.id : undefined
-    const heroes = state.arcanes
-      .filter((arcane) => arcane.stats.hp > 0 && arcane.respawn <= state.time)
-      .map((arcane) => {
-        const readiness = getCombatScenarioHeroReadiness(state, arcane)
+    const heroes = getHeroInputs()
+      .map(({ arcane, readiness, ...hero }) => {
         return {
-          id: arcane.id,
-          team: arcane.team,
-          role: arcane.role,
-          pos: arcane.pos,
-          healthPct: arcane.stats.hp / Math.max(1, arcane.stats.maxHp),
-          manaPct: arcane.stats.maxMana > 0 ? arcane.stats.mana / arcane.stats.maxMana : 1,
-          level: arcane.stats.level,
-          levelProgress: getLevelProgress(arcane.stats.xp),
-          moveSpeed: getEffectiveArcaneMoveSpeed(state, arcane),
-          combatPower: getCombatScenarioPower(state, arcane),
-          effectiveHealth: arcane.stats.maxHp * (1 + Math.max(0, getEffectiveArcaneArmor(state, arcane)) * 0.055),
+          ...hero,
           rotationCost: getCombatRotationCost(state, arcane, board.encounterType),
-          visibleToTeam: arcane.team === team || isPointVisibleToTeam(state, team, arcane.pos),
+          visibleToTeam: isHeroVisible(team, arcane),
           canTankTower: towerTankId === arcane.id,
           ...readiness,
         }
       })
-    const visibleCreeps = creeps.filter((creep) => creep.team === team || isPointVisibleToTeam(state, team, creep.pos))
     const scenario = analyzeCombatScenario({
       teamId: team,
       encounterType: board.encounterType,
@@ -3141,7 +3184,7 @@ export function enrichCombatScenarioBlackboards(state: SimulationState, blackboa
       alliedHeroIds: board.alliedHeroIds,
       enemyHeroIds: board.enemyHeroIds,
       heroes,
-      creeps: visibleCreeps,
+      creeps: getVisibleCreeps(team),
       towers,
       phase: board.phase,
       primaryTargetId: board.primaryTargetId,
@@ -4312,12 +4355,17 @@ export function createPlayerAiContext(input: {
   const localNumbers = getLocalNumbers(input.state, input.arcane.team, input.arcane.pos, 14, input.visibleEnemies)
   const itemTimingUrgency = getItemTimingUrgency(input.arcane, input.state.time)
   const farmAppetite = getRoleFarmAppetite(input.arcane.role)
-  const laneFarmValue = Math.min(100, input.safeEnemyCreeps.filter((creep) => creep.lane === input.arcane.lane).length * 18 + (input.laneCreep ? 22 : 0))
+  const laneFarmCreeps = input.safeEnemyCreeps.filter((creep) => creep.lane === input.arcane.lane)
+  const laneFarmValue = Math.min(100, laneFarmCreeps.length * 18 + (input.laneCreep ? 22 : 0))
   const jungleFarmValue = input.economyCamp ? getCampFarmValueForAi(input.state, input.arcane, input.economyCamp) : 0
-  const estimatedLaneFarmGpm = getEstimatedLaneFarmGpm(input.state, input.arcane, input.safeEnemyCreeps.filter((creep) => creep.lane === input.arcane.lane))
+  const estimatedLaneFarmGpm = getEstimatedLaneFarmGpm(input.state, input.arcane, laneFarmCreeps)
   const estimatedJungleFarmGpm = input.economyCamp ? getEstimatedJungleFarmGpm(input.state, input.arcane, input.economyCamp) : 0
   const estimatedLanePushGpm = getEstimatedLanePushGpm(input.arcane, input.safeEnemyCreeps)
   const mentalState = getPlayerMentalState(input.state, input.arcane, input.dangerScore, Math.max(0, -localNumbers.advantage))
+  let nearbyFightCount = 0
+  for (const enemy of input.visibleEnemies) {
+    if (distance(enemy.pos, input.arcane.pos) <= 14) nearbyFightCount += 1
+  }
 
   return {
     gameTime: analyzed.gameTime,
@@ -4338,7 +4386,7 @@ export function createPlayerAiContext(input: {
     local: {
       enemyNumbersAdvantage: Math.max(0, -localNumbers.advantage),
       allySaveNeed: input.allyToDefend ? (1 - input.allyToDefend.stats.hp / input.allyToDefend.stats.maxHp) * 100 : 0,
-      nearbyFightValue: input.visibleEnemies.filter((enemy) => distance(enemy.pos, input.arcane.pos) <= 14).length * 24,
+      nearbyFightValue: nearbyFightCount * 24,
       finishEnemyValue: nearestEnemy ? (1 - nearestEnemy.stats.hp / nearestEnemy.stats.maxHp) * 100 : 0,
       objectivePressure: input.enemyTower ? 62 + (1 - input.enemyTower.hp / input.enemyTower.maxHp) * 35 : input.teamPlan?.type === 'take_boss' ? 72 : 0,
     },
@@ -7960,13 +8008,51 @@ export function isArcaneNearRouteCached(arcane: Arcane, path: Point[], frameCont
   return result
 }
 
+export function getCachedRouteEnemyArcanes(
+  state: SimulationState,
+  creep: Creep,
+  frameContext: TickFrameContext,
+) {
+  const key = `${creep.team}:${creep.lane}`
+  const cache = frameContext.routeArcanesCache ??= new Map()
+  const cached = cache.get(key)
+  if (cached) return cached
+  const path = lanePaths[creep.team][creep.lane]
+  const arcanes = state.arcanes.filter((arcane) => (
+    arcane.team !== creep.team &&
+    arcane.stats.hp > 0 &&
+    arcane.respawn <= state.time &&
+    isArcaneNearRouteCached(arcane, path, frameContext)
+  ))
+  cache.set(key, arcanes)
+  return arcanes
+}
+
+export function getCachedRouteObjectives(
+  state: SimulationState,
+  creep: Creep,
+  frameContext: TickFrameContext,
+) {
+  const key = `${creep.team}:${creep.lane}`
+  const cache = frameContext.routeObjectivesCache ??= new Map()
+  const cached = cache.get(key)
+  if (cached) return cached
+  const objectives: Array<Tower | Structure | Base> = [
+    ...getCachedAttackableEnemyTowers(state, creep.team, frameContext).filter((tower) => tower.lane === creep.lane),
+    ...getCachedAttackableEnemyStructures(state, creep.team, frameContext).filter((structure) => structure.lane === creep.lane || structure.kind === 'tower_tier_4'),
+    ...(isEnemyBaseUnlocked(state, creep.team) ? state.bases.filter((base) => base.team !== creep.team && base.hp > 0) : []),
+  ]
+  cache.set(key, objectives)
+  return objectives
+}
+
 export function getRouteCreepTarget(
   creep: Creep,
   state: SimulationState,
   mode: RouteCreepTargetMode = 'attack',
   frameContext?: TickFrameContext,
   activationMargin = 0,
-) {
+): CombatTarget | undefined {
   const structureRange = isMeleeCreep(creep) ? 3.2 : creep.range
   const visionRange = getCreepVisionRange(creep)
   const unitRange = (mode === 'attack' ? creep.range : visionRange) + activationMargin
@@ -7977,7 +8063,7 @@ export function getRouteCreepTarget(
       ? isArcaneNearRouteCached(arcane, lanePath, frameContext)
       : isNearRoute(arcane.pos, lanePath, 12)
   )
-  const selectTarget = <T extends { pos: Point }>(entities: T[], range: number) => (
+  const selectTarget = <T extends CombatTarget>(entities: T[], range: number) => (
     mode === 'attack'
       ? nearestReachableByCreep(creep, entities, range)
       : nearest(creep.pos, entities, range)
@@ -7994,14 +8080,15 @@ export function getRouteCreepTarget(
     const pullTarget = selectTarget([pullCamp], unitRange)
     if (pullTarget) return pullTarget
   }
-  const aggroTarget = creep.aggroUntil && creep.aggroUntil > state.time
-    ? selectTarget(state.arcanes.filter((arcane) => (
+  const aggroArcane = creep.aggroUntil && creep.aggroUntil > state.time
+    ? state.arcanes.find((arcane) => (
         arcane.id === creep.aggroTargetId &&
         arcane.stats.hp > 0 &&
         arcane.respawn <= state.time &&
         isArcaneNearLane(arcane)
-      )), unitRange)
+      ))
     : undefined
+  const aggroTarget = aggroArcane ? selectTarget([aggroArcane], unitRange) : undefined
   if (aggroTarget) return aggroTarget
 
   const enemyCreep = nearestRouteEnemyCreep(creep, nearbyCreeps, unitRange, mode)
@@ -8014,19 +8101,23 @@ export function getRouteCreepTarget(
     ? getCachedAttackableEnemyStructures(state, creep.team, frameContext)
     : getAttackableEnemyStructures(state, creep.team)
 
-  return selectTarget(
-    state.arcanes.filter((arcane) => (
-      arcane.team !== creep.team &&
-      arcane.stats.hp > 0 &&
-      arcane.respawn <= state.time &&
-      isArcaneNearLane(arcane)
-    )),
-    unitRange,
-  ) ?? selectTarget([
-    ...attackableTowers.filter((tower) => tower.lane === creep.lane),
-    ...attackableStructures.filter((structure) => structure.lane === creep.lane || structure.kind === 'tower_tier_4'),
-    ...(isEnemyBaseUnlocked(state, creep.team) ? state.bases.filter((base) => base.team !== creep.team && base.hp > 0) : []),
-  ], objectiveRange)
+  const routeArcanes = frameContext
+    ? getCachedRouteEnemyArcanes(state, creep, frameContext)
+    : state.arcanes.filter((arcane) => (
+        arcane.team !== creep.team &&
+        arcane.stats.hp > 0 &&
+        arcane.respawn <= state.time &&
+        isArcaneNearLane(arcane)
+      ))
+  const routeObjectives = frameContext
+    ? getCachedRouteObjectives(state, creep, frameContext)
+    : [
+        ...attackableTowers.filter((tower) => tower.lane === creep.lane),
+        ...attackableStructures.filter((structure) => structure.lane === creep.lane || structure.kind === 'tower_tier_4'),
+        ...(isEnemyBaseUnlocked(state, creep.team) ? state.bases.filter((base) => base.team !== creep.team && base.hp > 0) : []),
+      ]
+
+  return selectTarget(routeArcanes, unitRange) ?? selectTarget(routeObjectives, objectiveRange)
 }
 
 export function isCachedRouteCreepAttackTargetValid(creep: Creep, target: CombatTarget, state: SimulationState) {
