@@ -261,6 +261,9 @@ export type ChannelingAction = {
   completesAt: number
   label: string
   effectLabel: string
+  skillId?: string
+  skillLevel?: number
+  targetId?: string
 }
 export type RecentTeleport = {
   team: TeamId
@@ -1878,6 +1881,7 @@ export function tick(
     next.timedEffects = next.timedEffects.filter((effect) => effect.expiresAt > next.time)
   }
   next = processTimedEffects(next)
+  next = resolveCompletedChannels(next)
   if (next.arcanes.some((arcane) => hasExpiredArcaneSkillState(arcane, next.time))) {
     next.arcanes = next.arcanes.map((arcane) => pruneExpiredArcaneSkillStates(arcane, next.time))
   }
@@ -5087,7 +5091,6 @@ export function updateChannelingArcane(state: SimulationState, arcane: Arcane): 
   }
 
   if (state.time >= channel.completesAt) {
-    if (channel.kind === 'teleport') return completeTeleportChannel(state, arcane, channel)
     return {
       ...arcane,
       channeling: undefined,
@@ -6109,6 +6112,92 @@ export function updateArcaneMovement(
     stats: nextStats,
     travelPlan,
   }
+}
+
+export function resolveCompletedChannels(state: SimulationState): SimulationState {
+  const completedIds = state.arcanes
+    .filter((arcane) => arcane.channeling && arcane.channeling.completesAt <= state.time)
+    .map((arcane) => arcane.id)
+
+  for (const arcaneId of completedIds) {
+    const arcane = state.arcanes.find((candidate) => candidate.id === arcaneId)
+    const channel = arcane?.channeling
+    if (!arcane || !channel) continue
+
+    if (isArcaneStunned(state, arcane)) {
+      replaceArcaneInState(state, {
+        ...arcane,
+        channeling: undefined,
+        macroDecision: getChannelMacroDecision(channel),
+        microDecision: `${channel.label} interrompido`,
+        aiReason: `${channel.kind}_interrupted`,
+        decision: `${channel.label} interrompido`,
+        forceDecision: true,
+        nextDecisionAt: state.time + 0.1,
+      })
+      continue
+    }
+
+    if (channel.kind === 'teleport') {
+      replaceArcaneInState(state, completeTeleportChannel(state, arcane, channel))
+      continue
+    }
+
+    if (channel.kind === 'skill') completeSkillChannel(state, arcane, channel)
+    else replaceArcaneInState(state, completeGenericChannel(state, arcane, channel))
+  }
+
+  return state
+}
+
+function completeSkillChannel(state: SimulationState, arcane: Arcane, channel: ChannelingAction) {
+  const skill = channel.skillId
+    ? getArcaneRuntimeSkills(arcane).find((candidate) => candidate.id === channel.skillId)
+    : undefined
+  const level = channel.skillLevel ?? (skill ? getSimpleSkillLevel(arcane, skill) : 0)
+
+  replaceArcaneInState(state, completeGenericChannel(state, arcane, channel))
+  const liveArcane = state.arcanes.find((candidate) => candidate.id === arcane.id)
+  const liveTarget = channel.targetId ? getCombatTargetById(state, channel.targetId) : undefined
+  const target = liveTarget ?? (skill && liveArcane && (skill.target === 'self' || skill.target === 'point' || skill.target === 'area' || skill.target === 'global') ? liveArcane : undefined)
+  if (!skill || !liveArcane || level <= 0 || !target) return
+
+  const targetAlive = 'player' in target
+    ? target.stats.hp > 0 && target.respawn <= state.time
+    : target.hp > 0
+  if (!targetAlive && skill.target === 'unit') return
+
+  resolveSimpleSkillEffects(
+    state,
+    liveArcane,
+    skill,
+    level,
+    target,
+    getSkillEffectProfile(skill, level),
+    false,
+    channel.target,
+  )
+}
+
+function completeGenericChannel(state: SimulationState, arcane: Arcane, channel: ChannelingAction): Arcane {
+  return {
+    ...arcane,
+    channeling: undefined,
+    macroDecision: getChannelMacroDecision(channel),
+    microDecision: channel.effectLabel,
+    aiReason: `${channel.kind}_complete`,
+    decision: channel.effectLabel,
+    forceDecision: true,
+    nextDecisionAt: state.time + 0.1,
+  }
+}
+
+function replaceArcaneInState(state: SimulationState, replacement: Arcane) {
+  const index = state.arcanes.findIndex((arcane) => arcane.id === replacement.id)
+  if (index < 0) return
+  const arcanes = [...state.arcanes]
+  arcanes[index] = replacement
+  state.arcanes = arcanes
 }
 
 export type PregameBountyRunePlan = {
@@ -8847,7 +8936,74 @@ export function castSimpleSkill(
   if (arcane.stats.mana < manaCost) return false
   const profile = getSkillEffectProfile(skill, level)
   if (!canCommitCoordinatedSkill(state, arcane, skill, level, target, profile)) return false
-  const affectedTargets = getSimpleSkillAffectedTargets(state, arcane, skill, profile, target)
+  if (isSimpleSkillChanneled(skill)) {
+    return startSimpleSkillChannel(state, arcane, skill, level, target, profile, manaCost)
+  }
+  return resolveSimpleSkillEffects(state, arcane, skill, level, target, profile)
+}
+
+export function isSimpleSkillChanneled(skill: HeroSkillDefinition) {
+  return hasAnySimpleSkillTag(skill, ['channel', 'aoe_channel', 'channel_disable']) ||
+    getSimpleSkillNumericValue(skill, 'channelTime', 1, 0) > 0
+}
+
+export function getSimpleSkillChannelDuration(skill: HeroSkillDefinition, level: number) {
+  return Math.max(0.1, getSimpleSkillNumericValue(skill, 'channelTime', level, 0))
+}
+
+export function startSimpleSkillChannel(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+  target: CombatTarget,
+  profile = getSkillEffectProfile(skill, level),
+  manaCost = getSimpleSkillManaCost(arcane, skill, level),
+) {
+  const channelDuration = getSimpleSkillChannelDuration(skill, level)
+  if (channelDuration <= 0 || arcane.channeling) return false
+
+  finishSimpleSkillCast(state, arcane, skill, manaCost, target)
+  registerCombatSkillReservation(state, arcane, skill, level, target, profile, channelDuration)
+  const liveArcane = state.arcanes.find((candidate) => candidate.id === arcane.id) ?? arcane
+  liveArcane.channeling = {
+    kind: 'skill',
+    target: { ...target.pos },
+    startedAt: state.time,
+    completesAt: state.time + channelDuration,
+    label: skill.name,
+    effectLabel: `${skill.name} concluida`,
+    skillId: skill.id,
+    skillLevel: level,
+    targetId: target.id,
+  }
+  liveArcane.macroDecision = getChannelMacroDecision(liveArcane.channeling)
+  liveArcane.microDecision = `Canalizando ${skill.name} ${Math.ceil(channelDuration)}s`
+  liveArcane.aiReason = 'skill_channel'
+  liveArcane.decision = liveArcane.microDecision
+  liveArcane.forceDecision = false
+  liveArcane.nextDecisionAt = Math.max(liveArcane.nextDecisionAt, liveArcane.channeling.completesAt)
+  if (liveArcane !== arcane) {
+    arcane.stats = liveArcane.stats
+    arcane.channeling = liveArcane.channeling
+    arcane.itemCooldowns = liveArcane.itemCooldowns
+    arcane.skillStates = liveArcane.skillStates
+  }
+  return true
+}
+
+export function resolveSimpleSkillEffects(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+  target: CombatTarget,
+  profile = getSkillEffectProfile(skill, level),
+  commitCast = true,
+  centerOverride?: Point,
+) {
+  const manaCost = getSimpleSkillManaCost(arcane, skill, level)
+  const affectedTargets = getSimpleSkillAffectedTargets(state, arcane, skill, profile, target, centerOverride)
 
   const source: CombatSource = {
     id: `${arcane.id}-${skill.id}`,
@@ -8862,8 +9018,10 @@ export function castSimpleSkill(
     alliedTargets.forEach((ally) => applySimplePositiveSkill(state, arcane, skill, level, ally))
     applySimpleSkillMobility(state, arcane, target, skill, profile)
     addSimpleSkillEffect(state, arcane, target)
-    finishSimpleSkillCast(state, arcane, skill, manaCost, target)
-    registerCombatSkillReservation(state, arcane, skill, level, target, profile)
+    if (commitCast) {
+      finishSimpleSkillCast(state, arcane, skill, manaCost, target)
+      registerCombatSkillReservation(state, arcane, skill, level, target, profile)
+    }
     return true
   }
 
@@ -8924,7 +9082,7 @@ export function castSimpleSkill(
 
   addSimpleSkillEffect(state, arcane, target)
   const casted = damage > 0 || affectedTargets.some((candidate) => 'player' in candidate && hasSimpleStatusTag(skill)) || profile.manaDelta !== 0 || profile.isMobility || profile.summonCount > 0 || hasAnySimpleSkillTag(skill, ['purge', 'dispel']) || isParentSkillStateCreator(skill)
-  if (casted) {
+  if (casted && commitCast) {
     finishSimpleSkillCast(state, arcane, skill, manaCost, target)
     registerCombatSkillReservation(state, arcane, skill, level, target, profile)
   }
@@ -8990,6 +9148,7 @@ export function registerCombatSkillReservation(
   level: number,
   target: CombatTarget,
   profile = getSkillEffectProfile(skill, level),
+  impactDelay = 0.1,
 ) {
   if (!('player' in target)) return
   const board = getArcaneCombatBlackboard(state, arcane)
@@ -9004,7 +9163,7 @@ export function registerCombatSkillReservation(
         targetAllyId: target.id,
         sourceHeroId: arcane.id,
         sourceId,
-        expectedImpactTime: state.time + 0.1,
+        expectedImpactTime: state.time + impactDelay,
         expectedPreventedDamage: Math.max(80, expectedSave),
         reliability: 0.9,
         saveType: profile.heal > 0 || isSimpleHealingSkill(skill)
@@ -9031,8 +9190,8 @@ export function registerCombatSkillReservation(
         sourceHeroId: arcane.id,
         sourceId,
         controlType: getSimpleSkillControlType(skill, target),
-        expectedStart: state.time + 0.1,
-        expectedEnd: state.time + 0.1 + controlDuration,
+        expectedStart: state.time + impactDelay,
+        expectedEnd: state.time + impactDelay + controlDuration,
         priority: target.channeling ? 100 : 65,
         reliability: 0.9,
       },
@@ -9046,7 +9205,7 @@ export function registerCombatSkillReservation(
         targetId: target.id,
         sourceHeroId: arcane.id,
         sourceId,
-        expectedImpactTime: state.time + 0.15,
+        expectedImpactTime: state.time + impactDelay + 0.05,
         expectedDamage,
         reliability: profile.isArea ? 0.76 : 0.9,
         isUltimate: isUltimateSkill(skill),
@@ -9126,12 +9285,13 @@ export function getSimpleSkillAffectedTargets(
   skill: HeroSkillDefinition,
   profile: ReturnType<typeof getSkillEffectProfile>,
   primaryTarget: CombatTarget,
+  centerOverride?: Point,
 ): CombatTarget[] {
   if ((!profile.isArea && !profile.isGlobal) || !('player' in primaryTarget)) return [primaryTarget]
 
   const positive = isPositiveSimpleSkill(skill)
   const radius = profile.isGlobal ? Number.POSITIVE_INFINITY : Math.max(2.5, profile.radius)
-  const center = profile.isGlobal ? caster.pos : primaryTarget.pos
+  const center = profile.isGlobal ? caster.pos : centerOverride ?? primaryTarget.pos
   const candidates = state.arcanes.filter((candidate) => (
     candidate.stats.hp > 0 &&
     candidate.respawn <= state.time &&
@@ -9325,17 +9485,6 @@ export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, sk
       expiresAt: state.time + 1.15,
     },
   ]
-  if (hasAnySimpleSkillTag(skill, ['channel', 'aoe_channel', 'channel_disable'])) {
-    const channelDuration = Math.min(4, Math.max(0.8, getSkillEffectProfile(skill, getSimpleSkillLevel(arcane, skill)).duration * 0.45))
-    liveArcane.channeling = {
-      kind: 'skill',
-      target: target.pos,
-      startedAt: state.time,
-      completesAt: state.time + channelDuration,
-      label: skill.name,
-      effectLabel: `${skill.name} concluida`,
-    }
-  }
   if (liveArcane !== arcane) {
     arcane.stats = liveArcane.stats
     arcane.microDecision = liveArcane.microDecision

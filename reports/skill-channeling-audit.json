@@ -1,0 +1,45 @@
+{
+  "task": "T16",
+  "date": "2026-07-14",
+  "family": "channeling",
+  "catalog": {
+    "sourceHeroes": 127,
+    "officialSkills": 734,
+    "channelingComplete": 22,
+    "channelingPartial": 0,
+    "overallComplete": 5,
+    "overallPartial": 638,
+    "overallApproximate": 15,
+    "overallMissing": 76
+  },
+  "runtimeAudit": {
+    "matches": 3,
+    "minutesPerMatch": 10,
+    "totalCasts": 1292,
+    "observedSkills": 68,
+    "observedChanneledSkills": 5,
+    "channelStarts": 91,
+    "channelCompletions": 86,
+    "channelInterruptions": 4,
+    "channelsActiveAtHorizon": 1,
+    "cooldownViolations": 0
+  },
+  "fullMatch": {
+    "seed": "performance-reference",
+    "simulatedSeconds": 2677.6,
+    "winner": "dusk",
+    "kills": "4-57",
+    "digest": "0ca82ffc583e9c37",
+    "wallSeconds": 10.78,
+    "cpuSeconds": 15.25,
+    "wallRate": 248.3,
+    "cpuRate": 175.6
+  },
+  "contract": [
+    "official channelTime controls completion",
+    "mana and cooldown commit at channel start",
+    "damage, control, healing, and utility resolve at completion",
+    "hard control interrupts without resolving the pending effect",
+    "completion does not charge mana twice"
+  ]
+}

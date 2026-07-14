@@ -93,6 +93,7 @@ import {
   queryCreepSpatialGrid,
   resolveDeaths,
   resolveCombat,
+  resolveCompletedChannels,
   simulationFrameSeconds,
   spawnWave,
   startTeleportIfUseful,
@@ -1276,6 +1277,14 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   arcane.tpCooldownUntil = 0
   const channelingReinforcement = startTeleportIfUseful(teleportState, arcane, farTower.pos, 'Reforcar luta', 'Chegando em skirmish', true, false)
   assert.equal(channelingReinforcement?.channeling?.kind, 'teleport', 'a qualified reinforcement should start the teleport channel')
+  teleportState.arcanes = teleportState.arcanes.map((candidate) => candidate.id === arcane.id ? channelingReinforcement! : candidate)
+  teleportState.time = channelingReinforcement!.channeling!.completesAt
+  resolveCompletedChannels(teleportState)
+  assert.deepEqual(
+    teleportState.arcanes.find((candidate) => candidate.id === arcane.id)!.pos,
+    channelingReinforcement!.channeling!.target,
+    'generic channel completion should preserve teleport arrival',
+  )
   assert.equal(getBestTeleportTarget(teleportState, arcane, { x: arcane.pos.x + 5, y: arcane.pos.y }, 'Reforcar luta', 'Chegando em skirmish', true), undefined)
 }
 
@@ -1713,6 +1722,72 @@ let state: SimulationState = initialState
 
   const globalSilence = getHeroDefinition(caster.heroDefinitionId).skills!.find((skill) => skill.key === 'R')!
   assert.equal(getSimpleSkillDamage(caster, globalSilence, 1), 0, 'global silence is control and should not damage every enemy')
+}
+
+{
+  const channelState = createInitialState('skill-channel-completion')
+  channelState.time = 100
+  const caster = channelState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const target = channelState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  caster.heroDefinitionId = 'h003_nightmare_controller'
+  caster.skillLevels = { R: 1 }
+  caster.pos = { x: 50, y: 50 }
+  caster.aiMode = 'join_fight'
+  target.pos = { x: 52, y: 50 }
+  caster.stats.maxMana = 1000
+  caster.stats.mana = 1000
+  const skill = getHeroDefinition(caster.heroDefinitionId).skills!.find((candidate) => candidate.key === 'R')!
+  const targetHpBefore = target.stats.hp
+  const manaBefore = caster.stats.mana
+
+  assert.equal(castSimpleSkill(channelState, caster, skill, 1, target, true), true)
+  let liveCaster = channelState.arcanes.find((arcane) => arcane.id === caster.id)!
+  assert.equal(liveCaster.channeling?.completesAt, 104.75, 'channel duration should use the imported channelTime')
+  assert.equal(channelState.arcanes.find((arcane) => arcane.id === target.id)!.stats.hp, targetHpBefore, 'channeled effects must not resolve at cast start')
+  assert.equal(liveCaster.stats.mana, manaBefore - 200, 'channel mana should be committed at cast start')
+
+  channelState.time = 104.7
+  resolveCompletedChannels(channelState)
+  assert.equal(channelState.arcanes.find((arcane) => arcane.id === target.id)!.stats.hp, targetHpBefore, 'channel effects must wait for completion')
+
+  channelState.time = 104.75
+  resolveCompletedChannels(channelState)
+  liveCaster = channelState.arcanes.find((arcane) => arcane.id === caster.id)!
+  assert.equal(liveCaster.channeling, undefined)
+  assert.ok(channelState.arcanes.find((arcane) => arcane.id === target.id)!.stats.hp < targetHpBefore, 'completed channels should resolve their effect')
+  assert.equal(liveCaster.stats.mana, manaBefore - 200, 'channel completion must not charge mana twice')
+}
+
+{
+  const interruptedState = createInitialState('skill-channel-interruption')
+  interruptedState.time = 200
+  const caster = interruptedState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const target = interruptedState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  caster.heroDefinitionId = 'h003_nightmare_controller'
+  caster.skillLevels = { R: 1 }
+  caster.pos = { x: 50, y: 50 }
+  caster.aiMode = 'join_fight'
+  target.pos = { x: 52, y: 50 }
+  caster.stats.maxMana = 1000
+  caster.stats.mana = 1000
+  const skill = getHeroDefinition(caster.heroDefinitionId).skills!.find((candidate) => candidate.key === 'R')!
+  const targetHpBefore = target.stats.hp
+  assert.equal(castSimpleSkill(interruptedState, caster, skill, 1, target, true), true)
+  addTimedEffect(interruptedState, caster, {
+    sourceId: 'test-stun',
+    sourceName: 'Test Stun',
+    sourceTeam: target.team,
+    kind: 'stun',
+    polarity: 'negative',
+    value: 1,
+    duration: 6,
+  })
+  interruptedState.time = 204.75
+  resolveCompletedChannels(interruptedState)
+  const interruptedCaster = interruptedState.arcanes.find((arcane) => arcane.id === caster.id)!
+  assert.equal(interruptedCaster.channeling, undefined)
+  assert.match(interruptedCaster.microDecision, /interrompido/)
+  assert.equal(interruptedState.arcanes.find((arcane) => arcane.id === target.id)!.stats.hp, targetHpBefore, 'interrupted channels must not resolve their effect')
 }
 
 {

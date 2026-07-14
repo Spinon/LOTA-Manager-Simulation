@@ -507,6 +507,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Todas as 734 skills agora possuem caminho de ativação declarado: 720 completas, 14 aproximações intencionais e 0 ausentes. Auditoria geral: 4 completas, 639 parciais, 15 aproximações intencionais e 76 ausentes por mecânicas internas ainda não executadas integralmente.
 - Testes, lint e build verdes. Benchmark determinístico: 52,4x wall / 48,1x CPU, digest `9ebd3080f5fadc7e` estável. Próxima rodada da T16: concluir efeitos no término de channeling; depois materializar summons como entidades reais.
 
+**Progresso de channeling integral (2026-07-14)**:
+- As 22 skills canalizadas usam o `channelTime` oficial por nível. Mana, cooldown, marker e reserva tática são comprometidos no início; dano, controle, cura, mobilidade e utilidade ficam pendentes até a conclusão.
+- O canal preserva skill, nível, alvo e posição. Controle forte interrompe sem resolver o efeito; conclusão limpa o estado, aplica o efeito uma vez e não cobra mana novamente. TP continua usando a mesma infraestrutura genérica.
+- A família `channeling` passou de 0 completas/22 parciais para 22 completas/0 parciais. A auditoria geral avançou para 5 completas, 638 parciais, 15 aproximações e 76 ausentes, mantendo explícitas as lacunas de outras famílias.
+- Em três partidas de 10 minutos, o auditor observou 1.292 casts de 68 skills, incluindo 91 canais de cinco skills: 86 concluídos, quatro interrompidos, um ativo no horizonte e zero violações de cooldown.
+- A partida completa `performance-reference` terminou organicamente em 43:38, vitória Dusk por 4-57, digest `0ca82ffc583e9c37`, a 248,3x wall/175,6x CPU nesta execução. Dados em `reports/skill-channeling-audit.json`.
+- Próxima rodada da T16: substituir pressão temporária de summons por entidades reais, começando por um contrato genérico de unidade invocada antes das famílias específicas de ilusões, wards e summons persistentes.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

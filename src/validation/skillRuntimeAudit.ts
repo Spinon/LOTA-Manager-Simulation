@@ -215,7 +215,7 @@ function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
     add('displacement', 'approximate', 'generic pull and push displacement is implemented without source geometry')
   }
   if (hasToken(tokens, ['channel', 'aoe_channel', 'channel_disable']) || maxNumericValue(skill.values.channelTime) > 0) {
-    add('channeling', 'partial', 'channel state and interruption exist, but most effects resolve at cast start')
+    add('channeling', 'complete', 'official channel time, start cost, interruption, and effect resolution at completion are implemented')
   }
   if (hasPattern(tokens, /(?:^|_)(?:transform|transformation|metamorph|morph_rate|dragon_form)(?:_|$)/)) {
     add('transformation', 'approximate', 'self transformations become timed combat-stat buffs')

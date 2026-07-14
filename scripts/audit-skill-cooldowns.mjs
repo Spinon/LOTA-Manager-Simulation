@@ -21,7 +21,11 @@ const minutes = Math.max(1, Number(getArg('minutes', 10)) || 10)
 const seedPrefix = getArg('seed', 'cooldown-audit')
 const violations = []
 const observedSkills = new Set()
+const observedChanneledSkills = new Set()
 let totalCasts = 0
+let channelStarts = 0
+let channelCompletions = 0
+let channelInterruptions = 0
 
 await loadGameData()
 
@@ -31,12 +35,28 @@ for (let matchIndex = 0; matchIndex < matchCount; matchIndex += 1) {
   let decisionAccumulator = 0
   const seenMarkers = new Set()
   const lastCastBySkill = new Map()
+  const activeSkillChannels = new Map()
 
   while (!state.winner && state.time < minutes * 60) {
     decisionAccumulator += simulationFrameSeconds
     const shouldDecide = decisionAccumulator >= decisionGateSeconds
     if (shouldDecide) decisionAccumulator %= decisionGateSeconds
     state = tick(state, simulationFrameSeconds, shouldDecide)
+
+    for (const arcane of state.arcanes) {
+      const previous = activeSkillChannels.get(arcane.id)
+      const current = arcane.channeling?.kind === 'skill' ? arcane.channeling : undefined
+      if (previous && (!current || current.skillId !== previous.skillId)) {
+        if (state.time + 0.002 >= previous.completesAt) channelCompletions += 1
+        else channelInterruptions += 1
+      }
+      if (current && (!previous || previous.skillId !== current.skillId)) {
+        channelStarts += 1
+        if (current.skillId) observedChanneledSkills.add(current.skillId)
+      }
+      if (current) activeSkillChannels.set(arcane.id, current)
+      else activeSkillChannels.delete(arcane.id)
+    }
 
     for (const marker of state.skillMarkers) {
       if (seenMarkers.has(marker.id)) continue
@@ -73,6 +93,12 @@ console.log(JSON.stringify({
   minutesPerMatch: minutes,
   totalCasts,
   observedSkills: observedSkills.size,
+  channeling: {
+    observedSkills: observedChanneledSkills.size,
+    starts: channelStarts,
+    completions: channelCompletions,
+    interruptions: channelInterruptions,
+  },
   violations: violations.length,
   samples: violations.slice(0, 20),
 }, null, 2))
