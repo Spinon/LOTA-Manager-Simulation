@@ -6626,13 +6626,13 @@ export function applyDispelItemIfNeeded(state: SimulationState, arcane: Arcane):
   if (removed === 0) return { arcane }
 
   return {
-    arcane: {
+    arcane: spendActiveItemCost({
       ...arcane,
       itemCooldowns: {
         ...arcane.itemCooldowns,
         [candidate.item.name]: state.time + candidate.item.active.cooldown,
       },
-    },
+    }, candidate.item),
     used: candidate.item.name,
   }
 }
@@ -6862,6 +6862,8 @@ export function applySimpleActiveItemIfNeeded(
 
   if (!applied) return { arcane }
 
+  nextArcane = spendActiveItemCost(nextArcane, item)
+
   return {
     arcane: {
       ...nextArcane,
@@ -6884,6 +6886,7 @@ export function getSimpleActiveItemCandidate(
 ) {
   for (const item of getShopItemsForInventory(arcane.items)) {
     if (!item.active || (arcane.itemCooldowns[item.name] ?? 0) > state.time) continue
+    if (!canPayActiveItemCost(arcane, item)) continue
     if (shouldUseSimpleActiveItem(state, arcane, item, knownDanger, visibleEnemies, frameContext)) {
       return { name: item.name, item }
     }
@@ -7061,6 +7064,30 @@ export function getActiveItemDamage(arcane: Arcane, item: ShopItem) {
   return Math.round(base + primary * (primaryPct / 100))
 }
 
+export function canPayActiveItemCost(arcane: Arcane, item: ShopItem) {
+  const active = item.active
+  if (!active) return false
+  const manaCost = getActiveItemNumber(active.values, 'manaCost') ?? 0
+  const healthCost = getActiveItemNumber(active.values, 'healthCost') ?? 0
+  return arcane.stats.mana >= manaCost && arcane.stats.hp > healthCost
+}
+
+export function spendActiveItemCost(arcane: Arcane, item: ShopItem) {
+  const active = item.active
+  if (!active) return arcane
+  const manaCost = getActiveItemNumber(active.values, 'manaCost') ?? 0
+  const healthCost = getActiveItemNumber(active.values, 'healthCost') ?? 0
+  if (manaCost <= 0 && healthCost <= 0) return arcane
+  return {
+    ...arcane,
+    stats: {
+      ...arcane.stats,
+      mana: Math.max(0, arcane.stats.mana - manaCost),
+      hp: Math.max(1, arcane.stats.hp - healthCost),
+    },
+  }
+}
+
 export function getActiveItemLevelDamage(values: Record<string, number | number[] | string | boolean>, level: number) {
   const damageByLevel = values.damageByLevel
   if (typeof damageByLevel !== 'string') return 0
@@ -7145,6 +7172,7 @@ export function getDispelItemCandidate(state: SimulationState, arcane: Arcane) {
   return getShopItemsForInventory(arcane.items)
     .filter((item) => item.active?.dispelPower !== undefined)
     .filter((item) => (arcane.itemCooldowns[item.name] ?? 0) <= state.time)
+    .filter((item) => canPayActiveItemCost(arcane, item))
     .map((item) => ({ name: item.name, item }))
     .find((candidate) => shouldUseDispelPower(activeDebuffs, candidate.item.active?.dispelPower ?? 'basic'))
 }
@@ -11196,10 +11224,6 @@ export function tryUseTempestDoubleItem(state: SimulationState, summon: Summoned
   summon.pos = { ...result.arcane.pos }
   summon.hp = Math.min(summon.maxHp, result.arcane.stats.hp)
   summon.mana = Math.min(summon.maxMana ?? result.arcane.stats.maxMana, result.arcane.stats.mana)
-  const manaCost = getActiveItemNumber(item.active.values, 'manaCost') ?? 0
-  const healthCost = getActiveItemNumber(item.active.values, 'healthCost') ?? 0
-  summon.mana = Math.max(0, (summon.mana ?? 0) - manaCost)
-  summon.hp = Math.max(1, summon.hp - healthCost)
   summon.itemCooldowns = { ...result.arcane.itemCooldowns }
   captureTempestDoubleSelfItemEffects(state, summon)
   state.skillMarkers = [

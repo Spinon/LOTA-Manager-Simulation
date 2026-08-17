@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import {
   addTimedEffect,
+  applySimpleActiveItemIfNeeded,
   applySimpleSkillDispel,
   applySimpleSkillDisplacement,
   applySimpleSkillCastSummons,
@@ -10,6 +11,7 @@ import {
   applySimpleNegativeSkillEffects,
   buildArcaneStats,
   buyItemAtBase,
+  canPayActiveItemCost,
   canTargetWithSimpleDamageSkill,
   castSimpleSkill,
   collectTacticalCreepActivations,
@@ -926,6 +928,33 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   assert.equal(upgraded.items.includes(plan!.soldItemName!), false)
   assert.equal(upgraded.items.includes(plan!.item.name), true)
   assert.equal(upgraded.stats.gold, goldBefore - plan!.netCost, 'the purchase should credit resale gold before buying the upgrade')
+}
+
+{
+  const activeItemState = createInitialState('active-item-resource-cost-test')
+  activeItemState.time = 300
+  const caster = activeItemState.arcanes[0]
+  const soulBattery = shopCatalog.find((item) => item.id === 'i069_soul_battery')!
+  caster.items = [soulBattery.name]
+  caster.stats = {
+    ...caster.stats,
+    hp: 500,
+    mana: 0,
+  }
+
+  assert.equal(canPayActiveItemCost(caster, soulBattery), true)
+  const used = applySimpleActiveItemIfNeeded(activeItemState, caster)
+  assert.equal(used.used, soulBattery.name)
+  assert.equal(used.arcane.stats.hp, 330, 'successful activation should spend the declared health cost once')
+  assert.equal(used.arcane.stats.mana, Math.min(caster.stats.maxMana, 150), 'successful activation should restore the declared mana')
+  assert.equal(used.arcane.itemCooldowns[soulBattery.name], activeItemState.time + 25)
+
+  const unsafeCaster = {
+    ...caster,
+    stats: { ...caster.stats, hp: 170, mana: 0 },
+  }
+  assert.equal(canPayActiveItemCost(unsafeCaster, soulBattery), false, 'health-cost items must leave the caster alive')
+  assert.equal(applySimpleActiveItemIfNeeded(activeItemState, unsafeCaster).used, undefined)
 }
 
 {

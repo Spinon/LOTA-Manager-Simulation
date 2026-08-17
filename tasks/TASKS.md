@@ -720,6 +720,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 **Critérios**: 100% dos itens catalogados com status explícito; nenhum ativo sem efeito/custo/cooldown; consumíveis integrados ao inventário normal; relatório persistido e testes/lint/build verdes.
 
+**Progresso da matriz automática e custos de ativação (2026-08-17)**:
+- `npm run audit:item-runtime` agora classifica os 210 itens e 352 efeitos importados em catálogo, aquisição, atributos, receitas, stacking, restrições, IA de compra, ativos, passivas, auras, toggles, consumíveis, cargas, targeting, custos e regras especiais. O relatório humano está em `tasks/ITEM_RUNTIME_AUDIT.md` e a baseline integral em `tasks/ITEM_RUNTIME_AUDIT.json`.
+- O teste compara fingerprints do catálogo vivo com a matriz persistida. Item novo, mudança de dados ou mudança de suporte passa a exigir revisão explícita e regeneração da auditoria.
+- Baseline conservadora: 0 itens completos, 121 parciais e 89 com ao menos uma família ausente. As maiores lacunas estruturais são aquisição de neutros/enchantments, cargas persistentes, toggles, consumíveis utilitários e passivas especiais; dados apenas preservados não contam como implementados.
+- Ativos agora verificam e pagam custo de mana/vida pelo mesmo caminho em Arcanes, dispels e clones. A Soul Battery não pode matar o usuário, desconta seu custo uma única vez, aplica o ganho de mana e respeita o cooldown importado.
+- Suíte completa, lint e build verdes. Benchmark de 5 minutos em 126,4x wall / 102,9x CPU, digest `51a125c1f69f4a2a` preservado.
+- Próxima rodada da T17: criar estado serializável de instância/charges dentro do inventário único de seis slots, sem reintroduzir inventário separado para consumíveis.
+
 ---
 
 ### [ ] T18 - Paridade integral dos atributos importados
