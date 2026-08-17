@@ -666,7 +666,14 @@ const simulationEntityIndexesCache = new WeakMap<object, {
   firstSummonId?: string
   lastSummonId?: string
 }>()
-const timedEffectsByTargetCache = new WeakMap<SimulationState, { source: TimedEffect[]; byTarget: Map<string, TimedEffect[]> }>()
+type TimedEffectsByTargetCache = {
+  source: TimedEffect[]
+  byTarget: Map<string, TimedEffect[]>
+  byTargetAndKind: Map<string, Map<TimedEffect['kind'], TimedEffect[]>>
+}
+
+const emptyTimedEffects: TimedEffect[] = []
+const timedEffectsByTargetCache = new WeakMap<SimulationState, TimedEffectsByTargetCache>()
 
 export type CombatSource = {
   id: string
@@ -725,7 +732,7 @@ export type TimedEffect = {
   sourceId: string
   sourceName: string
   sourceTeam: TeamId
-  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'banish' | 'invulnerable' | 'debuff_immunity' | 'ethereal' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot' | 'summon_mark'
+  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'banish' | 'invulnerable' | 'debuff_immunity' | 'ethereal' | 'parry' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot' | 'summon_mark'
   polarity: 'positive' | 'negative'
   value: number
   stacks: number
@@ -742,6 +749,8 @@ export type TimedEffect = {
   tickInterval?: number
   nextTickAt?: number
   piercesDebuffImmunity?: boolean
+  areaCenter?: Point
+  areaRadius?: number
   dispelType: DispelType
   createdAt: number
   expiresAt: number
@@ -2276,7 +2285,11 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
     },
     events: [...state.events],
     effects: state.effects.map((effect) => ({ ...effect, from: { ...effect.from }, to: { ...effect.to } })),
-    timedEffects: state.timedEffects.map((effect) => ({ ...effect, modifiers: effect.modifiers ? { ...effect.modifiers } : undefined })),
+    timedEffects: state.timedEffects.map((effect) => ({
+      ...effect,
+      modifiers: effect.modifiers ? { ...effect.modifiers } : undefined,
+      areaCenter: effect.areaCenter ? { ...effect.areaCenter } : undefined,
+    })),
     deathMarkers: state.deathMarkers.map((marker) => ({ ...marker, pos: { ...marker.pos } })),
     denyMarkers: state.denyMarkers.map((marker) => ({ ...marker, pos: { ...marker.pos } })),
     goldMarkers: state.goldMarkers.map((marker) => ({ ...marker, pos: { ...marker.pos } })),
@@ -2486,7 +2499,11 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
     winner: state.winner,
     details: includeDetails ? createMatchRenderDetails(state) : undefined,
     effects: state.effects.map((effect) => [effect.kind, effect.targetKind, effect.team, renderNumber(effect.from.x), renderNumber(effect.from.y), renderNumber(effect.to.x), renderNumber(effect.to.y), renderNumber(effect.createdAt), effect.duration, effect.action, effect.sourceId]),
-    timedEffects: state.timedEffects.map((effect) => ({ ...effect, modifiers: effect.modifiers ? { ...effect.modifiers } : undefined })),
+    timedEffects: state.timedEffects.map((effect) => ({
+      ...effect,
+      modifiers: effect.modifiers ? { ...effect.modifiers } : undefined,
+      areaCenter: effect.areaCenter ? { ...effect.areaCenter } : undefined,
+    })),
     deathMarkers: state.deathMarkers.map((marker) => [marker.arcane, marker.team, marker.pos.x, marker.pos.y, marker.createdAt, marker.expiresAt]),
     denyMarkers: state.denyMarkers.map((marker) => [marker.team, marker.pos.x, marker.pos.y, marker.createdAt, marker.expiresAt]),
     goldMarkers: state.goldMarkers.map((marker) => [marker.team, marker.pos.x, marker.pos.y, marker.createdAt, marker.expiresAt, marker.amount]),
@@ -7031,19 +7048,37 @@ export function getActiveItemNumber(values: Record<string, number | number[] | s
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
-export function getTimedEffectsForTarget(state: SimulationState, targetId: string) {
+function getTimedEffectsByTargetCache(state: SimulationState) {
   let cached = timedEffectsByTargetCache.get(state)
   if (!cached || cached.source !== state.timedEffects) {
     const byTarget = new Map<string, TimedEffect[]>()
+    const byTargetAndKind = new Map<string, Map<TimedEffect['kind'], TimedEffect[]>>()
     for (const effect of state.timedEffects) {
       const targetEffects = byTarget.get(effect.targetId)
       if (targetEffects) targetEffects.push(effect)
       else byTarget.set(effect.targetId, [effect])
+
+      let effectsByKind = byTargetAndKind.get(effect.targetId)
+      if (!effectsByKind) {
+        effectsByKind = new Map()
+        byTargetAndKind.set(effect.targetId, effectsByKind)
+      }
+      const kindEffects = effectsByKind.get(effect.kind)
+      if (kindEffects) kindEffects.push(effect)
+      else effectsByKind.set(effect.kind, [effect])
     }
-    cached = { source: state.timedEffects, byTarget }
+    cached = { source: state.timedEffects, byTarget, byTargetAndKind }
     timedEffectsByTargetCache.set(state, cached)
   }
-  return cached.byTarget.get(targetId) ?? []
+  return cached
+}
+
+export function getTimedEffectsForTarget(state: SimulationState, targetId: string) {
+  return getTimedEffectsByTargetCache(state).byTarget.get(targetId) ?? emptyTimedEffects
+}
+
+export function getTimedEffectsForTargetKind(state: SimulationState, targetId: string, kind: TimedEffect['kind']) {
+  return getTimedEffectsByTargetCache(state).byTargetAndKind.get(targetId)?.get(kind) ?? emptyTimedEffects
 }
 
 export function getDispelItemCandidate(state: SimulationState, arcane: Arcane) {
@@ -7431,7 +7466,7 @@ export function getAttackApproachPoint(from: Point, target: { pos: Point }, atta
 
 export function getArcaneMovementEffectMultiplier(state: SimulationState, arcane: Arcane) {
   const slows = getTimedEffectsForTarget(state, arcane.id)
-    .filter((effect) => effect.kind === 'slow' && effect.expiresAt > state.time)
+    .filter((effect) => effect.kind === 'slow' && isTimedEffectActive(state, effect))
     .map((effect) => finalSlowValue(effect.value, [arcane.stats.slowResistance / 100]))
   if (slows.length === 0) return 1
 
@@ -7441,7 +7476,7 @@ export function getArcaneMovementEffectMultiplier(state: SimulationState, arcane
 
 export function getArcaneStatModifierEffects(state: SimulationState, arcane: Arcane) {
   return getTimedEffectsForTarget(state, arcane.id).filter((effect) => (
-    effect.expiresAt > state.time &&
+    isTimedEffectActive(state, effect) &&
     effect.modifiers
   ))
 }
@@ -7642,7 +7677,7 @@ export function getArcaneSlowPercent(state: SimulationState, arcane: Arcane) {
 
 export function getArcaneBarrierAmount(state: SimulationState, arcane: Arcane) {
   return Math.round(getTimedEffectsForTarget(state, arcane.id)
-    .filter((effect) => effect.kind === 'barrier' && effect.expiresAt > state.time)
+    .filter((effect) => effect.kind === 'barrier' && isTimedEffectActive(state, effect))
     .reduce((sum, effect) => sum + Math.max(0, effect.barrierRemaining ?? effect.value), 0))
 }
 
@@ -7663,7 +7698,14 @@ export function resolveIncomingArcaneDamage(state: SimulationState, target: Arca
 }
 
 export function hasTimedEffect(state: SimulationState, targetId: string, kind: TimedEffect['kind']) {
-  return getTimedEffectsForTarget(state, targetId).some((effect) => effect.kind === kind && effect.expiresAt > state.time)
+  return getTimedEffectsForTargetKind(state, targetId, kind).some((effect) => isTimedEffectActive(state, effect))
+}
+
+export function isTimedEffectActive(state: SimulationState, effect: TimedEffect) {
+  if (effect.expiresAt <= state.time) return false
+  if (!effect.areaCenter || !effect.areaRadius) return true
+  const target = state.arcanes.find((arcane) => arcane.id === effect.targetId)
+  return Boolean(target && distanceSquared(target.pos, effect.areaCenter) <= effect.areaRadius * effect.areaRadius)
 }
 
 export function isArcaneBanished(state: SimulationState, arcane: Pick<Arcane, 'id'>) {
@@ -7682,7 +7724,7 @@ export function getEffectiveArcaneMagicResistance(state: SimulationState, arcane
   return getArcaneStatModifierEffects(state, arcane).reduce((resistance, effect) => (
     Math.max(resistance, effect.modifiers?.magicResistanceFloor ?? resistance)
   ), arcane.stats.magicResistance) - getTimedEffectsForTarget(state, arcane.id)
-    .filter((effect) => effect.kind === 'ethereal' && effect.expiresAt > state.time)
+    .filter((effect) => effect.kind === 'ethereal' && isTimedEffectActive(state, effect))
     .reduce((largestReduction, effect) => Math.max(largestReduction, effect.value), 0)
 }
 
@@ -7692,7 +7734,7 @@ export function isArcaneTargetable(state: SimulationState, arcane: Arcane) {
 
 export function isArcaneStunned(state: SimulationState, arcane: Arcane) {
   return getTimedEffectsForTarget(state, arcane.id).some((effect) => (
-    effect.expiresAt > state.time && (
+    isTimedEffectActive(state, effect) && (
       effect.kind === 'stun' ||
       effect.kind === 'hex' ||
       effect.kind === 'sleep' ||
@@ -7705,7 +7747,7 @@ export function isArcaneStunned(state: SimulationState, arcane: Arcane) {
 
 export function isArcaneMovementDisabled(state: SimulationState, arcane: Arcane) {
   return getTimedEffectsForTarget(state, arcane.id).some((effect) => (
-    effect.expiresAt > state.time && (
+    isTimedEffectActive(state, effect) && (
       effect.kind === 'stun' ||
       effect.kind === 'hex' ||
       effect.kind === 'sleep' ||
@@ -7806,6 +7848,8 @@ export function addTimedEffect(state: SimulationState, target: Arcane, effect: O
     damageType: effect.damageType,
     tickInterval: effect.tickInterval,
     piercesDebuffImmunity: effect.piercesDebuffImmunity,
+    areaCenter: effect.areaCenter ? { ...effect.areaCenter } : undefined,
+    areaRadius: effect.areaRadius,
     nextTickAt: effect.kind === 'dot' || effect.kind === 'hot'
       ? existing?.nextTickAt ?? state.time + (effect.tickInterval ?? 1)
       : undefined,
@@ -9179,7 +9223,7 @@ export function getSimpleSkillNumericValue(skill: HeroSkillDefinition, key: stri
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
-const ruleLevelDebuffImmunityAbilityIds = new Set([5028, 5249, 5274, 352])
+const ruleLevelDebuffImmunityAbilityIds = new Set([352, 5028, 5238, 5249, 5274])
 
 export function doesSimpleSkillPierceDebuffImmunity(skill: HeroSkillDefinition) {
   return hasAnySimpleSkillTag(skill, [
@@ -9207,7 +9251,7 @@ export function getSimpleSkillImmunityProfile(skill: HeroSkillDefinition, level:
     : 0
   const magicResistanceFloor = debuffImmunity
     ? Math.max(
-        0,
+        skill.sourceAbilityId === 5238 ? 50 : 0,
         getSimpleSkillNumericValue(skill, 'magic_resist', level, 0),
         getSimpleSkillNumericValue(skill, 'immunity_resist', level, 0),
       )
@@ -9230,6 +9274,7 @@ export function applySimpleSkillImmunityState(
   kind: 'invulnerable' | 'debuff_immunity' | 'ethereal',
   duration: number,
   value = 1,
+  area?: { center: Point; radius: number },
 ) {
   if (duration <= 0) return false
   const profile = getSimpleSkillImmunityProfile(skill, Math.max(1, level))
@@ -9244,6 +9289,8 @@ export function applySimpleSkillImmunityState(
       ? { magicResistanceFloor: profile.magicResistanceFloor }
       : undefined,
     piercesDebuffImmunity: profile.piercesDebuffImmunity,
+    areaCenter: area ? { ...area.center } : undefined,
+    areaRadius: area?.radius,
     duration,
   })
   return hasTimedEffect(state, target.id, kind)
@@ -9261,6 +9308,7 @@ export function castSimpleSkill(
     return castRingmasterSouvenirSkill(state, arcane, skill, level, fallbackTarget)
   }
   if (skill.sourceAbilityId === 1497) return castTwinBladeStanceSwitch(state, arcane, skill, level)
+  if (skill.sourceAbilityId === 1504) return castTwinBladeParry(state, arcane, skill, level)
   if (skill.sourceAbilityId === 5607) return castStoredRemnantSkill(state, arcane, skill, level, fallbackTarget)
   if (isConfirmedGlobalSkill(skill) && !shouldCastGlobalSkill(state, arcane, skill)) return false
   const profile = getSkillEffectProfile(skill, level)
@@ -9358,7 +9406,13 @@ export function resolveSimpleSkillEffects(
   }
   const immunityProfile = getSimpleSkillImmunityProfile(skill, level)
   if (!isSimpleSkillChanneled(skill) && immunityProfile.debuffImmunityDuration > 0) {
-    applySimpleSkillImmunityState(state, arcane, skill, level, arcane, 'debuff_immunity', immunityProfile.debuffImmunityDuration)
+    const area = skill.sourceAbilityId === 5238
+      ? {
+          center: { ...arcane.pos },
+          radius: Math.max(1, getSimpleSkillNumericValue(skill, 'cogs_radius', level, 215) / 140),
+        }
+      : undefined
+    applySimpleSkillImmunityState(state, arcane, skill, level, arcane, 'debuff_immunity', immunityProfile.debuffImmunityDuration, 1, area)
   }
   if (skill.sourceAbilityId !== 5014 && immunityProfile.invulnerableDuration > 0) {
     applySimpleSkillImmunityState(state, arcane, skill, level, arcane, 'invulnerable', immunityProfile.invulnerableDuration)
@@ -9924,6 +9978,12 @@ export function applySimpleSkillSummonPressure(
     : profile.summonDamage || unitSeed?.damage || genericDamage
   const damage = healingWard ? 0 : Math.max(0, Math.round(baseDamage))
   const seedRange = unitSeed?.range ?? 0
+  const summonMagicResistance = heroLike
+    ? Math.max(
+        heroStatSource.stats.magicResistance,
+        getSimpleSkillNumericValue(skill, 'immunity_resist', Math.max(1, getSimpleSkillLevel(caster, skill)), 0),
+      )
+    : unitSeed?.magicResistance ?? 0
   const ranged = ward || profile.summonRange >= 300 || seedRange >= 300 || hasAnySimpleSkillTag(skill, ['spirit', 'archer', 'ranged'])
   const canMove = !ward && (healingWard || profile.summonMoveSpeed > 0 || illusion || clone || archetype === 'unit')
   const canAttack = damage > 0 && !healingWard && skill.id !== tombstoneSkillId
@@ -9949,7 +10009,7 @@ export function applySimpleSkillSummonPressure(
       maxHp,
       damage,
       armor: heroLike ? getEffectiveArcaneArmor(state, heroStatSource) : unitSeed?.armor ?? 0,
-      magicResistance: heroLike ? heroStatSource.stats.magicResistance : unitSeed?.magicResistance ?? 0,
+      magicResistance: summonMagicResistance,
       range: heroLike ? heroStatSource.stats.range : profile.summonRange > 0 ? profile.summonRange / 140 : seedRange > 0 ? seedRange / 140 : ranged ? 5.8 : 2.2,
       visionRange: heroLike ? heroStatSource.visionRange : profile.summonVision > 0 ? profile.summonVision / 140 : unitSeed?.vision ? unitSeed.vision / 140 : ranged ? 8.5 : 7,
       moveSpeed: canMove ? (heroLike ? getEffectiveArcaneMoveSpeed(state, heroStatSource) * (1 + profile.summonMoveSpeedPct) : profile.summonMoveSpeed > 0 ? profile.summonMoveSpeed / 45 : unitSeed?.movementSpeed ? unitSeed.movementSpeed / 45 : ranged ? 3.8 : 4.4) : 0,
@@ -11680,6 +11740,27 @@ export function castTwinBladeStanceSwitch(
   if (getPreferredTwinBladeStance({ situation, hpRatio }) === getTwinBladeStance(arcane.skillStates)) return false
   const manaCost = getSimpleSkillManaCost(arcane, skill, level)
   if (arcane.stats.mana < manaCost) return false
+  finishSimpleSkillCast(state, arcane, skill, manaCost, arcane)
+  return true
+}
+
+export function castTwinBladeParry(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+) {
+  const manaCost = getSimpleSkillManaCost(arcane, skill, level)
+  if (arcane.stats.mana < manaCost || arcane.channeling) return false
+  addTimedEffect(state, arcane, {
+    sourceId: `${arcane.id}-${skill.id}-parry`,
+    sourceName: skill.name,
+    sourceTeam: arcane.team,
+    kind: 'parry',
+    polarity: 'positive',
+    value: Math.max(1, getSimpleSkillNumericValue(skill, 'base_crit_pct', level, 125) / 100),
+    duration: Math.max(0.1, getSimpleSkillNumericValue(skill, 'parry_duration', level, 1.5)),
+  })
   finishSimpleSkillCast(state, arcane, skill, manaCost, arcane)
   return true
 }
@@ -14093,6 +14174,61 @@ function getSourceArcaneIndex(indexes: SimulationEntityIndexes, sourceId: string
   return indexes.arcaneIds.findIndex((arcaneId) => sourceId.startsWith(`${arcaneId}-`))
 }
 
+export function isCombatSourceParryable(sourceArcane: Arcane, source: CombatSource) {
+  if (source.id === sourceArcane.id) return true
+  return getArcaneRuntimeSkills(sourceArcane).some((skill) => (
+    skill.target === 'unit' && source.id === `${sourceArcane.id}-${skill.id}`
+  ))
+}
+
+export function tryResolveArcaneParry(
+  state: SimulationState,
+  target: Arcane,
+  sourceArcane: Arcane | undefined,
+  source: CombatSource,
+) {
+  if (!sourceArcane || sourceArcane.team === target.team) return false
+  const parry = getTimedEffectsForTargetKind(state, target.id, 'parry')
+    .find((effect) => isTimedEffectActive(state, effect))
+  if (!parry || !isCombatSourceParryable(sourceArcane, source)) return false
+  state.timedEffects = state.timedEffects.filter((effect) => effect.id !== parry.id)
+
+  const parrySkill = [...(getHeroDefinition(target.heroDefinitionId).skills ?? []), ...(getHeroDefinition(target.heroDefinitionId).supplementalSkills ?? [])]
+    .find((skill) => skill.sourceAbilityId === 1504)
+  const parryLevel = parrySkill ? Math.max(1, getSimpleSkillLevel(target, parrySkill)) : 1
+  const counterDamage = Math.max(1, getEffectiveArcaneDamage(state, target) * parry.value)
+  damageEntity(state, sourceArcane.id, counterDamage, {
+    id: `${target.id}-parry-counter`,
+    label: `${target.player}: Parry`,
+    team: target.team,
+    damageType: 'physical',
+  })
+  const liveSource = state.arcanes.find((arcane) => arcane.id === sourceArcane.id)
+  if (liveSource && parrySkill) {
+    addTimedEffect(state, liveSource, {
+      sourceId: `${target.id}-${parrySkill.id}-counter-stun`,
+      sourceName: parrySkill.name,
+      sourceTeam: target.team,
+      kind: 'stun',
+      polarity: 'negative',
+      value: 1,
+      duration: Math.max(0.1, getSimpleSkillNumericValue(parrySkill, 'parry_stun_duration', parryLevel, 0.4)),
+    })
+  }
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `parry-${target.id}-${source.id}-${state.time}`,
+      team: target.team,
+      pos: { ...target.pos },
+      label: 'PARRY',
+      createdAt: state.time,
+      expiresAt: state.time + 0.9,
+    },
+  ]
+  return true
+}
+
 export function damageEntity(state: SimulationState, id: string, damage: number, source: CombatSource) {
   const indexes = getSimulationEntityIndexes(state)
   const targetArcaneIndex = indexes.arcane.get(id)
@@ -14116,6 +14252,7 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   if (targetSummon && !isSummonTargetable(state, targetSummon)) return
   const sourceArcaneIndex = getSourceArcaneIndex(indexes, source.id)
   const sourceArcane = sourceArcaneIndex < 0 ? undefined : state.arcanes[sourceArcaneIndex]
+  if (targetArcane && damage > 0 && tryResolveArcaneParry(state, targetArcane, sourceArcane, source)) return
   if (targetSummon?.cloneField && targetSummon.cloneField.expiresAt > state.time && damageType === 'physical') {
     const exactSourcePosition = (() => {
       const arcaneIndex = indexes.arcane.get(source.id)

@@ -51,7 +51,7 @@ const statusPriority: Record<SkillSupportStatus, number> = {
   missing: 3,
 }
 
-const ruleLevelImmunityAbilityIds = new Set([5014, 5028, 5249, 5274, 5429, 5467, 661, 352, 389, 1501])
+const ruleLevelImmunityAbilityIds = new Set([352, 389, 661, 1501, 1504, 5014, 5028, 5238, 5249, 5274, 5429, 5467, 5619, 7852])
 
 const runtimeValueKeys = new Set([
   'attackSpeed',
@@ -264,7 +264,7 @@ function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
       'immunity',
       ruleLevelSupport ? 'complete' : 'approximate',
       ruleLevelSupport
-        ? 'runtime applies rule-level invulnerability, debuff immunity, ethereal state, and imported magic resistance where declared'
+        ? 'runtime applies rule-level targetability, invulnerability, area debuff immunity, ethereal state, parry, or summon resistance where declared'
         : 'conditional or directional immunity remains represented by normalized defensive modifiers',
     )
   }

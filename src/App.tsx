@@ -2029,6 +2029,7 @@ function getEffectGlyph(kind: TimedEffect['kind']) {
   if (kind === 'invulnerable') return 'I'
   if (kind === 'debuff_immunity') return 'U'
   if (kind === 'ethereal') return 'E'
+  if (kind === 'parry') return 'P'
   return 'H'
 }
 
@@ -2038,6 +2039,7 @@ function getEffectCanvasColor(kind: TimedEffect['kind']) {
   if (kind === 'invulnerable') return '#fff3ba'
   if (kind === 'debuff_immunity') return '#6de8c5'
   if (kind === 'ethereal') return '#d6a8ff'
+  if (kind === 'parry') return '#ffae66'
   if (kind === 'stun') return '#f6c85d'
   return '#9fd0ff'
 }
@@ -3177,6 +3179,7 @@ function getEffectKindLabel(kind: TimedEffect['kind']) {
     invulnerable: 'Invulnerable',
     debuff_immunity: 'Debuff immune',
     ethereal: 'Ethereal',
+    parry: 'Parry',
     break: 'Break',
     mute: 'Mute',
     buff: 'Buff',

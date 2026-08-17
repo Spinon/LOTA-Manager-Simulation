@@ -42,7 +42,7 @@ const completeImmunityAbilityIds = audit.rows
   .sort((left, right) => left - right)
 assert.deepEqual(
   completeImmunityAbilityIds,
-  [352, 389, 661, 1501, 5014, 5028, 5249, 5274, 5429, 5467],
+  [352, 389, 661, 1501, 1504, 5014, 5028, 5238, 5249, 5274, 5429, 5467, 5619, 7852],
   'rule-level immunity support should stay explicit and source-scoped',
 )
 for (const piercingOnlyAbilityId of [5468, 5509, 5510, 5581, 8106]) {

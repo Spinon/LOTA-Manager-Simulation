@@ -637,6 +637,13 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Auditoria atual: 7 completas, 634 parciais, 12 aproximações e 81 ausentes; família `immunity`: 10 completas e 12 aproximações. Suíte completa, lint e build verdes; benchmark de 5 minutos em 164,7x wall / 137,2x CPU, digest `51a125c1f69f4a2a` preservado.
 - Próxima rodada da T16: implementar as imunidades condicionais restantes, começando por área, posição, upgrades e janelas direcionais, sem promover reduções defensivas comuns a imunidade total.
 
+**Progresso de imunidades condicionais (2026-08-17)**:
+- A imunidade a debuffs de Cogs agora depende da permanência do Arcane na área criada pela habilidade: o estado e o piso de 50% de resistência mágica são suspensos ao sair e restaurados ao retornar durante a duração original.
+- Dark Portrait materializa sua ilusão hero-like com os 90% de resistência mágica importados. Reflection foi auditada como inalvejável durante a janela já executada pelo runtime, sem confundir a regra com invulnerabilidade genérica.
+- Parry do Twin Blade Duelist intercepta e consome a primeira carga contra ataque básico ou habilidade unit-target inimiga, nega o dano e responde com crítico físico e stun importados. O painel identifica a janela com efeito próprio.
+- O índice de efeitos temporários passou a agrupar também por alvo e tipo e reutiliza uma lista vazia compartilhada. Isso manteve o Parry fora do caminho caro de todo dano e elevou o benchmark A/B de 105,2x para 136,6x wall e de 85,7x para 107,2x CPU, com digest `51a125c1f69f4a2a` preservado.
+- Auditoria atual: 7 completas, 634 parciais, 12 aproximações e 81 ausentes; família `immunity`: 14 completas e 7 aproximações. Próxima rodada da T16: tratar os sete casos restantes de upgrades, passivas disparadas e defesa direcional somente onde os valores importados permitirem execução fiel.
+
 ---
 
 ### [ ] T16.1 - Linguagem visual de ilusões, clones e criaturas controladas

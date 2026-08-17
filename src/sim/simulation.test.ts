@@ -418,6 +418,43 @@ await loadGameData()
   assert.equal(duelist.stats.mana, 930, 'Sai W should spend its imported level-three mana cost')
   assert.equal(duelist.itemCooldowns[primaryW.id], stanceState.time + 9, 'using Sai W should put the hidden Katana W on the paired cooldown')
 
+  const parrySkill = getArcaneRuntimeSkills(duelist).find((skill) => skill.sourceAbilityId === 1504)!
+  const parryMana = duelist.stats.mana
+  assert.equal(castSimpleSkill(stanceState, duelist, parrySkill, 2, enemy), true)
+  assert.equal(duelist.stats.mana, parryMana - 20)
+  assert.equal(hasTimedEffect(stanceState, duelist.id, 'parry'), true)
+  const duelistHpBeforeParry = duelist.stats.hp
+  const enemyHpBeforeCounter = enemy.stats.hp
+  performArcaneBasicAttack(stanceState, enemy, duelist)
+  duelist = stanceState.arcanes.find((candidate) => candidate.id === duelist.id)!
+  enemy = stanceState.arcanes.find((candidate) => candidate.id === enemy.id)!
+  assert.equal(duelist.stats.hp, duelistHpBeforeParry, 'Parry should block the first incoming basic attack')
+  assert.ok(enemy.stats.hp < enemyHpBeforeCounter, 'Parry should counterattack using the imported critical multiplier')
+  assert.equal(hasTimedEffect(stanceState, enemy.id, 'stun'), true)
+  assert.equal(hasTimedEffect(stanceState, duelist.id, 'parry'), false, 'Parry should be consumed after one valid interception')
+  performArcaneBasicAttack(stanceState, enemy, duelist)
+  duelist = stanceState.arcanes.find((candidate) => candidate.id === duelist.id)!
+  enemy = stanceState.arcanes.find((candidate) => candidate.id === enemy.id)!
+  assert.ok(duelist.stats.hp < duelistHpBeforeParry, 'attacks after the consumed Parry should deal damage normally')
+  stanceState.time += 20
+  duelist.stats.mana += 20
+  assert.equal(castSimpleSkill(stanceState, duelist, parrySkill, 2, enemy), true)
+  enemy.heroDefinitionId = 'h003_nightmare_controller'
+  enemy.skillLevels = { E: 4 }
+  const targetedEnemySkill = getHeroDefinition(enemy.heroDefinitionId).skills!
+    .find((skill) => skill.sourceAbilityId === 5014)!
+  const hpBeforeTargetedParry = duelist.stats.hp
+  damageEntity(stanceState, duelist.id, 200, {
+    id: `${enemy.id}-${targetedEnemySkill.id}`,
+    label: `${enemy.player}: ${targetedEnemySkill.name}`,
+    team: enemy.team,
+    damageType: 'magical',
+  })
+  duelist = stanceState.arcanes.find((candidate) => candidate.id === duelist.id)!
+  enemy = stanceState.arcanes.find((candidate) => candidate.id === enemy.id)!
+  assert.equal(duelist.stats.hp, hpBeforeTargetedParry, 'Parry should also intercept an incoming unit-target skill')
+  assert.equal(hasTimedEffect(stanceState, duelist.id, 'parry'), false)
+
   const saiAttackCooldown = getEffectiveArcaneAttackCooldown(stanceState, duelist)
   duelist.aiMode = 'farm_lane'
   duelist.macroDecision = 'Avancar rota'
@@ -2372,6 +2409,25 @@ let state: SimulationState = initialState
   updateSummonedUnits(targetCopyState, 0.1)
   assert.equal(reflections[0].expiresAt, targetCopyState.time, 'linked target-copy illusions should expire with their source target')
 
+  const portraitState = createInitialState('strong-illusion-immunity-runtime')
+  portraitState.time = 600
+  const portraitCaster = portraitState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const portraitTarget = portraitState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  portraitCaster.heroDefinitionId = 'h109_ink_warlock'
+  portraitCaster.items = [shopCatalog.find((item) => item.id === 'i135_grand_spell_scepter')!.name]
+  const portraitSkill = getHeroDefinition(portraitCaster.heroDefinitionId).supplementalSkills!
+    .find((candidate) => candidate.sourceAbilityId === 7852)!
+  const portraits = applySimpleSkillCastSummons(
+    portraitState,
+    portraitCaster,
+    portraitSkill,
+    getSkillEffectProfile(portraitSkill, 1),
+    portraitTarget,
+    [portraitTarget],
+  )
+  assert.equal(portraits.length, 1)
+  assert.equal(portraits[0].magicResistance, 90, 'strong target-copy illusions should use their declared immunity resistance')
+
   const disruptionState = createInitialState('delayed-target-copy-illusion-runtime')
   disruptionState.time = 600
   const disruptionCaster = disruptionState.arcanes.find((arcane) => arcane.team === 'dawn')!
@@ -2468,6 +2524,44 @@ let state: SimulationState = initialState
     damageType: 'magical',
   })
   assert.ok(Math.abs(immunityState.arcanes.find((arcane) => arcane.id === immunityCaster.id)!.stats.hp - (immunityHp - 20)) < 0.001)
+
+  const cogsState = createInitialState('area-conditioned-debuff-immunity-runtime')
+  cogsState.time = 600
+  let cogsCaster = cogsState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const cogsEnemy = cogsState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  cogsCaster.heroDefinitionId = 'h043_clockwork_trapper'
+  cogsCaster.skillLevels = { W: 4 }
+  const cogsSkill = getHeroDefinition(cogsCaster.heroDefinitionId).skills!
+    .find((candidate) => candidate.sourceAbilityId === 5238)!
+  const cogsOrigin = { ...cogsCaster.pos }
+  assert.equal(resolveSimpleSkillEffects(cogsState, cogsCaster, cogsSkill, 4, cogsEnemy), true)
+  cogsCaster = cogsState.arcanes.find((arcane) => arcane.id === cogsCaster.id)!
+  assert.equal(isArcaneDebuffImmune(cogsState, cogsCaster), true)
+  assert.ok(getEffectiveArcaneMagicResistance(cogsState, cogsCaster) >= 50)
+  cogsCaster.pos = { x: cogsOrigin.x + 2, y: cogsOrigin.y }
+  assert.equal(isArcaneDebuffImmune(cogsState, cogsCaster), false, 'leaving the Cogs radius should suspend its immunity')
+  addTimedEffect(cogsState, cogsCaster, {
+    sourceId: 'outside-cogs-slow',
+    sourceName: 'Outside Cogs slow',
+    sourceTeam: cogsEnemy.team,
+    kind: 'slow',
+    polarity: 'negative',
+    value: 0.3,
+    duration: 2,
+  })
+  assert.equal(hasTimedEffect(cogsState, cogsCaster.id, 'slow'), true)
+  cogsState.timedEffects = cogsState.timedEffects.filter((effect) => effect.kind !== 'slow')
+  cogsCaster.pos = cogsOrigin
+  addTimedEffect(cogsState, cogsCaster, {
+    sourceId: 'inside-cogs-slow',
+    sourceName: 'Inside Cogs slow',
+    sourceTeam: cogsEnemy.team,
+    kind: 'slow',
+    polarity: 'negative',
+    value: 0.3,
+    duration: 2,
+  })
+  assert.equal(hasTimedEffect(cogsState, cogsCaster.id, 'slow'), false, 'returning inside the active Cogs should restore immunity')
 
   const invulnerabilityState = createInitialState('rule-level-invulnerability-runtime')
   invulnerabilityState.time = 600
