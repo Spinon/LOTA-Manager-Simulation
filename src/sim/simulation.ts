@@ -412,6 +412,25 @@ export type SummonedUnit = {
   expiresWithTarget?: boolean
   untargetable?: boolean
   inheritedItems?: string[]
+  mana?: number
+  maxMana?: number
+  inheritedSkillLevels?: SkillLevels
+  abilityCooldowns?: Record<string, number>
+  cloneMaxBlindPct?: number
+  cloneMaxSlowPct?: number
+  cloneField?: {
+    center: Point
+    radius: number
+    expiresAt: number
+    attackSpeedPct: number
+    evasionPct: number
+  }
+  clonePendingCasts?: Array<{
+    skillId: string
+    pos: Point
+    activatesAt: number
+    expiresAt: number
+  }>
   lastHitBy?: CombatSource
 }
 export type Tower = {
@@ -2280,6 +2299,10 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
       ...summon,
       pos: { ...summon.pos },
       inheritedItems: summon.inheritedItems ? [...summon.inheritedItems] : undefined,
+      inheritedSkillLevels: summon.inheritedSkillLevels ? { ...summon.inheritedSkillLevels } : undefined,
+      abilityCooldowns: summon.abilityCooldowns ? { ...summon.abilityCooldowns } : undefined,
+      cloneField: summon.cloneField ? { ...summon.cloneField, center: { ...summon.cloneField.center } } : undefined,
+      clonePendingCasts: summon.clonePendingCasts?.map((cast) => ({ ...cast, pos: { ...cast.pos } })),
       lastHitBy: summon.lastHitBy ? { ...summon.lastHitBy } : undefined,
     })),
     towers: state.towers.map((tower) => ({ ...tower, pos: { ...tower.pos } })),
@@ -9780,6 +9803,12 @@ export function applySimpleSkillSummonPressure(
       expiresWithTarget: options.expiresWithTarget,
       untargetable: options.untargetable,
       inheritedItems: heroLike ? [...statSource.items] : undefined,
+      mana: clone ? statSource.stats.mana : undefined,
+      maxMana: clone ? statSource.stats.maxMana : undefined,
+      inheritedSkillLevels: clone ? { ...statSource.skillLevels } : undefined,
+      abilityCooldowns: clone ? {} : undefined,
+      cloneMaxBlindPct: clone ? getSimpleSkillNumericValue(skill, 'max_blind_chance', Math.max(1, getSimpleSkillLevel(caster, skill)), 0) / 100 : undefined,
+      cloneMaxSlowPct: clone ? getSimpleSkillNumericValue(skill, 'max_slow', Math.max(1, getSimpleSkillLevel(caster, skill)), 0) / 100 : undefined,
     }
   })
   state.summons = [...state.summons, ...spawned]
@@ -9791,6 +9820,11 @@ const disruptionAbilityId = 5421
 const hauntAbilityId = 5337
 const hauntSkillId = 'h059_specter_global_standard_4_5337'
 const hauntRealityStateKey = 'spectre-reality'
+const tempestDoubleUnitSeedId = 'summon_tempest_clone'
+const tempestDoubleAbilityId = 5683
+const fluxAbilityId = 5677
+const magneticFieldAbilityId = 5678
+const sparkWraithAbilityId = 5679
 
 export function applyArcaneBanish(
   state: SimulationState,
@@ -10341,6 +10375,244 @@ function updateFamiliarCloak(state: SimulationState, familiar: SummonedUnit) {
     : undefined
 }
 
+function getTempestDoubleCaster(state: SimulationState, summon: SummonedUnit) {
+  if (summon.archetype !== 'clone' || summon.unitSeedId !== tempestDoubleUnitSeedId) return undefined
+  const owner = state.arcanes.find((arcane) => arcane.id === summon.ownerId)
+  if (!owner) return undefined
+  const caster: Arcane = {
+    ...owner,
+    id: summon.id,
+    player: summon.name,
+    pos: summon.pos,
+    target: summon.pos,
+    items: summon.inheritedItems ?? [],
+    itemCooldowns: summon.abilityCooldowns ?? {},
+    skillLevels: summon.inheritedSkillLevels ?? {},
+    stats: {
+      ...owner.stats,
+      hp: summon.hp,
+      maxHp: summon.maxHp,
+      mana: summon.mana ?? 0,
+      maxMana: summon.maxMana ?? 0,
+    },
+  }
+  return { owner, caster }
+}
+
+function getTempestDoubleEnemyArcanes(state: SimulationState, summon: SummonedUnit) {
+  return state.arcanes
+    .filter((arcane) => (
+      arcane.team !== summon.team &&
+      isArcaneTargetable(state, arcane) &&
+      isPointVisibleToTeam(state, summon.team, arcane.pos)
+    ))
+    .sort((left, right) => distanceSquared(summon.pos, left.pos) - distanceSquared(summon.pos, right.pos))
+}
+
+function recordTempestDoubleSkill(state: SimulationState, summon: SummonedUnit, skill: HeroSkillDefinition, target: Point) {
+  state.effects = addAttackEffect(state.effects, {
+    kind: 'arcane',
+    action: 'skill',
+    sourceId: summon.id,
+    targetKind: 'arcane',
+    team: summon.team,
+    from: summon.pos,
+    to: target,
+    createdAt: state.time,
+  })
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `clone-skill-${summon.id}-${skill.id}-${state.time}`,
+      team: summon.team,
+      pos: { ...target },
+      label: `${skill.key} ${getSkillShortName(skill)}`,
+      createdAt: state.time,
+      expiresAt: state.time + 1.15,
+    },
+  ]
+}
+
+function resolveTempestDoubleSparkWraiths(state: SimulationState, summon: SummonedUnit) {
+  const pending = summon.clonePendingCasts
+  if (!pending?.length) return false
+  const owner = state.arcanes.find((arcane) => arcane.id === summon.ownerId)
+  const skill = owner && getArcaneRuntimeSkills({
+    ...owner,
+    items: summon.inheritedItems ?? [],
+    skillLevels: summon.inheritedSkillLevels ?? {},
+  }).find((candidate) => candidate.sourceAbilityId === sparkWraithAbilityId)
+  if (!skill) {
+    summon.clonePendingCasts = []
+    return false
+  }
+  const level = summon.inheritedSkillLevels?.[skill.key] ?? 0
+  const profile = getSkillEffectProfile(skill, level)
+  const source: CombatSource = {
+    id: `${summon.id}-${skill.id}`,
+    label: `${summon.name}: ${skill.name}`,
+    team: summon.team,
+    damageType: getSimpleSkillDamageType(skill),
+  }
+  const remaining = [] as NonNullable<SummonedUnit['clonePendingCasts']>
+  let triggered = false
+
+  pending.forEach((cast) => {
+    if (cast.expiresAt <= state.time) return
+    if (cast.activatesAt > state.time) {
+      remaining.push(cast)
+      return
+    }
+    const candidates: CombatTarget[] = [
+      ...state.arcanes.filter((arcane) => arcane.team !== summon.team && isArcaneTargetable(state, arcane)),
+      ...state.creeps.filter((creep) => creep.team !== summon.team && creep.hp > 0),
+      ...state.summons.filter((candidate) => candidate.team !== summon.team && isSummonTargetable(state, candidate)),
+    ]
+    const target = candidates
+      .filter((candidate) => isPointVisibleToTeam(state, summon.team, candidate.pos))
+      .filter((candidate) => distanceSquared(cast.pos, candidate.pos) <= Math.max(1.8, profile.radius) ** 2)
+      .sort((left, right) => distanceSquared(cast.pos, left.pos) - distanceSquared(cast.pos, right.pos))[0]
+    if (!target) {
+      remaining.push(cast)
+      return
+    }
+    damageEntity(state, target.id, profile.damage, source)
+    triggered = true
+    if ('player' in target && profile.stunDuration > 0) {
+      addTimedEffect(state, target, {
+        sourceId: `${source.id}-stun`,
+        sourceName: skill.name,
+        sourceTeam: summon.team,
+        kind: 'stun',
+        polarity: 'negative',
+        value: 1,
+        duration: profile.stunDuration,
+      })
+    }
+    recordTempestDoubleSkill(state, summon, skill, target.pos)
+  })
+  const liveSummon = state.summons.find((candidate) => candidate.id === summon.id) ?? summon
+  liveSummon.clonePendingCasts = remaining
+  return triggered
+}
+
+export function tryUseTempestDoubleSkill(state: SimulationState, summon: SummonedUnit) {
+  if (summon.archetype !== 'clone' || summon.unitSeedId !== tempestDoubleUnitSeedId) return false
+  if (resolveTempestDoubleSparkWraiths(state, summon)) return true
+  if ((summon.nextAbilityAt ?? 0) > state.time) return false
+  summon.nextAbilityAt = state.time + 0.25
+
+  const context = getTempestDoubleCaster(state, summon)
+  if (!context) return false
+  const { caster } = context
+  const enemy = getTempestDoubleEnemyArcanes(state, summon)[0]
+  if (!enemy) return false
+  const skills = getArcaneRuntimeSkills(caster)
+    .filter((skill) => (
+      skill.kind === 'active' &&
+      skill.sourceAbilityId !== tempestDoubleAbilityId &&
+      [magneticFieldAbilityId, fluxAbilityId, sparkWraithAbilityId].includes(skill.sourceAbilityId ?? 0) &&
+      (summon.inheritedSkillLevels?.[skill.key] ?? 0) > 0
+    ))
+    .sort((left, right) => {
+      const priority = (abilityId: number | undefined) => abilityId === magneticFieldAbilityId ? 3 : abilityId === fluxAbilityId ? 2 : 1
+      return priority(right.sourceAbilityId) - priority(left.sourceAbilityId)
+    })
+
+  for (const skill of skills) {
+    const level = summon.inheritedSkillLevels?.[skill.key] ?? 0
+    const manaCost = getSimpleSkillManaCost(caster, skill, level)
+    if ((summon.mana ?? 0) < manaCost || (summon.abilityCooldowns?.[skill.id] ?? 0) > state.time) continue
+    const range = getSimpleSkillRange(caster, skill, level)
+    if (distanceSquared(summon.pos, enemy.pos) > (range + getEntityCollisionRadius(enemy)) ** 2) continue
+    const profile = getSkillEffectProfile(skill, level)
+
+    if (skill.sourceAbilityId === magneticFieldAbilityId) {
+      const activeField = summon.cloneField && summon.cloneField.expiresAt > state.time &&
+        distanceSquared(summon.pos, summon.cloneField.center) <= summon.cloneField.radius ** 2
+      if (activeField) continue
+      const radius = Math.max(1.8, profile.radius)
+      const duration = profile.duration
+      const evasionPct = getSimpleSkillNumericValue(skill, 'evasionPct', level, 100) / 100
+      summon.cloneField = {
+        center: { ...summon.pos },
+        radius,
+        expiresAt: state.time + duration,
+        attackSpeedPct: profile.attackSpeedPct,
+        evasionPct,
+      }
+      state.arcanes
+        .filter((ally) => ally.team === summon.team && isArcaneTargetable(state, ally) && distanceSquared(ally.pos, summon.pos) <= radius ** 2)
+        .forEach((ally) => addTimedEffect(state, ally, {
+          sourceId: `${summon.id}-${skill.id}`,
+          sourceName: skill.name,
+          sourceTeam: summon.team,
+          kind: 'buff',
+          polarity: 'positive',
+          value: 1,
+          modifiers: { attackSpeedPct: profile.attackSpeedPct },
+          duration,
+        }))
+      recordTempestDoubleSkill(state, summon, skill, summon.pos)
+    } else if (skill.sourceAbilityId === fluxAbilityId) {
+      addTimedEffect(state, enemy, {
+        sourceId: `${summon.id}-${skill.id}-dot`,
+        sourceName: skill.name,
+        sourceTeam: summon.team,
+        kind: 'dot',
+        polarity: 'negative',
+        value: profile.damage,
+        damageType: getSimpleSkillDamageType(skill),
+        tickInterval: 0.5,
+        duration: profile.duration,
+      })
+      if (profile.slowPct > 0) {
+        addTimedEffect(state, enemy, {
+          sourceId: `${summon.id}-${skill.id}-slow`,
+          sourceName: skill.name,
+          sourceTeam: summon.team,
+          kind: 'slow',
+          polarity: 'negative',
+          value: profile.slowPct,
+          duration: profile.duration,
+        })
+      }
+      recordTempestDoubleSkill(state, summon, skill, enemy.pos)
+    } else if (skill.sourceAbilityId === sparkWraithAbilityId) {
+      const activationDelay = getSimpleSkillNumericValue(skill, 'base_activation_delay', level, 1.5)
+      summon.clonePendingCasts = [
+        ...(summon.clonePendingCasts ?? []),
+        {
+          skillId: skill.id,
+          pos: { ...enemy.pos },
+          activatesAt: state.time + activationDelay,
+          expiresAt: state.time + activationDelay + profile.duration,
+        },
+      ]
+      recordTempestDoubleSkill(state, summon, skill, enemy.pos)
+    } else {
+      continue
+    }
+
+    summon.mana = Math.max(0, (summon.mana ?? 0) - manaCost)
+    summon.abilityCooldowns = {
+      ...(summon.abilityCooldowns ?? {}),
+      [skill.id]: state.time + getSimpleSkillCooldown(skill, level),
+    }
+    return true
+  }
+  return false
+}
+
+function getTempestDoubleLifetimeProgress(state: SimulationState, summon: SummonedUnit) {
+  if (summon.archetype !== 'clone' || summon.unitSeedId !== tempestDoubleUnitSeedId) return 0
+  return Math.max(0, Math.min(1, (state.time - summon.spawnedAt) / Math.max(0.01, summon.expiresAt - summon.spawnedAt)))
+}
+
+export function getTempestDoubleAccuracyPct(state: SimulationState, summon: SummonedUnit) {
+  return 1 - getTempestDoubleLifetimeProgress(state, summon) * Math.max(0, summon.cloneMaxBlindPct ?? 0)
+}
+
 export function getEffectiveSummonMoveSpeed(state: SimulationState, summon: SummonedUnit) {
   let bonusPct = 0
   if (summon.sourceSkillId === spiritBearSkillId) {
@@ -10349,13 +10621,21 @@ export function getEffectiveSummonMoveSpeed(state: SimulationState, summon: Summ
   if (summon.sourceSkillId === summonFamiliarsSkillId && (summon.sharedBuffUntil ?? 0) > state.time) {
     bonusPct += getOwnerSkillProfileByAbility(state, summon.ownerId, graveChillAbilityId)?.profile.moveSpeedPct ?? 0
   }
-  return summon.moveSpeed * (1 + bonusPct)
+  const cloneSlowMultiplier = 1 - getTempestDoubleLifetimeProgress(state, summon) * Math.max(0, summon.cloneMaxSlowPct ?? 0)
+  return summon.moveSpeed * (1 + bonusPct) * cloneSlowMultiplier
 }
 
 export function getEffectiveSummonAttackInterval(state: SimulationState, summon: SummonedUnit) {
-  const attackSpeedPct = summon.sourceSkillId === summonFamiliarsSkillId && (summon.sharedBuffUntil ?? 0) > state.time
+  let attackSpeedPct = summon.sourceSkillId === summonFamiliarsSkillId && (summon.sharedBuffUntil ?? 0) > state.time
     ? getOwnerSkillProfileByAbility(state, summon.ownerId, graveChillAbilityId)?.profile.attackSpeedPct ?? 0
     : 0
+  if (
+    summon.cloneField &&
+    summon.cloneField.expiresAt > state.time &&
+    distanceSquared(summon.pos, summon.cloneField.center) <= summon.cloneField.radius ** 2
+  ) {
+    attackSpeedPct += summon.cloneField.attackSpeedPct
+  }
   return summon.attackInterval / Math.max(0.2, 1 + attackSpeedPct)
 }
 
@@ -10547,6 +10827,7 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
     if (summon.sourceSkillId === spiritBearSkillId && updateSpiritBearRuntime(state, summon, delta)) continue
     if (summon.sourceSkillId === summonFamiliarsSkillId && updateFamiliarRecall(state, summon)) continue
     if (summon.healingAuraPct > 0) applySummonHealingAura(state, summon, delta)
+    if (tryUseTempestDoubleSkill(state, summon)) continue
     if (tryUseSummonActiveAbility(state, summon)) continue
     const lockedTarget = summon.lockedTargetId ? getCombatTargetById(state, summon.lockedTargetId) : undefined
     if (summon.lockedTargetId && (!lockedTarget || !isLockedSummonTargetValid(state, summon, lockedTarget))) {
@@ -11853,6 +12134,21 @@ export function resolveCombat(
       to: target.pos,
       createdAt: next.time,
     })
+    const cloneAccuracyPct = getTempestDoubleAccuracyPct(next, summon)
+    if (cloneAccuracyPct < 1 && !rollChance(next, cloneAccuracyPct * 100, `clone-accuracy:${summon.id}:${target.id}`)) {
+      next.skillMarkers = [
+        ...next.skillMarkers.slice(-23),
+        {
+          id: `clone-miss-${summon.id}-${next.time}`,
+          team: summon.team,
+          pos: { ...target.pos },
+          label: 'MISS',
+          createdAt: next.time,
+          expiresAt: next.time + 0.65,
+        },
+      ]
+      continue
+    }
     if (explodingImp) {
       resolveSummonExplosion(next, summon)
       continue
@@ -13517,6 +13813,28 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   const sourceArcaneIndex = getSourceArcaneIndex(indexes, source.id)
   const sourceArcane = sourceArcaneIndex < 0 ? undefined : state.arcanes[sourceArcaneIndex]
   const damageType = source.damageType ?? 'physical'
+  if (targetSummon?.cloneField && targetSummon.cloneField.expiresAt > state.time && damageType === 'physical') {
+    const exactSourcePosition = (() => {
+      const arcaneIndex = indexes.arcane.get(source.id)
+      if (arcaneIndex !== undefined) return state.arcanes[arcaneIndex].pos
+      const creepIndex = indexes.creep.get(source.id)
+      if (creepIndex !== undefined) return state.creeps[creepIndex].pos
+      const summonIndex = indexes.summon.get(source.id)
+      if (summonIndex !== undefined) return state.summons[summonIndex].pos
+      const towerIndex = indexes.tower.get(source.id)
+      if (towerIndex !== undefined) return state.towers[towerIndex].pos
+      const structureIndex = indexes.structure.get(source.id)
+      if (structureIndex !== undefined) return state.structures[structureIndex].pos
+      return undefined
+    })()
+    const fieldRadiusSquared = targetSummon.cloneField.radius ** 2
+    if (
+      exactSourcePosition !== undefined &&
+      distanceSquared(targetSummon.pos, targetSummon.cloneField.center) <= fieldRadiusSquared &&
+      distanceSquared(exactSourcePosition, targetSummon.cloneField.center) > fieldRadiusSquared &&
+      rollChance(state, targetSummon.cloneField.evasionPct * 100, `clone-field-evasion:${targetSummon.id}:${source.id}`)
+    ) return
+  }
   let finalDamage = damage
 
   if (targetArcane) {

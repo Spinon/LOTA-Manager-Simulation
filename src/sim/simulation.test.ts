@@ -65,6 +65,7 @@ import {
   getSummonInheritancePolicy,
   getSummonInheritedItemEffects,
   getTeamMatchOutcome,
+  getTempestDoubleAccuracyPct,
   getSimpleSkillAffectedTargets,
   getSimpleSkillExecuteMultiplier,
   getSimpleSkillDamage,
@@ -120,6 +121,7 @@ import {
   shopCatalog,
   tryCastSimpleSkill,
   tryUseHauntReality,
+  tryUseTempestDoubleSkill,
   tryCastRangedCreepSecureSkill,
   triggerOnAttackSummons,
   tick,
@@ -2041,7 +2043,7 @@ let state: SimulationState = initialState
   cloneState.time = 600
   const cloneOwner = cloneState.arcanes[0]
   cloneOwner.heroDefinitionId = 'h105_arc_double'
-  cloneOwner.skillLevels = { R: 1 }
+  cloneOwner.skillLevels = { Q: 2, R: 1 }
   cloneOwner.stats.maxHp = cloneOwner.stats.hp = 2_400
   cloneOwner.stats.damage = cloneOwner.stats.damageMin = cloneOwner.stats.damageMax = 160
   cloneOwner.stats.armor = 11
@@ -2049,6 +2051,8 @@ let state: SimulationState = initialState
   cloneOwner.stats.range = 6.2
   cloneOwner.stats.moveSpeed = 7.1
   cloneOwner.stats.attackSpeed = 0.72
+  cloneOwner.stats.maxMana = 900
+  cloneOwner.stats.mana = 640
   cloneOwner.visionRange = 12
   const tempestDouble = getHeroDefinition(cloneOwner.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5683)!
   applySimpleSkillSummonPressure(cloneState, cloneOwner, tempestDouble, getSkillEffectProfile(tempestDouble, 1), cloneOwner.pos)
@@ -2065,6 +2069,70 @@ let state: SimulationState = initialState
   assert.equal(clone.attackInterval, 0.72)
   assert.equal(clone.goldReward, 70)
   assert.equal(clone.xpReward, 70)
+  assert.equal(clone.mana, 640)
+  assert.equal(clone.maxMana, 900)
+  assert.deepEqual(clone.inheritedSkillLevels, { Q: 2, R: 1 })
+  const cloneTarget = cloneState.arcanes.find((arcane) => arcane.team !== clone.team)!
+  cloneTarget.pos = { x: clone.pos.x + 3, y: clone.pos.y }
+  cloneState.arcanes
+    .filter((arcane) => arcane.team !== clone.team && arcane.id !== cloneTarget.id)
+    .forEach((arcane) => { arcane.pos = { x: 90, y: 90 } })
+  const flux = getArcaneRuntimeSkills(cloneOwner).find((skill) => skill.sourceAbilityId === 5677)!
+  cloneOwner.itemCooldowns[flux.id] = cloneState.time + 99
+  const cloneManaBeforeFlux = clone.mana!
+  assert.equal(tryUseTempestDoubleSkill(cloneState, clone), true, 'Tempest Double should cast learned owner spells')
+  assert.equal(clone.mana, cloneManaBeforeFlux - 75, 'the clone should spend its own mana pool')
+  assert.ok((clone.abilityCooldowns?.[flux.id] ?? 0) > cloneState.time, 'the clone should own a separate spell cooldown')
+  assert.equal(cloneOwner.itemCooldowns[flux.id], cloneState.time + 99, 'clone casts must not consume or reset the owner cooldown')
+  assert.equal(clone.abilityCooldowns?.[tempestDouble.id], undefined, 'the clone must never cast Tempest Double recursively')
+  assert.equal(hasTimedEffect(cloneState, cloneTarget.id, 'dot'), true)
+  assert.equal(hasTimedEffect(cloneState, cloneTarget.id, 'slow'), true)
+  cloneOwner.skillLevels.Q = 0
+  assert.equal(clone.inheritedSkillLevels?.Q, 2, 'the learned kit should remain a birth snapshot')
+
+  cloneState.time = clone.spawnedAt + (clone.expiresAt - clone.spawnedAt) / 2
+  assert.ok(Math.abs(getTempestDoubleAccuracyPct(cloneState, clone) - 0.825) < 0.0001)
+  assert.ok(Math.abs(getEffectiveSummonMoveSpeed(cloneState, clone) - clone.moveSpeed * 0.825) < 0.0001)
+
+  const fieldState = createInitialState('tempest-clone-field')
+  fieldState.time = 600
+  const fieldOwner = fieldState.arcanes[0]
+  fieldOwner.heroDefinitionId = 'h105_arc_double'
+  fieldOwner.skillLevels = { W: 2, R: 1 }
+  fieldOwner.stats.mana = fieldOwner.stats.maxMana = 800
+  const fieldSkill = getHeroDefinition(fieldOwner.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5683)!
+  applySimpleSkillSummonPressure(fieldState, fieldOwner, fieldSkill, getSkillEffectProfile(fieldSkill, 1), fieldOwner.pos)
+  const fieldClone = fieldState.summons[0]
+  const fieldEnemy = fieldState.arcanes.find((arcane) => arcane.team !== fieldClone.team)!
+  fieldEnemy.pos = { x: fieldClone.pos.x + 3, y: fieldClone.pos.y }
+  fieldState.arcanes.filter((arcane) => arcane.team !== fieldClone.team && arcane.id !== fieldEnemy.id).forEach((arcane) => { arcane.pos = { x: 90, y: 90 } })
+  assert.equal(tryUseTempestDoubleSkill(fieldState, fieldClone), true)
+  assert.ok(fieldClone.cloneField && fieldClone.cloneField.expiresAt > fieldState.time)
+  assert.ok(getEffectiveSummonAttackInterval(fieldState, fieldClone) < fieldClone.attackInterval)
+  const fieldHp = fieldClone.hp
+  damageEntity(fieldState, fieldClone.id, 300, { id: fieldEnemy.id, label: fieldEnemy.player, team: fieldEnemy.team, damageType: 'physical' })
+  assert.equal(fieldState.summons[0].hp, fieldHp, 'Magnetic Field should evade physical attacks while the clone remains inside it')
+
+  const sparkState = createInitialState('tempest-clone-spark')
+  sparkState.time = 600
+  const sparkOwner = sparkState.arcanes[0]
+  sparkOwner.heroDefinitionId = 'h105_arc_double'
+  sparkOwner.skillLevels = { E: 3, R: 1 }
+  sparkOwner.stats.mana = sparkOwner.stats.maxMana = 800
+  const sparkDouble = getHeroDefinition(sparkOwner.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5683)!
+  applySimpleSkillSummonPressure(sparkState, sparkOwner, sparkDouble, getSkillEffectProfile(sparkDouble, 1), sparkOwner.pos)
+  const sparkClone = sparkState.summons[0]
+  const sparkTarget = sparkState.arcanes.find((arcane) => arcane.team !== sparkClone.team)!
+  sparkTarget.pos = { x: sparkClone.pos.x + 4, y: sparkClone.pos.y }
+  sparkState.arcanes.filter((arcane) => arcane.team !== sparkClone.team && arcane.id !== sparkTarget.id).forEach((arcane) => { arcane.pos = { x: 90, y: 90 } })
+  const sparkTargetHp = sparkTarget.stats.hp
+  assert.equal(tryUseTempestDoubleSkill(sparkState, sparkClone), true)
+  assert.equal(sparkTarget.stats.hp, sparkTargetHp, 'Spark Wraith should arm before dealing damage')
+  assert.equal(sparkClone.clonePendingCasts?.length, 1)
+  sparkState.time = sparkClone.clonePendingCasts![0].activatesAt
+  assert.equal(tryUseTempestDoubleSkill(sparkState, sparkClone), true)
+  assert.ok(sparkState.arcanes.find((arcane) => arcane.id === sparkTarget.id)!.stats.hp < sparkTargetHp, 'an armed Spark Wraith should hit a unit entering its trigger radius')
+  assert.equal(sparkClone.clonePendingCasts?.length, 0)
 
   const inheritanceState = createInitialState('hero-like-inheritance-policy')
   inheritanceState.time = 600

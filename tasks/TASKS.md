@@ -615,6 +615,13 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - A ativação move o Arcane até a ilusão escolhida, consome somente essa cópia e só pode ocorrer uma vez por Haunt. Com Scepter, os valores oficiais exclusivos de upgrade foram importados separadamente e Reality aplica fear de 2s, slow de 50% e raio de 400, sem contaminar o cast base de Haunt.
 - Testes cobrem interrupção, invulnerabilidade, bloqueio de movimento/targeting, retorno sincronizado, escolha e consumo da Reality, uso único e efeito do Scepter. Suíte completa, lint e build verdes; benchmark de 5 minutos em 151,7x wall / 114,6x CPU, digest `51a125c1f69f4a2a` preservado. Próxima rodada da T16: auditar exceções específicas do Tempest Double, incluindo skills disponíveis, itens proibidos e compartilhamento de cooldowns; depois ampliar estados especiais além de Disruption.
 
+**Progresso do Tempest Double (2026-08-17)**:
+- O clone agora congela no nascimento os níveis aprendidos, inventário, mana atual e mana máxima do owner. Q, W e E usam esse snapshot, gastam a mana do clone e mantêm cooldowns próprios inicialmente disponíveis; a ultimate Tempest Double é excluída para impedir recursão.
+- Flux aplica o dano periódico, slow, duração e cadência importados. Magnetic Field cria uma área com duração e raio oficiais, concede attack speed aos aliados próximos e dá ao clone a evasão física enquanto ele permanece dentro do campo. Spark Wraith arma após 1,5s, persiste por até 16s e dispara uma vez contra a unidade visível mais próxima no raio, com dano e ministun por nível.
+- A degradação oficial do clone foi ligada à duração restante: movimento e precisão caem progressivamente até 35%. Erros de ataque são determinísticos e aparecem como `MISS`; summons comuns não entram nessa rolagem. O estado de mana, cooldowns, campo e armadilhas fica somente na simulação, sem aumentar os frames do replay.
+- Os aliases oficiais passaram a reconhecer `move_speed_slow_pct`, `attack_speed_bonus` e evasão do Magnetic Field. A auditoria permanece em 6 completas, 635 parciais, 12 aproximações e 81 ausentes, mas Flux e Spark Wraith agora classificam seus slows corretamente.
+- Testes cobrem snapshot, mana, cooldown independente do owner, bloqueio da ultimate, Flux, Magnetic Field, Spark Wraith e degradação. Suíte completa, lint e build verdes; benchmark de 5 minutos em 135,9x wall / 108,7x CPU, digest `51a125c1f69f4a2a` preservado. Próxima rodada da T16: implementar a allowlist de ativos de item do Tempest Double, excluindo consumíveis, Refresher e itens perdidos na morte; depois ampliar estados especiais além de Disruption.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

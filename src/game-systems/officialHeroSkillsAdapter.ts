@@ -278,7 +278,7 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
   assignControlDurationAlias(values, skill, 'leashDuration', 'leash')
   assignAlias(values, skill, 'heal', ['heal', 'heal_amount', 'health_restore'])
   assignAlias(values, skill, 'barrier', ['barrier', 'shield', 'damage_absorb'])
-  assignAlias(values, skill, 'slowPct', ['slow', 'movespeed_slow', 'movement_slow', 'enemy_slow', 'move_slow'], true)
+  assignAlias(values, skill, 'slowPct', ['slow', 'movespeed_slow', 'movement_slow', 'enemy_slow', 'move_slow', 'move_speed_slow_pct'], true)
   const summonProfile = getSummonImportProfile(skill)
   if (summonProfile) {
     values.summonArchetype = summonProfile.archetype
@@ -414,7 +414,7 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
     }
   }
   assignAlias(values, skill, 'manaValue', ['mana_burned', 'mana_drain', 'mana_restore'])
-  assignAlias(values, skill, 'attackSpeed', ['bonus_attack_speed', 'attack_speed', 'attackspeed_bonus'])
+  assignAlias(values, skill, 'attackSpeed', ['bonus_attack_speed', 'attack_speed', 'attackspeed_bonus', 'attack_speed_bonus'])
   assignAlias(values, skill, 'moveSpeedBonusPct', ['move_speed_bonus_pct', 'movespeed_bonus', 'bonus_movespeed'], true)
   assignAlias(values, skill, 'critChance', ['crit_chance', 'critical_chance'])
   assignAlias(values, skill, 'critMultiplier', ['crit_multiplier', 'crit_damage'])
@@ -435,6 +435,9 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
     assignAlias(values, skill, 'cloakDamageReductionPct', ['damage_reduction'])
     assignAlias(values, skill, 'cloakRecoveryTime', ['recovery_time'])
     assignAlias(values, skill, 'cloakMinimumDamage', ['minimum_damage'])
+  }
+  if (skill.sourceInternalName === 'arc_warden_magnetic_field') {
+    assignAlias(values, skill, 'evasionPct', ['evasion_chance'], true)
   }
   if (isGlobalAbility(skill.sourceInternalName)) values.global = true
   return values
@@ -532,6 +535,7 @@ function getSkillTags(skill: RuntimeSkill, values: HeroSkillDefinition['values']
   addSemanticTag(tags, internal, 'leap')
   addSemanticTag(tags, internal, 'dash')
   if (['teleport', 'blink', 'leap', 'dash', 'charge'].some((token) => internal.includes(token))) tags.add('mobility')
+  if (internal === 'arc_warden_magnetic_field') tags.add('defensive_utility')
   if (isSummonAbility(skill)) tags.add('summon')
   const summonProfile = getSummonImportProfile(skill)
   if (summonProfile) {
