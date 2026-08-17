@@ -652,6 +652,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Auditoria atual: 7 completas, 634 parciais, 12 aproximações e 81 ausentes; família `immunity`: 16 completas e 5 aproximações. Os casos restantes são Fowl Play por gatilho de morte, Nether Strike com valores de Shard zerados, retorno do Astral Spirit, Press the Attack com duração/resistência vazias e Bulwark direcional sem orientação persistida.
 - Suíte completa, lint e build verdes. Benchmark de 5 minutos em 141,9x wall / 115,8x CPU, digest `51a125c1f69f4a2a` preservado. Próxima rodada da T16: modelar orientação persistente para Bulwark ou avançar o gatilho de morte de Fowl Play, escolhendo o contrato que também sirva às outras habilidades pendentes.
 
+**Progresso de orientação e defesa direcional (2026-08-17)**:
+- Arcanes agora mantêm um vetor de orientação desde o spawn, atualizam-no em movimento normal, viagem planejada, fast path cinemático e ataques básicos, e preservam esse estado nos clones de tick. Frames materializados recebem uma orientação determinística compatível.
+- Todo ataque básico de Arcane, creep, summon, torre, T4, campo neutro e Boss declara posição de origem e natureza do ataque. Dano físico de skills, procs e splash não entra acidentalmente na regra direcional.
+- Bulwark usa os valores oficiais por nível: cone frontal de 140 graus com 40/50/60/70% de redução física e faixa lateral de 240 graus com 20/25/30/35%. Ataques pelas costas, dano mágico e físico não básico continuam integrais; Break suspende a passiva.
+- As estimativas da IA para tankar torre e limpar campo usam a mesma mitigação direcional do combate efetivo. O caminho quente retorna antes de consultar skills para qualquer herói que não seja o Arena Sentinel.
+- A família `immunity` permanece em 16 completas e 5 aproximações: a redução direcional de Bulwark está executada, mas `forced_movement_immunity` continua pendente porque a fonte importada não traz valor, duração nem contrato confiável de ativação.
+- Suíte completa, lint e build verdes. Benchmark de 5 minutos em 149,9x wall / 120,0x CPU, digest `51a125c1f69f4a2a` preservado. Próxima rodada da T16: implementar o gatilho de morte de Fowl Play e então reavaliar os três casos cujos upgrades importados estão vazios.
+
 ---
 
 ### [ ] T16.1 - Linguagem visual de ilusões, clones e criaturas controladas

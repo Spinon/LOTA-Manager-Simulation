@@ -281,6 +281,7 @@ export type Arcane = {
   lane: LaneId
   portrait: string
   pos: Point
+  facing?: Point
   target: Point
   movementDestination?: Point
   pathIndex: number
@@ -680,6 +681,8 @@ export type CombatSource = {
   label: string
   team: TeamId
   damageType?: CombatDamageType
+  sourcePosition?: Point
+  isBasicAttack?: boolean
 }
 export type MatchEvent = {
   id: string
@@ -1289,7 +1292,7 @@ export async function loadGameData() {
   toRuntimeItemModifier = itemModule.toItemModifier
 }
 
-export const rosterSeed: Omit<Arcane, 'pos' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'nextCombatEvaluationAt' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCooldowns' | 'skillStates' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'kills' | 'deaths' | 'assists' | 'damageDealt' | 'heroDamageDealt' | 'structureDamageDealt' | 'damageTaken' | 'healingDone' | 'healingReceived' | 'laneCreepKills' | 'denies' | 'neutralKills' | 'objectiveKills' | 'stats'>[] = [
+export const rosterSeed: Omit<Arcane, 'pos' | 'facing' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'nextCombatEvaluationAt' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCooldowns' | 'skillStates' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'kills' | 'deaths' | 'assists' | 'damageDealt' | 'heroDamageDealt' | 'structureDamageDealt' | 'damageTaken' | 'healingDone' | 'healingReceived' | 'laneCreepKills' | 'denies' | 'neutralKills' | 'objectiveKills' | 'stats'>[] = [
   { id: 'd-quasar', team: 'dawn', player: 'Quasar', name: 'Sword Tempest', heroDefinitionId: 'h007_sword_tempest', role: 'Safe Lane', lane: 'bot', portrait: 'ST', items: ['Blade', 'Boots'] },
   { id: 'd-aster', team: 'dawn', player: 'Aster', name: 'Storm Channeler', heroDefinitionId: 'h014_storm_channeler', role: 'Mid', lane: 'mid', portrait: 'SC', items: ['Wand'] },
   { id: 'd-bulwark', team: 'dawn', player: 'Bulwark', name: 'Tide Colossus', heroDefinitionId: 'h022_tide_colossus', role: 'Offlane', lane: 'top', portrait: 'TC', items: ['Shield'] },
@@ -1312,6 +1315,7 @@ export function createInitialState(seed = 'lota-default-seed', options: Simulati
     const baseArcane = {
       ...arcane,
       pos,
+      facing: getNormalizedDirection(pos, lanePaths[arcane.team][arcane.lane][1]),
       target: lanePaths[arcane.team][arcane.lane][1],
       pathIndex: 1,
       respawn: aliveRespawnTimestamp,
@@ -2304,6 +2308,7 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
     arcanes: state.arcanes.map((arcane) => ({
       ...arcane,
       pos: { ...arcane.pos },
+      facing: arcane.facing ? { ...arcane.facing } : undefined,
       target: { ...arcane.target },
       movementDestination: arcane.movementDestination ? { ...arcane.movementDestination } : undefined,
       lastDecisionPos: { ...arcane.lastDecisionPos },
@@ -2594,6 +2599,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
     return {
       ...fixed,
       pos,
+      facing: getNormalizedDirection(pos, teamInfo[fixed.team === 'dawn' ? 'dusk' : 'dawn'].base),
       target: { ...pos },
       pathIndex: 0,
       respawn: motion[2],
@@ -2934,7 +2940,10 @@ export function getCampClearAssessment(state: SimulationState, arcane: Arcane, c
   const attackCooldown = Math.max(0.25, getEffectiveArcaneAttackCooldown(state, arcane))
   const damagePerSecond = effectiveDamage / attackCooldown
   const clearSeconds = camp.hp / Math.max(20, damagePerSecond)
-  const incomingDamage = Math.max(1, resolveIncomingArcaneDamage(state, arcane, camp.damage, 'physical'))
+  const incomingDamage = Math.max(1, resolveIncomingArcaneDamage(state, arcane, camp.damage, 'physical', {
+    sourcePosition: camp.pos,
+    isBasicAttack: true,
+  }))
   const expectedHits = Math.max(1, Math.floor(clearSeconds / 1.35))
   const expectedDamage = incomingDamage * expectedHits
   const healthAfterClear = arcane.stats.hp - expectedDamage
@@ -5688,6 +5697,7 @@ export function updateArcaneMovement(
           ? 'Controlando a area da runa'
           : runePlan.kind === 'invade' ? 'Disputando runa inimiga' : 'Protegendo runa aliada',
       pos: nextPos,
+      facing: getArcaneFacingAfterMovement(arcane.facing, arcane.pos, nextPos),
     }
   }
   const phase = getGamePhase(state.time)
@@ -6289,6 +6299,7 @@ export function updateArcaneMovement(
     lastDecisionPos: shouldRunDecision ? nextPos : activeArcane.lastDecisionPos,
     decision: finalMicroDecision,
     pos: nextPos,
+    facing: getArcaneFacingAfterMovement(activeArcane.facing, arcane.pos, nextPos),
     movementDestination: moveDestination,
     stats: nextStats,
     travelPlan,
@@ -7687,14 +7698,59 @@ export function getArcaneBarrierAmount(state: SimulationState, arcane: Arcane) {
     .reduce((sum, effect) => sum + Math.max(0, effect.barrierRemaining ?? effect.value), 0))
 }
 
-export function resolveIncomingArcaneDamage(state: SimulationState, target: Arcane, damage: number, damageType: CombatDamageType) {
+export function getBulwarkPhysicalDamageMultiplier(
+  state: SimulationState,
+  target: Arcane,
+  damageType: CombatDamageType,
+  source?: Pick<CombatSource, 'sourcePosition' | 'isBasicAttack'>,
+) {
+  if (damageType !== 'physical' || !source?.isBasicAttack || !source.sourcePosition) return 1
+  if (target.heroDefinitionId !== 'h110_arena_sentinel') return 1
+  if (hasTimedEffect(state, target.id, 'break')) return 1
+  const skill = getArcaneRuntimeSkills(target).find((candidate) => candidate.sourceAbilityId === 6582)
+  if (!skill) return 1
+  const level = getSimpleSkillLevel(target, skill)
+  if (level <= 0) return 1
+
+  const sourceDistance = distance(target.pos, source.sourcePosition)
+  if (sourceDistance <= 0.0001) return 1
+  const fallbackFacingTarget = target.movementDestination ?? target.target ?? teamInfo[target.team === 'dawn' ? 'dusk' : 'dawn'].base
+  const facing = target.facing ?? getNormalizedDirection(target.pos, fallbackFacingTarget)
+  const facingLength = Math.sqrt(facing.x * facing.x + facing.y * facing.y)
+  if (facingLength <= 0.0001) return 1
+  const sourceDirection = {
+    x: (source.sourcePosition.x - target.pos.x) / sourceDistance,
+    y: (source.sourcePosition.y - target.pos.y) / sourceDistance,
+  }
+  const facingDot = (facing.x * sourceDirection.x + facing.y * sourceDirection.y) / facingLength
+  const forwardHalfAngle = getSimpleSkillNumericValue(skill, 'forward_angle', level, 140) / 2
+  const sideHalfAngle = getSimpleSkillNumericValue(skill, 'side_angle', level, 240) / 2
+  const forwardThreshold = Math.cos(forwardHalfAngle * Math.PI / 180)
+  const sideThreshold = Math.cos(sideHalfAngle * Math.PI / 180)
+  const reductionPct = facingDot >= forwardThreshold
+    ? getSimpleSkillNumericValue(skill, 'physical_damage_reduction', level, 0)
+    : facingDot >= sideThreshold
+      ? getSimpleSkillNumericValue(skill, 'physical_damage_reduction_side', level, 0)
+      : 0
+  return 1 - clampNumber(reductionPct / 100, 0, 1)
+}
+
+export function resolveIncomingArcaneDamage(
+  state: SimulationState,
+  target: Arcane,
+  damage: number,
+  damageType: CombatDamageType,
+  source?: Pick<CombatSource, 'sourcePosition' | 'isBasicAttack'>,
+) {
   if (isArcaneInvulnerable(state, target)) return 0
   if (damageType === 'physical' && hasTimedEffect(state, target.id, 'ethereal')) return 0
   const passive = getArcanePassiveCombatModifiers(state, target)
   const temporaryReduction = getArcaneStatModifierEffects(state, target)
     .reduce((sum, effect) => sum + (effect.modifiers?.incomingDamagePct ?? 0), 0)
   const resolvedDamage = resolveDamage({
-    baseDamage: damage * (1 - Math.min(0.8, passive.incomingDamagePct + temporaryReduction)),
+    baseDamage: damage *
+      getBulwarkPhysicalDamageMultiplier(state, target, damageType, source) *
+      (1 - Math.min(0.8, passive.incomingDamagePct + temporaryReduction)),
     damageType,
     targetArmor: getEffectiveArcaneArmor(state, target),
     targetMagicResistance: getEffectiveArcaneMagicResistance(state, target),
@@ -8060,6 +8116,7 @@ export function updateArcaneKinematics(arcane: Arcane, state: SimulationState, d
   arcane.pathIndex = pathIndex
   arcane.target = target
   arcane.movementDestination = destination
+  arcane.facing = getArcaneFacingAfterMovement(arcane.facing, arcane.pos, nextPos)
   arcane.pos = nextPos
   if (hpRegen > 0 || manaRegen > 0) {
     arcane.stats.hp = Math.min(arcane.stats.maxHp, arcane.stats.hp + hpRegen)
@@ -8085,6 +8142,7 @@ export function materializeArcaneTravelPlan(arcane: Arcane, time: number, preser
   if (!arcane.travelPlan) return arcane
   if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.materializations += 1
   const pos = sampleArcaneTravelPlan(arcane.travelPlan, time)
+  arcane.facing = getArcaneFacingAfterMovement(arcane.facing, arcane.pos, pos)
   arcane.pos.x = pos.x
   arcane.pos.y = pos.y
   if (!preservePlan) arcane.travelPlan = undefined
@@ -12605,6 +12663,8 @@ export function resolveCombat(
         label: `Creep de ${laneNames[creep.lane]}`,
         team: creep.team,
         damageType: getCreepDamageType(creep),
+        sourcePosition: creep.pos,
+        isBasicAttack: true,
       })
     }
   })
@@ -12655,6 +12715,8 @@ export function resolveCombat(
       label: summon.name,
       team: summon.team,
       damageType: 'physical',
+      sourcePosition: summon.pos,
+      isBasicAttack: true,
     })
     applyPostAttackSummonItemEffects(next, summon, target, itemAttack, attackDamage)
     applySpiritLinkSummonLifesteal(next, summon, target, attackDamage)
@@ -12694,6 +12756,8 @@ export function resolveCombat(
         label: `Torre T${tower.tier}`,
         team: tower.team,
         damageType: 'physical',
+        sourcePosition: tower.pos,
+        isBasicAttack: true,
       })
     }
   }
@@ -12727,6 +12791,8 @@ export function resolveCombat(
         label: 'Torre T4',
         team: structure.team,
         damageType: 'physical',
+        sourcePosition: structure.pos,
+        isBasicAttack: true,
       })
     }
   }
@@ -12781,6 +12847,8 @@ export function resolveCombat(
         label: camp.name,
         team: target.team === 'dawn' ? 'dusk' : 'dawn',
         damageType: 'physical',
+        sourcePosition: camp.pos,
+        isBasicAttack: true,
       })
       if ('player' in target) {
         addTimedEffect(next, target, {
@@ -12830,6 +12898,8 @@ export function resolveCombat(
         label: next.boss.name,
         team: target.team === 'dawn' ? 'dusk' : 'dawn',
         damageType: 'physical',
+        sourcePosition: next.boss.pos,
+        isBasicAttack: true,
       })
       addTimedEffect(next, target, {
         sourceId: next.boss.id,
@@ -14366,7 +14436,7 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   const sourceArcane = sourceArcaneIndex < 0 ? undefined : state.arcanes[sourceArcaneIndex]
   if (targetArcane && damage > 0 && tryResolveArcaneParry(state, targetArcane, sourceArcane, source)) return
   if (targetSummon?.cloneField && targetSummon.cloneField.expiresAt > state.time && damageType === 'physical') {
-    const exactSourcePosition = (() => {
+    const exactSourcePosition = source.sourcePosition ?? (() => {
       const arcaneIndex = indexes.arcane.get(source.id)
       if (arcaneIndex !== undefined) return state.arcanes[arcaneIndex].pos
       const creepIndex = indexes.creep.get(source.id)
@@ -14390,7 +14460,7 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   let finalDamage = damage
 
   if (targetArcane) {
-    finalDamage = resolveIncomingArcaneDamage(state, targetArcane, damage, damageType)
+    finalDamage = resolveIncomingArcaneDamage(state, targetArcane, damage, damageType, source)
     if (sourceArcane && source.id !== sourceArcane.id) {
       finalDamage *= genericHeroSkillDamageMultiplier
     }
@@ -14761,7 +14831,10 @@ export function getStructureSiegeEstimate(state: SimulationState, team: TeamId, 
 
 export function getTowerTankAssessment(state: SimulationState, arcane: Arcane, tower: Tower) {
   const protectedByBackdoor = isStructureBackdoorProtectedForTeam(state, arcane.team, tower)
-  const incomingDamage = Math.max(1, resolveIncomingArcaneDamage(state, arcane, tower.damage, 'physical'))
+  const incomingDamage = Math.max(1, resolveIncomingArcaneDamage(state, arcane, tower.damage, 'physical', {
+    sourcePosition: tower.pos,
+    isBasicAttack: true,
+  }))
   const reserveRatio = tower.tier === 3 ? 0.36 : tower.tier === 2 ? 0.3 : 0.24
   const reserveHp = Math.max(arcane.stats.maxHp * reserveRatio, incomingDamage * 1.25)
   const tankableHp = Math.max(0, arcane.stats.hp - reserveHp)
@@ -14908,6 +14981,7 @@ export function nearestCreepAtIndices(point: Point, creeps: Creep[], indices: nu
 
 export function performArcaneBasicAttack(state: SimulationState, arcane: Arcane, target: CombatTarget) {
   arcane.lastAttack = state.time
+  arcane.facing = getNormalizedDirection(arcane.pos, target.pos)
   const itemAttack = resolveArcaneItemAttackEffects(state, arcane, target)
   consumeTwinBladeKatanaSwapBuff(state, arcane)
   if ('player' in target && 'team' in target) {
@@ -14937,6 +15011,8 @@ export function performArcaneBasicAttack(state: SimulationState, arcane: Arcane,
     label: arcane.player,
     team: arcane.team,
     damageType: 'physical',
+    sourcePosition: arcane.pos,
+    isBasicAttack: true,
   })
   applyPostAttackItemEffects(state, arcane, target, itemAttack, dealtPhysicalDamage)
   applySpiritLinkOwnerLifestealToBear(state, arcane, target, dealtPhysicalDamage)
@@ -15625,6 +15701,15 @@ export function distanceSquared(a: Point, b: Point) {
   const dx = a.x - b.x
   const dy = a.y - b.y
   return dx * dx + dy * dy
+}
+
+export function getArcaneFacingAfterMovement(currentFacing: Point | undefined, from: Point, to: Point): Point {
+  const movementDistance = distance(from, to)
+  if (movementDistance <= 0.0001) return currentFacing ?? { x: 1, y: 0 }
+  return {
+    x: (to.x - from.x) / movementDistance,
+    y: (to.y - from.y) / movementDistance,
+  }
 }
 
 export function clampNumber(value: number, min: number, max: number) {

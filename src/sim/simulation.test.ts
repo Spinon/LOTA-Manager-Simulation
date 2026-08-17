@@ -31,6 +31,8 @@ import {
   getCombatStagingPoint,
   getCombatTargetTowerExposure,
   getBountyRuneSide,
+  getBulwarkPhysicalDamageMultiplier,
+  getArcaneFacingAfterMovement,
   getArcanePassiveCombatModifiers,
   getArcaneAbilityUpgradeSlots,
   getArcaneDefinitionVisionRange,
@@ -120,6 +122,7 @@ import {
   queryCreepSpatialGrid,
   resolveDeaths,
   resolveCombat,
+  resolveIncomingArcaneDamage,
   resolveSummonItemAttackEffects,
   resolveSimpleSkillEffects,
   resolveCompletedChannels,
@@ -2653,6 +2656,47 @@ let state: SimulationState = initialState
     .find((candidate) => candidate.sourceAbilityId === 7902)!
   assert.equal(resolveSimpleSkillEffects(baseStarbreakerState, baseStarbreakerCaster, baseStarbreakerSkill, 4, baseStarbreakerEnemy), true)
   assert.equal(isArcaneDebuffImmune(baseStarbreakerState, baseStarbreakerCaster), false, 'Starbreaker should require Shard for immunity')
+
+  const bulwarkState = createInitialState('directional-bulwark-runtime')
+  bulwarkState.time = 600
+  const bulwarkTarget = bulwarkState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const bulwarkEnemy = bulwarkState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  bulwarkTarget.heroDefinitionId = 'h110_arena_sentinel'
+  bulwarkTarget.skillLevels = { E: 4 }
+  bulwarkTarget.facing = { x: 1, y: 0 }
+  const frontAttack = { sourcePosition: { x: bulwarkTarget.pos.x + 4, y: bulwarkTarget.pos.y }, isBasicAttack: true }
+  const sideAttack = { sourcePosition: { x: bulwarkTarget.pos.x, y: bulwarkTarget.pos.y + 4 }, isBasicAttack: true }
+  const rearAttack = { sourcePosition: { x: bulwarkTarget.pos.x - 4, y: bulwarkTarget.pos.y }, isBasicAttack: true }
+  assert.ok(Math.abs(getBulwarkPhysicalDamageMultiplier(bulwarkState, bulwarkTarget, 'physical', frontAttack) - 0.3) < 0.0001)
+  assert.equal(getBulwarkPhysicalDamageMultiplier(bulwarkState, bulwarkTarget, 'physical', sideAttack), 0.65)
+  assert.equal(getBulwarkPhysicalDamageMultiplier(bulwarkState, bulwarkTarget, 'physical', rearAttack), 1)
+  assert.equal(getBulwarkPhysicalDamageMultiplier(bulwarkState, bulwarkTarget, 'magical', frontAttack), 1)
+  assert.equal(getBulwarkPhysicalDamageMultiplier(bulwarkState, bulwarkTarget, 'physical', { ...frontAttack, isBasicAttack: false }), 1)
+  const frontDamage = resolveIncomingArcaneDamage(bulwarkState, bulwarkTarget, 200, 'physical', frontAttack)
+  const rearDamage = resolveIncomingArcaneDamage(bulwarkState, bulwarkTarget, 200, 'physical', rearAttack)
+  assert.ok(Math.abs(frontDamage / rearDamage - 0.3) < 0.0001, 'front Bulwark should reduce the resolved basic attack before armor')
+  const hpBeforeBulwarkHit = bulwarkTarget.stats.hp
+  damageEntity(bulwarkState, bulwarkTarget.id, 200, {
+    id: bulwarkEnemy.id,
+    label: bulwarkEnemy.player,
+    team: bulwarkEnemy.team,
+    damageType: 'physical',
+    ...frontAttack,
+  })
+  const liveBulwarkTarget = bulwarkState.arcanes.find((arcane) => arcane.id === bulwarkTarget.id)!
+  assert.ok(Math.abs((hpBeforeBulwarkHit - liveBulwarkTarget.stats.hp) - frontDamage) < 0.0001, 'damageEntity should apply directional Bulwark mitigation')
+  addTimedEffect(bulwarkState, liveBulwarkTarget, {
+    sourceId: 'break-bulwark',
+    sourceName: 'Break Bulwark',
+    sourceTeam: bulwarkEnemy.team,
+    kind: 'break',
+    polarity: 'negative',
+    value: 1,
+    duration: 2,
+  })
+  assert.equal(getBulwarkPhysicalDamageMultiplier(bulwarkState, liveBulwarkTarget, 'physical', frontAttack), 1, 'break should disable Bulwark mitigation')
+  assert.deepEqual(getArcaneFacingAfterMovement({ x: 1, y: 0 }, { x: 2, y: 2 }, { x: 2, y: -2 }), { x: 0, y: -1 })
+  assert.deepEqual(getArcaneFacingAfterMovement({ x: 0, y: -1 }, { x: 2, y: 2 }, { x: 2, y: 2 }), { x: 0, y: -1 })
 
   const invulnerabilityState = createInitialState('rule-level-invulnerability-runtime')
   invulnerabilityState.time = 600
