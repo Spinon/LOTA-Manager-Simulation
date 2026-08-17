@@ -2026,12 +2026,18 @@ function getEffectGlyph(kind: TimedEffect['kind']) {
   if (kind === 'dot') return 'D'
   if (kind === 'barrier') return 'B'
   if (kind === 'buff') return '+'
+  if (kind === 'invulnerable') return 'I'
+  if (kind === 'debuff_immunity') return 'U'
+  if (kind === 'ethereal') return 'E'
   return 'H'
 }
 
 function getEffectCanvasColor(kind: TimedEffect['kind']) {
   if (kind === 'dot' || kind === 'silence') return '#ff5b6e'
   if (kind === 'barrier' || kind === 'buff' || kind === 'hot') return '#d7f171'
+  if (kind === 'invulnerable') return '#fff3ba'
+  if (kind === 'debuff_immunity') return '#6de8c5'
+  if (kind === 'ethereal') return '#d6a8ff'
   if (kind === 'stun') return '#f6c85d'
   return '#9fd0ff'
 }
@@ -3157,13 +3163,29 @@ function getActiveEffectLabels(state: SimulationState, arcane: Arcane) {
 }
 
 function getEffectKindLabel(kind: TimedEffect['kind']) {
-  if (kind === 'dot') return 'DoT'
-  if (kind === 'hot') return 'HoT'
-  if (kind === 'buff') return 'Buff'
-  if (kind === 'barrier') return 'Barrier'
-  if (kind === 'slow') return 'Slow'
-  if (kind === 'stun') return 'Stun'
-  return 'Silence'
+  const labels: Record<TimedEffect['kind'], string> = {
+    slow: 'Slow',
+    stun: 'Stun',
+    silence: 'Silence',
+    root: 'Root',
+    disarm: 'Disarm',
+    hex: 'Hex',
+    fear: 'Fear',
+    taunt: 'Taunt',
+    sleep: 'Sleep',
+    banish: 'Banish',
+    invulnerable: 'Invulnerable',
+    debuff_immunity: 'Debuff immune',
+    ethereal: 'Ethereal',
+    break: 'Break',
+    mute: 'Mute',
+    buff: 'Buff',
+    barrier: 'Barrier',
+    dot: 'DoT',
+    hot: 'HoT',
+    summon_mark: 'Summon mark',
+  }
+  return labels[kind]
 }
 
 function getNextPurchaseLabel(arcane: Arcane) {

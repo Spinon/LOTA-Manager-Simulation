@@ -51,6 +51,8 @@ const statusPriority: Record<SkillSupportStatus, number> = {
   missing: 3,
 }
 
+const ruleLevelImmunityAbilityIds = new Set([5014, 5028, 5249, 5274, 5429, 5467, 661, 352, 389, 1501])
+
 const runtimeValueKeys = new Set([
   'attackSpeed',
   'barrier',
@@ -71,14 +73,20 @@ const runtimeValueKeys = new Set([
   'heal',
   'healthCost',
   'hexDuration',
+  'immunity_resist',
+  'invuln_duration',
+  'invuln_period',
   'leashDuration',
   'lifestealPct',
   'linkedLifestealPct',
   'linkedSummonMoveSpeedPct',
   'manaCost',
   'manaValue',
+  'magic_resist',
+  'magic_resistance_reduction',
   'moveSpeedBonusPct',
   'muteDuration',
+  'nightmare_invuln_time',
   'radius',
   'range',
   'root',
@@ -132,6 +140,8 @@ const runtimeValueKeys = new Set([
   'summonRecallDuration',
   'summons',
   'tauntDuration',
+  'ethereal_duration',
+  'debuff_immunity',
 ])
 
 const metadataValuePattern = /(?:^|_)(?:animation|cast_point|projectile_speed|speed|width|height|vision|tooltip|model|turn_rate|delay|interval|radius|range|duration)(?:_|$)/
@@ -235,8 +245,28 @@ function classifySkill(entry: CatalogSkill): SkillRuntimeAuditRow {
   if (hasToken(tokens, ['purge', 'dispel', 'cleanse', 'basic_dispel', 'strong_dispel'])) {
     add('dispel', 'complete', 'basic and strong timed-effect dispels are implemented')
   }
-  if (hasPattern(tokens, /(?:immunity|immune|invuln|untargetable|spell_parry)/)) {
-    add('immunity', 'approximate', 'immunity-like effects use barrier or incoming-damage modifiers rather than rule-level immunity')
+  const declaresImmunity = [...tokens]
+    .filter((token) => !token.startsWith('pierce') && !token.startsWith('can_target'))
+    .some((token) => (
+    token === 'immunity_resist' ||
+    token === 'spell_parry' ||
+    token === 'ethereal_duration' ||
+    token.includes('debuff_immune') ||
+    token.includes('debuff_immunity') ||
+    token.includes('spell_immune_duration') ||
+    token.includes('invuln') ||
+    token.includes('untargetable') ||
+    token.includes('forced_movement_immunity')
+    ))
+  if (declaresImmunity) {
+    const ruleLevelSupport = ruleLevelImmunityAbilityIds.has(skill.sourceAbilityId ?? 0)
+    add(
+      'immunity',
+      ruleLevelSupport ? 'complete' : 'approximate',
+      ruleLevelSupport
+        ? 'runtime applies rule-level invulnerability, debuff immunity, ethereal state, and imported magic resistance where declared'
+        : 'conditional or directional immunity remains represented by normalized defensive modifiers',
+    )
   }
   if (hasToken(tokens, ['barrier', 'shield', 'spell_parry']) || 'barrier' in skill.values) {
     add('barrier', maxNumericValue(skill.values.barrier) > 0 ? 'complete' : 'approximate', 'timed barrier absorption is implemented')

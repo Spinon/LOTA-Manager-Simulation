@@ -629,6 +629,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Testes cobrem classificação, inventário filtrado, exclusão de atributos da Relíquia Divina, uso ofensivo da Burst Wand, barrier defensiva, gasto de mana e independência de cooldown. Suíte completa, lint e build verdes; benchmark de 5 minutos em 162,6x wall / 125,9x CPU, digest `51a125c1f69f4a2a` preservado.
 - Próxima rodada da T16: ampliar estados especiais além de Disruption e revisar famílias de skills ainda parciais na matriz automática.
 
+**Progresso de imunidades e estados especiais (2026-08-17)**:
+- O contrato de `TimedEffect` passou a representar invulnerabilidade, imunidade a debuffs e estado etéreo como regras próprias. Invulnerabilidade impede aquisição e dano; etéreo impede ataque e dano físico, reduz a resistência mágica pelo valor importado; imunidade a debuffs rejeita novos efeitos negativos que não declaram perfuração.
+- As quatro skills que declaram imunidade direta a debuffs recebem o estado durante a janela correta, com piso de resistência mágica importado. Nightmare, as duas skills de criação de ilusões, a ultimate multigolpe do Twin Blade Duelist e o souvenir de ilusões usam suas janelas específicas de invulnerabilidade; a skill concedida ao Plague Saint aplica o estado etéreo de 2,5s.
+- Skills com `pierces_*` ou `can_target_magic_immune` deixaram de ser classificadas falsamente como concessão de imunidade. A matriz agora separa dez skills completas em nível de regra de doze casos condicionais/direcionais ainda aproximados.
+- O minimapa e o painel ganharam glifos, cores e nomes próprios para os três estados. Testes cobrem bloqueio e perfuração de debuff, resistência mágica, dano puro, aquisição de alvo, imunidade física etérea e exposição mágica.
+- Auditoria atual: 7 completas, 634 parciais, 12 aproximações e 81 ausentes; família `immunity`: 10 completas e 12 aproximações. Suíte completa, lint e build verdes; benchmark de 5 minutos em 164,7x wall / 137,2x CPU, digest `51a125c1f69f4a2a` preservado.
+- Próxima rodada da T16: implementar as imunidades condicionais restantes, começando por área, posição, upgrades e janelas direcionais, sem promover reduções defensivas comuns a imunidade total.
+
 ---
 
 ### [ ] T16.1 - Linguagem visual de ilusões, clones e criaturas controladas

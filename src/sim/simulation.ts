@@ -725,7 +725,7 @@ export type TimedEffect = {
   sourceId: string
   sourceName: string
   sourceTeam: TeamId
-  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'banish' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot' | 'summon_mark'
+  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'banish' | 'invulnerable' | 'debuff_immunity' | 'ethereal' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot' | 'summon_mark'
   polarity: 'positive' | 'negative'
   value: number
   stacks: number
@@ -735,11 +735,13 @@ export type TimedEffect = {
     moveSpeedPct?: number
     attackSpeedPct?: number
     incomingDamagePct?: number
+    magicResistanceFloor?: number
   }
   barrierRemaining?: number
   damageType?: CombatDamageType
   tickInterval?: number
   nextTickAt?: number
+  piercesDebuffImmunity?: boolean
   dispelType: DispelType
   createdAt: number
   expiresAt: number
@@ -7645,6 +7647,8 @@ export function getArcaneBarrierAmount(state: SimulationState, arcane: Arcane) {
 }
 
 export function resolveIncomingArcaneDamage(state: SimulationState, target: Arcane, damage: number, damageType: CombatDamageType) {
+  if (isArcaneInvulnerable(state, target)) return 0
+  if (damageType === 'physical' && hasTimedEffect(state, target.id, 'ethereal')) return 0
   const passive = getArcanePassiveCombatModifiers(state, target)
   const temporaryReduction = getArcaneStatModifierEffects(state, target)
     .reduce((sum, effect) => sum + (effect.modifiers?.incomingDamagePct ?? 0), 0)
@@ -7652,7 +7656,7 @@ export function resolveIncomingArcaneDamage(state: SimulationState, target: Arca
     baseDamage: damage * (1 - Math.min(0.8, passive.incomingDamagePct + temporaryReduction)),
     damageType,
     targetArmor: getEffectiveArcaneArmor(state, target),
-    targetMagicResistance: target.stats.magicResistance,
+    targetMagicResistance: getEffectiveArcaneMagicResistance(state, target),
   })
 
   return absorbDamageWithBarriers(state, target.id, resolvedDamage)
@@ -7666,8 +7670,24 @@ export function isArcaneBanished(state: SimulationState, arcane: Pick<Arcane, 'i
   return hasTimedEffect(state, arcane.id, 'banish')
 }
 
+export function isArcaneInvulnerable(state: SimulationState, arcane: Pick<Arcane, 'id'>) {
+  return hasTimedEffect(state, arcane.id, 'invulnerable')
+}
+
+export function isArcaneDebuffImmune(state: SimulationState, arcane: Pick<Arcane, 'id'>) {
+  return hasTimedEffect(state, arcane.id, 'debuff_immunity')
+}
+
+export function getEffectiveArcaneMagicResistance(state: SimulationState, arcane: Arcane) {
+  return getArcaneStatModifierEffects(state, arcane).reduce((resistance, effect) => (
+    Math.max(resistance, effect.modifiers?.magicResistanceFloor ?? resistance)
+  ), arcane.stats.magicResistance) - getTimedEffectsForTarget(state, arcane.id)
+    .filter((effect) => effect.kind === 'ethereal' && effect.expiresAt > state.time)
+    .reduce((largestReduction, effect) => Math.max(largestReduction, effect.value), 0)
+}
+
 export function isArcaneTargetable(state: SimulationState, arcane: Arcane) {
-  return arcane.stats.hp > 0 && arcane.respawn <= state.time && !isArcaneBanished(state, arcane)
+  return arcane.stats.hp > 0 && arcane.respawn <= state.time && !isArcaneBanished(state, arcane) && !isArcaneInvulnerable(state, arcane)
 }
 
 export function isArcaneStunned(state: SimulationState, arcane: Arcane) {
@@ -7698,7 +7718,7 @@ export function isArcaneMovementDisabled(state: SimulationState, arcane: Arcane)
 }
 
 export function isArcaneAttackDisabled(state: SimulationState, arcane: Arcane) {
-  return isArcaneStunned(state, arcane) || hasTimedEffect(state, arcane.id, 'disarm')
+  return isArcaneStunned(state, arcane) || hasTimedEffect(state, arcane.id, 'disarm') || hasTimedEffect(state, arcane.id, 'ethereal')
 }
 
 export function processTimedEffects(state: SimulationState): SimulationState {
@@ -7765,6 +7785,7 @@ export function processTimedEffects(state: SimulationState): SimulationState {
 }
 
 export function addTimedEffect(state: SimulationState, target: Arcane, effect: Omit<TimedEffect, 'id' | 'targetId' | 'createdAt' | 'expiresAt' | 'stacks' | 'nextTickAt' | 'dispelType'> & { duration: number; dispelType?: DispelType }) {
+  if (effect.polarity === 'negative' && isArcaneDebuffImmune(state, target) && !effect.piercesDebuffImmunity) return
   const duration = effect.polarity === 'negative'
     ? finalDebuffDuration(effect.duration, [target.stats.statusResistance / 100])
     : effect.duration
@@ -7784,6 +7805,7 @@ export function addTimedEffect(state: SimulationState, target: Arcane, effect: O
     barrierRemaining: effect.kind === 'barrier' ? effect.value : effect.barrierRemaining,
     damageType: effect.damageType,
     tickInterval: effect.tickInterval,
+    piercesDebuffImmunity: effect.piercesDebuffImmunity,
     nextTickAt: effect.kind === 'dot' || effect.kind === 'hot'
       ? existing?.nextTickAt ?? state.time + (effect.tickInterval ?? 1)
       : undefined,
@@ -9157,6 +9179,76 @@ export function getSimpleSkillNumericValue(skill: HeroSkillDefinition, key: stri
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
+const ruleLevelDebuffImmunityAbilityIds = new Set([5028, 5249, 5274, 352])
+
+export function doesSimpleSkillPierceDebuffImmunity(skill: HeroSkillDefinition) {
+  return hasAnySimpleSkillTag(skill, [
+    'pierces_immunity',
+    'pierces_magic_immunity',
+    'pierce_spell_immunity',
+    'pierce_debuff_immunity',
+    'can_target_magic_immune',
+  ])
+}
+
+export function getSimpleSkillImmunityProfile(skill: HeroSkillDefinition, level: number) {
+  const invulnerableDuration = Math.max(
+    getSimpleSkillNumericValue(skill, 'nightmare_invuln_time', level, 0),
+    getSimpleSkillNumericValue(skill, 'invuln_duration', level, 0),
+    getSimpleSkillNumericValue(skill, 'invuln_period', level, 0),
+  )
+  const etherealDuration = Math.max(0, getSimpleSkillNumericValue(skill, 'ethereal_duration', level, 0))
+  const debuffImmunity = ruleLevelDebuffImmunityAbilityIds.has(skill.sourceAbilityId ?? 0)
+  const debuffImmunityDuration = debuffImmunity
+    ? Math.max(
+        getSimpleSkillNumericValue(skill, 'duration', level, 0),
+        getSimpleSkillNumericValue(skill, 'channelTime', level, 0),
+      )
+    : 0
+  const magicResistanceFloor = debuffImmunity
+    ? Math.max(
+        0,
+        getSimpleSkillNumericValue(skill, 'magic_resist', level, 0),
+        getSimpleSkillNumericValue(skill, 'immunity_resist', level, 0),
+      )
+    : 0
+  return {
+    invulnerableDuration,
+    debuffImmunityDuration,
+    etherealDuration,
+    magicResistanceFloor,
+    piercesDebuffImmunity: doesSimpleSkillPierceDebuffImmunity(skill),
+  }
+}
+
+export function applySimpleSkillImmunityState(
+  state: SimulationState,
+  caster: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+  target: Arcane,
+  kind: 'invulnerable' | 'debuff_immunity' | 'ethereal',
+  duration: number,
+  value = 1,
+) {
+  if (duration <= 0) return false
+  const profile = getSimpleSkillImmunityProfile(skill, Math.max(1, level))
+  addTimedEffect(state, target, {
+    sourceId: `${caster.id}-${skill.id}-${kind}`,
+    sourceName: skill.name,
+    sourceTeam: caster.team,
+    kind,
+    polarity: target.team === caster.team ? 'positive' : 'negative',
+    value,
+    modifiers: kind === 'debuff_immunity' && profile.magicResistanceFloor > 0
+      ? { magicResistanceFloor: profile.magicResistanceFloor }
+      : undefined,
+    piercesDebuffImmunity: profile.piercesDebuffImmunity,
+    duration,
+  })
+  return hasTimedEffect(state, target.id, kind)
+}
+
 export function castSimpleSkill(
   state: SimulationState,
   arcane: Arcane,
@@ -9229,6 +9321,10 @@ export function startSimpleSkillChannel(
   liveArcane.decision = liveArcane.microDecision
   liveArcane.forceDecision = false
   liveArcane.nextDecisionAt = Math.max(liveArcane.nextDecisionAt, liveArcane.channeling.completesAt)
+  const immunityProfile = getSimpleSkillImmunityProfile(skill, level)
+  if (immunityProfile.debuffImmunityDuration > 0) {
+    applySimpleSkillImmunityState(state, liveArcane, skill, level, liveArcane, 'debuff_immunity', channelDuration)
+  }
   if (profile.summonMode === 'channel' && profile.summonCount > 0) {
     applySimpleSkillSummonPressure(state, liveArcane, skill, profile, target.pos)
   }
@@ -9259,6 +9355,13 @@ export function resolveSimpleSkillEffects(
     label: `${arcane.player}: ${skill.name}`,
     team: arcane.team,
     damageType: getSimpleSkillDamageType(skill),
+  }
+  const immunityProfile = getSimpleSkillImmunityProfile(skill, level)
+  if (!isSimpleSkillChanneled(skill) && immunityProfile.debuffImmunityDuration > 0) {
+    applySimpleSkillImmunityState(state, arcane, skill, level, arcane, 'debuff_immunity', immunityProfile.debuffImmunityDuration)
+  }
+  if (skill.sourceAbilityId !== 5014 && immunityProfile.invulnerableDuration > 0) {
+    applySimpleSkillImmunityState(state, arcane, skill, level, arcane, 'invulnerable', immunityProfile.invulnerableDuration)
   }
 
   if (profile.summonMode === 'on_attack' && profile.summonCount > 0) {
@@ -9334,6 +9437,13 @@ export function resolveSimpleSkillEffects(
     }
 
     if ('player' in affectedTarget && affectedTarget.team !== arcane.team) {
+      if (skill.sourceAbilityId === 5014 && immunityProfile.invulnerableDuration > 0) {
+        applySimpleSkillImmunityState(state, arcane, skill, level, affectedTarget, 'invulnerable', immunityProfile.invulnerableDuration)
+      }
+      if (immunityProfile.etherealDuration > 0) {
+        const magicResistanceReduction = Math.max(0, getSimpleSkillNumericValue(skill, 'magic_resistance_reduction', level, 25))
+        applySimpleSkillImmunityState(state, arcane, skill, level, affectedTarget, 'ethereal', immunityProfile.etherealDuration, magicResistanceReduction)
+      }
       applySimpleNegativeSkillEffects(state, arcane, skill, level, affectedTarget)
       applySimpleSkillManaEffect(state, arcane, affectedTarget, profile)
       applySimpleSkillDispel(state, skill, affectedTarget, 'positive')
@@ -9347,6 +9457,7 @@ export function resolveSimpleSkillEffects(
           value: (damage * 0.65 * genericHeroSkillDamageMultiplier) / Math.max(1, profile.duration),
           damageType: getSimpleSkillDamageType(skill),
           tickInterval: 1,
+          piercesDebuffImmunity: immunityProfile.piercesDebuffImmunity,
           duration: profile.duration,
         })
       }
@@ -9366,7 +9477,7 @@ export function resolveSimpleSkillEffects(
   }
 
   addSimpleSkillEffect(state, arcane, target)
-  const casted = damage > 0 || affectedTargets.some((candidate) => 'player' in candidate && hasSimpleStatusTag(skill)) || profile.manaDelta !== 0 || profile.isMobility || profile.summonCount > 0 || hasAnySimpleSkillTag(skill, ['purge', 'dispel']) || isParentSkillStateCreator(skill)
+  const casted = damage > 0 || affectedTargets.some((candidate) => 'player' in candidate && hasSimpleStatusTag(skill)) || profile.manaDelta !== 0 || profile.isMobility || profile.summonCount > 0 || immunityProfile.invulnerableDuration > 0 || immunityProfile.etherealDuration > 0 || immunityProfile.debuffImmunityDuration > 0 || hasAnySimpleSkillTag(skill, ['purge', 'dispel']) || isParentSkillStateCreator(skill)
   if (casted && commitCast) {
     finishSimpleSkillCast(state, arcane, skill, manaCost, target)
     registerCombatSkillReservation(state, arcane, skill, level, target, profile)
@@ -11648,6 +11759,8 @@ export function castRingmasterSouvenirSkill(
 
   if (sourceAbilityId === 389) {
     const duration = getSimpleSkillNumericValue(skill, 'illusion_duration', level, 18)
+    const invulnerableDuration = getSimpleSkillImmunityProfile(skill, level).invulnerableDuration
+    applySimpleSkillImmunityState(state, arcane, skill, level, arcane, 'invulnerable', invulnerableDuration)
     addTimedEffect(state, arcane, {
       sourceId: `${arcane.id}-${skill.id}-illusion`,
       sourceName: skill.name,
@@ -12022,6 +12135,8 @@ export function applySimpleNegativeSkillEffects(
 ) {
   const sourceId = `${caster.id}-${skill.id}`
   const profile = getSkillEffectProfile(skill, level)
+  const piercesDebuffImmunity = doesSimpleSkillPierceDebuffImmunity(skill)
+  if (isArcaneDebuffImmune(state, target) && !piercesDebuffImmunity) return
   applySimpleSkillDisplacement(caster, target, skill, level)
   if (profile.stunDuration > 0 && !hasAnySimpleSkillTag(skill, ['hex', 'sleep', 'taunt', 'fear'])) {
     addTimedEffect(state, target, {
@@ -12031,6 +12146,7 @@ export function applySimpleNegativeSkillEffects(
       kind: 'stun',
       polarity: 'negative',
       value: 1,
+      piercesDebuffImmunity,
       duration: profile.stunDuration,
     })
   }
@@ -12043,6 +12159,7 @@ export function applySimpleNegativeSkillEffects(
       kind: 'root',
       polarity: 'negative',
       value: 1,
+      piercesDebuffImmunity,
       duration: profile.rootDuration,
     })
   }
@@ -12055,6 +12172,7 @@ export function applySimpleNegativeSkillEffects(
       kind: 'slow',
       polarity: 'negative',
       value: profile.slowPct,
+      piercesDebuffImmunity,
       duration: profile.duration,
     })
   }
@@ -12067,6 +12185,7 @@ export function applySimpleNegativeSkillEffects(
       kind: 'silence',
       polarity: 'negative',
       value: 1,
+      piercesDebuffImmunity,
       duration: profile.silenceDuration,
     })
   }
@@ -12085,6 +12204,7 @@ export function applySimpleNegativeSkillEffects(
       polarity: 'negative',
       value: 1,
       modifiers: { armorFlat: profile.armorDelta },
+      piercesDebuffImmunity,
       duration: profile.duration,
     })
   }
@@ -12097,6 +12217,7 @@ export function applySimpleNamedControl(
   target: Arcane,
   profile: ReturnType<typeof getSkillEffectProfile>,
 ) {
+  const piercesDebuffImmunity = doesSimpleSkillPierceDebuffImmunity(skill)
   const controls: Array<{ tags: string[]; kind: TimedEffect['kind']; duration: number }> = [
     { tags: ['hex'], kind: 'hex', duration: profile.hexDuration },
     { tags: ['sleep'], kind: 'sleep', duration: profile.sleepDuration },
@@ -12115,6 +12236,7 @@ export function applySimpleNamedControl(
       kind: control.kind,
       polarity: 'negative',
       value: 1,
+      piercesDebuffImmunity,
       duration: control.duration,
     })
   })
@@ -13988,11 +14110,12 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   const targetBase = targetBaseIndex === undefined ? undefined : state.bases[targetBaseIndex]
   const targetCamp = targetCampIndex === undefined ? undefined : state.camps[targetCampIndex]
   const targetBoss = state.boss.id === id ? state.boss : undefined
-  if (targetArcane && isArcaneBanished(state, targetArcane)) return
+  const damageType = source.damageType ?? 'physical'
+  if (targetArcane && (isArcaneBanished(state, targetArcane) || isArcaneInvulnerable(state, targetArcane))) return
+  if (targetArcane && damageType === 'physical' && hasTimedEffect(state, targetArcane.id, 'ethereal')) return
   if (targetSummon && !isSummonTargetable(state, targetSummon)) return
   const sourceArcaneIndex = getSourceArcaneIndex(indexes, source.id)
   const sourceArcane = sourceArcaneIndex < 0 ? undefined : state.arcanes[sourceArcaneIndex]
-  const damageType = source.damageType ?? 'physical'
   if (targetSummon?.cloneField && targetSummon.cloneField.expiresAt > state.time && damageType === 'physical') {
     const exactSourcePosition = (() => {
       const arcaneIndex = indexes.arcane.get(source.id)

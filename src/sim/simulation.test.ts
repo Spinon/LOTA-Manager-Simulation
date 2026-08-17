@@ -52,6 +52,7 @@ import {
   getEffectiveArcaneAttackCooldown,
   getEffectiveArcaneArmor,
   getEffectiveArcaneDamage,
+  getEffectiveArcaneMagicResistance,
   getEffectiveArcaneMoveSpeed,
   getEffectiveSummonAttackInterval,
   getEffectiveSummonMoveSpeed,
@@ -69,6 +70,7 @@ import {
   getTempestDoubleAllowedActiveItems,
   getSimpleSkillAffectedTargets,
   getSimpleSkillExecuteMultiplier,
+  getSimpleSkillImmunityProfile,
   getSimpleSkillDamage,
   getSimpleSkillLevel,
   getLastHitTarget,
@@ -93,7 +95,10 @@ import {
   honorsCombatReservations,
   healArcaneDirectly,
   isPositiveSimpleSkill,
+  isArcaneAttackDisabled,
   isArcaneBanished,
+  isArcaneDebuffImmune,
+  isArcaneInvulnerable,
   isArcaneTargetable,
   isSummonActive,
   isSummonTargetable,
@@ -2419,6 +2424,112 @@ let state: SimulationState = initialState
   assert.equal(isArcaneBanished(disruptionState, disruptionTarget), false)
   assert.equal(isArcaneTargetable(disruptionState, disruptionTarget), true)
   assert.equal(createMatchRenderFrame(disruptionState).summons.length, 2)
+
+  const immunityState = createInitialState('rule-level-skill-immunity-runtime')
+  immunityState.time = 600
+  const immunityCaster = immunityState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const immunityEnemy = immunityState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  immunityCaster.heroDefinitionId = 'h046_lifesteal_berserker'
+  immunityCaster.skillLevels = { Q: 4 }
+  const rageSkill = getHeroDefinition(immunityCaster.heroDefinitionId).skills!
+    .find((candidate) => candidate.sourceAbilityId === 5249)!
+  const rageProfile = getSimpleSkillImmunityProfile(rageSkill, 4)
+  assert.equal(rageProfile.debuffImmunityDuration, 6)
+  assert.equal(rageProfile.magicResistanceFloor, 80)
+  assert.equal(resolveSimpleSkillEffects(immunityState, immunityCaster, rageSkill, 4, immunityCaster), true)
+  assert.equal(isArcaneDebuffImmune(immunityState, immunityCaster), true)
+  assert.equal(getEffectiveArcaneMagicResistance(immunityState, immunityCaster), 80)
+  addTimedEffect(immunityState, immunityCaster, {
+    sourceId: 'blocked-slow',
+    sourceName: 'Blocked slow',
+    sourceTeam: immunityEnemy.team,
+    kind: 'slow',
+    polarity: 'negative',
+    value: 0.5,
+    duration: 3,
+  })
+  assert.equal(hasTimedEffect(immunityState, immunityCaster.id, 'slow'), false, 'debuff immunity should reject ordinary negative effects')
+  addTimedEffect(immunityState, immunityCaster, {
+    sourceId: 'piercing-slow',
+    sourceName: 'Piercing slow',
+    sourceTeam: immunityEnemy.team,
+    kind: 'slow',
+    polarity: 'negative',
+    value: 0.5,
+    piercesDebuffImmunity: true,
+    duration: 3,
+  })
+  assert.equal(hasTimedEffect(immunityState, immunityCaster.id, 'slow'), true, 'explicit piercing should bypass debuff immunity')
+  const immunityHp = immunityCaster.stats.hp
+  damageEntity(immunityState, immunityCaster.id, 100, {
+    id: immunityEnemy.id,
+    label: immunityEnemy.player,
+    team: immunityEnemy.team,
+    damageType: 'magical',
+  })
+  assert.ok(Math.abs(immunityState.arcanes.find((arcane) => arcane.id === immunityCaster.id)!.stats.hp - (immunityHp - 20)) < 0.001)
+
+  const invulnerabilityState = createInitialState('rule-level-invulnerability-runtime')
+  invulnerabilityState.time = 600
+  const invulnerabilityCaster = invulnerabilityState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const invulnerabilityEnemy = invulnerabilityState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  invulnerabilityCaster.heroDefinitionId = 'h081_naga_siren'
+  invulnerabilityCaster.skillLevels = { Q: 4 }
+  const mirrorImageSkill = getHeroDefinition(invulnerabilityCaster.heroDefinitionId).skills!
+    .find((candidate) => candidate.sourceAbilityId === 5467)!
+  assert.equal(resolveSimpleSkillEffects(invulnerabilityState, invulnerabilityCaster, mirrorImageSkill, 4, invulnerabilityEnemy), true)
+  assert.equal(isArcaneInvulnerable(invulnerabilityState, invulnerabilityCaster), true)
+  assert.equal(isArcaneTargetable(invulnerabilityState, invulnerabilityCaster), false)
+  const invulnerableHp = invulnerabilityCaster.stats.hp
+  damageEntity(invulnerabilityState, invulnerabilityCaster.id, 500, {
+    id: invulnerabilityEnemy.id,
+    label: invulnerabilityEnemy.player,
+    team: invulnerabilityEnemy.team,
+    damageType: 'pure',
+  })
+  assert.equal(invulnerabilityCaster.stats.hp, invulnerableHp)
+  invulnerabilityState.time += 0.51
+  assert.equal(isArcaneTargetable(invulnerabilityState, invulnerabilityCaster), true)
+
+  const nightmareState = createInitialState('targeted-invulnerability-runtime')
+  nightmareState.time = 600
+  const nightmareCaster = nightmareState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const nightmareTarget = nightmareState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  nightmareCaster.heroDefinitionId = 'h003_nightmare_controller'
+  nightmareCaster.skillLevels = { E: 4 }
+  const nightmareSkill = getHeroDefinition(nightmareCaster.heroDefinitionId).skills!
+    .find((candidate) => candidate.sourceAbilityId === 5014)!
+  assert.equal(resolveSimpleSkillEffects(nightmareState, nightmareCaster, nightmareSkill, 4, nightmareTarget), true)
+  assert.equal(isArcaneInvulnerable(nightmareState, nightmareTarget), true, 'Nightmare should protect its target during the imported opening window')
+
+  const etherealState = createInitialState('rule-level-ethereal-runtime')
+  etherealState.time = 600
+  const etherealCaster = etherealState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const etherealTarget = etherealState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  etherealCaster.heroDefinitionId = 'h028_plague_saint'
+  etherealCaster.skillLevels = { H1: 1 }
+  const etherealSkill = getHeroDefinition(etherealCaster.heroDefinitionId).supplementalSkills!
+    .find((candidate) => candidate.sourceAbilityId === 661)!
+  assert.equal(resolveSimpleSkillEffects(etherealState, etherealCaster, etherealSkill, 1, etherealTarget), true)
+  assert.equal(hasTimedEffect(etherealState, etherealTarget.id, 'ethereal'), true)
+  assert.equal(isArcaneAttackDisabled(etherealState, etherealTarget), true)
+  const etherealHp = etherealTarget.stats.hp
+  damageEntity(etherealState, etherealTarget.id, 100, {
+    id: etherealCaster.id,
+    label: etherealCaster.player,
+    team: etherealCaster.team,
+    damageType: 'physical',
+  })
+  assert.equal(etherealTarget.stats.hp, etherealHp, 'ethereal units should ignore physical damage')
+  const effectiveEtherealResistance = getEffectiveArcaneMagicResistance(etherealState, etherealTarget)
+  damageEntity(etherealState, etherealTarget.id, 100, {
+    id: etherealCaster.id,
+    label: etherealCaster.player,
+    team: etherealCaster.team,
+    damageType: 'magical',
+  })
+  const liveEtherealTarget = etherealState.arcanes.find((arcane) => arcane.id === etherealTarget.id)!
+  assert.ok(Math.abs(liveEtherealTarget.stats.hp - (etherealHp - 100 * (1 - effectiveEtherealResistance / 100))) < 0.001)
 
   const hauntState = createInitialState('global-target-copy-illusion-runtime')
   hauntState.time = 600

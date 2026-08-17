@@ -36,4 +36,22 @@ const pendingSummons = summonRows.filter((row) => row.families.some((family) => 
 assert.equal(materializedSummons.length, 33, 'all imported summon triggers should use independent units')
 assert.equal(pendingSummons.length, 0, 'event-driven summon triggers should be materialized')
 
+const completeImmunityAbilityIds = audit.rows
+  .filter((row) => row.families.some((family) => family.id === 'immunity' && family.status === 'complete'))
+  .map((row) => row.sourceAbilityId)
+  .sort((left, right) => left - right)
+assert.deepEqual(
+  completeImmunityAbilityIds,
+  [352, 389, 661, 1501, 5014, 5028, 5249, 5274, 5429, 5467],
+  'rule-level immunity support should stay explicit and source-scoped',
+)
+for (const piercingOnlyAbilityId of [5468, 5509, 5510, 5581, 8106]) {
+  const row = audit.rows.find((candidate) => candidate.sourceAbilityId === piercingOnlyAbilityId)!
+  assert.equal(
+    row.families.some((family) => family.id === 'immunity'),
+    false,
+    `${piercingOnlyAbilityId} should not be classified as granting immunity merely because it pierces immunity`,
+  )
+}
+
 console.log('skill runtime audit tests passed')
