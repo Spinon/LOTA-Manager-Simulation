@@ -66,6 +66,7 @@ import {
   getSummonInheritedItemEffects,
   getTeamMatchOutcome,
   getTempestDoubleAccuracyPct,
+  getTempestDoubleAllowedActiveItems,
   getSimpleSkillAffectedTargets,
   getSimpleSkillExecuteMultiplier,
   getSimpleSkillDamage,
@@ -98,6 +99,8 @@ import {
   isSummonTargetable,
   isCreepRouteTargetValid,
   isUltimateSkill,
+  isTempestDoubleInventoryItemAllowed,
+  isTempestDoubleItemActiveAllowed,
   isPointVisibleToTeam,
   isPersistentSpatialGrid,
   loadGameData,
@@ -122,6 +125,7 @@ import {
   tryCastSimpleSkill,
   tryUseHauntReality,
   tryUseTempestDoubleSkill,
+  tryUseTempestDoubleItem,
   tryCastRangedCreepSecureSkill,
   triggerOnAttackSummons,
   tick,
@@ -2134,6 +2138,100 @@ let state: SimulationState = initialState
   assert.ok(sparkState.arcanes.find((arcane) => arcane.id === sparkTarget.id)!.stats.hp < sparkTargetHp, 'an armed Spark Wraith should hit a unit entering its trigger radius')
   assert.equal(sparkClone.clonePendingCasts?.length, 0)
 
+  const activeItemById = (id: string) => shopCatalog.find((item) => item.id === id)!
+  assert.equal(isTempestDoubleItemActiveAllowed(activeItemById('i142_burst_wand')), true)
+  assert.equal(isTempestDoubleItemActiveAllowed(activeItemById('i068_magic_wand')), false, 'charge-based items should be forbidden on the clone')
+  assert.equal(isTempestDoubleItemActiveAllowed(activeItemById('i011_refillable_bottle')), false, 'stored consumables should be forbidden on the clone')
+  assert.equal(isTempestDoubleItemActiveAllowed(activeItemById('i134_moon_shard_generic')), false, 'permanently consumed upgrades should be forbidden on the clone')
+  assert.equal(isTempestDoubleItemActiveAllowed(activeItemById('i138_refresh_orb_generic')), false, 'Refresher should be forbidden on the clone')
+  assert.equal(isTempestDoubleInventoryItemAllowed('Burst Wand'), true)
+  assert.equal(isTempestDoubleInventoryItemAllowed('Magic Wand'), true, 'charge items should retain their passive stats without copying charges')
+  assert.equal(isTempestDoubleInventoryItemAllowed('Mana Clarity'), false, 'consumables should not enter the clone inventory')
+  assert.equal(isTempestDoubleInventoryItemAllowed(activeItemById('i133_divine_relic').name), false, 'drop-on-death items should not enter the clone inventory')
+  assert.equal(isTempestDoubleInventoryItemAllowed(activeItemById('i134_moon_shard_generic').name), false)
+
+  const cloneInventoryState = createInitialState('tempest-clone-inventory-filter')
+  cloneInventoryState.time = 600
+  const cloneInventoryOwner = cloneInventoryState.arcanes[0]
+  cloneInventoryOwner.heroDefinitionId = 'h105_arc_double'
+  cloneInventoryOwner.skillLevels = { R: 1 }
+  const divineRelicName = activeItemById('i133_divine_relic').name
+  cloneInventoryOwner.items = ['Burst Wand', 'Mana Clarity', divineRelicName]
+  cloneInventoryOwner.stats = buildArcaneStats(
+    cloneInventoryOwner.heroDefinitionId,
+    12,
+    12_000,
+    cloneInventoryOwner.stats.xp,
+    1,
+    0.65,
+    cloneInventoryOwner.items,
+  )
+  const eligibleCloneStats = buildArcaneStats(
+    cloneInventoryOwner.heroDefinitionId,
+    12,
+    12_000,
+    cloneInventoryOwner.stats.xp,
+    1,
+    0.65,
+    ['Burst Wand'],
+  )
+  const eligibleCloneSource = { ...cloneInventoryOwner, items: ['Burst Wand'], stats: eligibleCloneStats }
+  const cloneInventoryDouble = getHeroDefinition(cloneInventoryOwner.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5683)!
+  applySimpleSkillSummonPressure(cloneInventoryState, cloneInventoryOwner, cloneInventoryDouble, getSkillEffectProfile(cloneInventoryDouble, 1), cloneInventoryOwner.pos)
+  const filteredInventoryClone = cloneInventoryState.summons[0]
+  assert.deepEqual(filteredInventoryClone.inheritedItems, ['Burst Wand'])
+  assert.equal(filteredInventoryClone.maxHp, eligibleCloneStats.maxHp)
+  assert.equal(filteredInventoryClone.maxMana, eligibleCloneStats.maxMana)
+  assert.equal(filteredInventoryClone.mana, eligibleCloneStats.mana)
+  assert.equal(filteredInventoryClone.damage, Math.round(getCloneInheritedAttackDamage(cloneInventoryState, eligibleCloneSource) * 0.75))
+  assert.ok(cloneInventoryOwner.stats.damage > eligibleCloneStats.damage, 'the owner should keep the drop-on-death damage that the clone cannot inherit')
+
+  const cloneItemState = createInitialState('tempest-clone-active-item')
+  cloneItemState.time = 600
+  const cloneItemOwner = cloneItemState.arcanes[0]
+  cloneItemOwner.heroDefinitionId = 'h105_arc_double'
+  cloneItemOwner.skillLevels = { R: 1 }
+  cloneItemOwner.items = ['Burst Wand']
+  cloneItemOwner.stats.mana = cloneItemOwner.stats.maxMana = 800
+  const cloneItemDouble = getHeroDefinition(cloneItemOwner.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5683)!
+  applySimpleSkillSummonPressure(cloneItemState, cloneItemOwner, cloneItemDouble, getSkillEffectProfile(cloneItemDouble, 1), cloneItemOwner.pos)
+  const activeItemClone = cloneItemState.summons[0]
+  const activeItemTarget = cloneItemState.arcanes.find((arcane) => arcane.team !== activeItemClone.team)!
+  activeItemTarget.pos = { x: activeItemClone.pos.x + 4, y: activeItemClone.pos.y }
+  cloneItemState.arcanes.filter((arcane) => arcane.team !== activeItemClone.team && arcane.id !== activeItemTarget.id).forEach((arcane) => { arcane.pos = { x: 90, y: 90 } })
+  const burstWand = activeItemById('i142_burst_wand')
+  cloneItemOwner.itemCooldowns[burstWand.name] = cloneItemState.time + 99
+  const activeItemTargetHp = activeItemTarget.stats.hp
+  assert.deepEqual(getTempestDoubleAllowedActiveItems(activeItemClone).map((item) => item.id), ['i142_burst_wand'])
+  assert.equal(tryUseTempestDoubleItem(cloneItemState, activeItemClone), true)
+  assert.ok(cloneItemState.arcanes.find((arcane) => arcane.id === activeItemTarget.id)!.stats.hp < activeItemTargetHp)
+  assert.ok((activeItemClone.itemCooldowns?.[burstWand.name] ?? 0) > cloneItemState.time)
+  assert.equal(cloneItemOwner.itemCooldowns[burstWand.name], cloneItemState.time + 99, 'item cooldowns should be independent between owner and clone')
+
+  const cloneBarrierState = createInitialState('tempest-clone-active-barrier')
+  cloneBarrierState.time = 600
+  const cloneBarrierOwner = cloneBarrierState.arcanes[0]
+  cloneBarrierOwner.heroDefinitionId = 'h105_arc_double'
+  cloneBarrierOwner.skillLevels = { R: 1 }
+  cloneBarrierOwner.items = ['Pavise Barrier']
+  const cloneBarrierDouble = getHeroDefinition(cloneBarrierOwner.heroDefinitionId).skills!.find((candidate) => candidate.sourceAbilityId === 5683)!
+  applySimpleSkillSummonPressure(cloneBarrierState, cloneBarrierOwner, cloneBarrierDouble, getSkillEffectProfile(cloneBarrierDouble, 1), cloneBarrierOwner.pos)
+  const barrierClone = cloneBarrierState.summons[0]
+  cloneBarrierState.arcanes.filter((arcane) => arcane.team === barrierClone.team).forEach((arcane) => { arcane.pos = { x: 90, y: 90 } })
+  barrierClone.hp = barrierClone.maxHp * 0.4
+  const barrierHp = barrierClone.hp
+  assert.equal(tryUseTempestDoubleItem(cloneBarrierState, barrierClone), true)
+  assert.ok((barrierClone.cloneItemEffects?.[0].barrierRemaining ?? 0) > 0)
+  const barrierAttacker = cloneBarrierState.arcanes.find((arcane) => arcane.team !== barrierClone.team)!
+  damageEntity(cloneBarrierState, barrierClone.id, 100, {
+    id: barrierAttacker.id,
+    label: barrierAttacker.player,
+    team: barrierAttacker.team,
+    damageType: 'physical',
+  })
+  assert.equal(cloneBarrierState.summons[0].hp, barrierHp, 'an eligible clone barrier should absorb incoming damage')
+  assert.ok((cloneBarrierState.summons[0].cloneItemEffects?.[0].barrierRemaining ?? 300) < 300)
+
   const inheritanceState = createInitialState('hero-like-inheritance-policy')
   inheritanceState.time = 600
   const inheritanceOwner = inheritanceState.arcanes.find((arcane) => arcane.team === 'dawn')!
@@ -2204,7 +2302,7 @@ let state: SimulationState = initialState
   assert.equal(inheritedClone.damage, Math.round(inheritedCloneDamage))
   assert.equal(getSummonInheritancePolicy(inheritedClone).copiesHeroPassives, true)
   assert.equal(getSummonInheritancePolicy(inheritedClone).itemPassives, 'full')
-  assert.equal(getSummonInheritancePolicy(inheritedClone).copiesItemActives, false)
+  assert.equal(getSummonInheritancePolicy(inheritedClone).copiesItemActives, true)
   const cloneItemEffects = getSummonInheritedItemEffects(inheritedClone)
   assert.equal(cloneItemEffects.some((effect) => effect.effectId === 'chain_lightning_proc'), true, 'clones should inherit eligible attack procs')
   assert.equal(cloneItemEffects.some((effect) => effect.kind === 'active'), false, 'clones should not copy item actives in the current restriction tier')

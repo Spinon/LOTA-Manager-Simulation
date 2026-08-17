@@ -401,6 +401,7 @@ export type SummonedUnit = {
   variant?: SummonVariant
   unitSeedId?: string
   nextAbilityAt?: number
+  nextItemAt?: number
   recallStartedAt?: number
   abilityCounter?: number
   sharedBuffUntil?: number
@@ -416,6 +417,7 @@ export type SummonedUnit = {
   maxMana?: number
   inheritedSkillLevels?: SkillLevels
   abilityCooldowns?: Record<string, number>
+  itemCooldowns?: Record<string, number>
   cloneMaxBlindPct?: number
   cloneMaxSlowPct?: number
   cloneField?: {
@@ -430,6 +432,13 @@ export type SummonedUnit = {
     pos: Point
     activatesAt: number
     expiresAt: number
+  }>
+  cloneItemEffects?: Array<{
+    sourceId: string
+    expiresAt: number
+    moveSpeedPct: number
+    attackSpeedPct: number
+    barrierRemaining: number
   }>
   lastHitBy?: CombatSource
 }
@@ -2301,8 +2310,10 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
       inheritedItems: summon.inheritedItems ? [...summon.inheritedItems] : undefined,
       inheritedSkillLevels: summon.inheritedSkillLevels ? { ...summon.inheritedSkillLevels } : undefined,
       abilityCooldowns: summon.abilityCooldowns ? { ...summon.abilityCooldowns } : undefined,
+      itemCooldowns: summon.itemCooldowns ? { ...summon.itemCooldowns } : undefined,
       cloneField: summon.cloneField ? { ...summon.cloneField, center: { ...summon.cloneField.center } } : undefined,
       clonePendingCasts: summon.clonePendingCasts?.map((cast) => ({ ...cast, pos: { ...cast.pos } })),
+      cloneItemEffects: summon.cloneItemEffects?.map((effect) => ({ ...effect })),
       lastHitBy: summon.lastHitBy ? { ...summon.lastHitBy } : undefined,
     })),
     towers: state.towers.map((tower) => ({ ...tower, pos: { ...tower.pos } })),
@@ -7481,7 +7492,7 @@ const summonInheritancePolicies: Record<SummonInheritanceFamily, SummonInheritan
     family: 'clone',
     copiesHeroPassives: true,
     itemPassives: 'full',
-    copiesItemActives: false,
+    copiesItemActives: true,
     copiesTemporaryBuffs: false,
     receivesTeamAuras: true,
   },
@@ -9676,6 +9687,46 @@ export function applySimpleSkillDispel(
   return dispelTimedEffects(state, target.id, power, polarity)
 }
 
+function getTempestDoubleStatSource(statSource: Arcane, inheritedItems: string[]): Arcane {
+  if (inheritedItems.length === statSource.items.length) return statSource
+  const buildStats = (items: string[]) => buildArcaneStats(
+    statSource.heroDefinitionId,
+    statSource.stats.level,
+    statSource.stats.gold,
+    statSource.stats.xp,
+    1,
+    1,
+    items,
+    statSource.statBonusLevels,
+  )
+  const fullInventoryStats = buildStats(statSource.items)
+  const inheritedInventoryStats = buildStats(inheritedItems)
+  const adjust = (current: number, filtered: number, full: number) => filtered === full ? current : current + filtered - full
+  const maxHp = Math.max(1, adjust(statSource.stats.maxHp, inheritedInventoryStats.maxHp, fullInventoryStats.maxHp))
+  const maxMana = Math.max(0, adjust(statSource.stats.maxMana, inheritedInventoryStats.maxMana, fullInventoryStats.maxMana))
+  return {
+    ...statSource,
+    items: inheritedItems,
+    stats: {
+      ...statSource.stats,
+      maxHp,
+      hp: maxHp,
+      maxMana,
+      mana: Math.min(maxMana, statSource.stats.mana),
+      damage: Math.max(0, adjust(statSource.stats.damage, inheritedInventoryStats.damage, fullInventoryStats.damage)),
+      damageMin: Math.max(0, adjust(statSource.stats.damageMin, inheritedInventoryStats.damageMin, fullInventoryStats.damageMin)),
+      damageMax: Math.max(0, adjust(statSource.stats.damageMax, inheritedInventoryStats.damageMax, fullInventoryStats.damageMax)),
+      range: Math.max(minimumMeleeMapAttackRange, adjust(statSource.stats.range, inheritedInventoryStats.range, fullInventoryStats.range)),
+      attackSpeed: Math.max(0.1, adjust(statSource.stats.attackSpeed, inheritedInventoryStats.attackSpeed, fullInventoryStats.attackSpeed)),
+      armor: adjust(statSource.stats.armor, inheritedInventoryStats.armor, fullInventoryStats.armor),
+      magicResistance: adjust(statSource.stats.magicResistance, inheritedInventoryStats.magicResistance, fullInventoryStats.magicResistance),
+      statusResistance: adjust(statSource.stats.statusResistance, inheritedInventoryStats.statusResistance, fullInventoryStats.statusResistance),
+      slowResistance: adjust(statSource.stats.slowResistance, inheritedInventoryStats.slowResistance, fullInventoryStats.slowResistance),
+      moveSpeed: Math.max(0, adjust(statSource.stats.moveSpeed, inheritedInventoryStats.moveSpeed, fullInventoryStats.moveSpeed)),
+    },
+  }
+}
+
 export function applySimpleSkillSummonPressure(
   state: SimulationState,
   caster: Arcane,
@@ -9724,13 +9775,21 @@ export function applySimpleSkillSummonPressure(
   const illusion = archetype === 'illusion'
   const clone = archetype === 'clone'
   const heroLike = illusion || clone
+  const inheritedItems = heroLike
+    ? clone
+      ? statSource.items.filter(isTempestDoubleInventoryItemAllowed)
+      : [...statSource.items]
+    : undefined
+  const heroStatSource = clone && inheritedItems
+    ? getTempestDoubleStatSource(statSource, inheritedItems)
+    : statSource
   const ward = archetype === 'ward'
   const healingWard = archetype === 'healing_ward'
   const unitSeed = profile.summonUnitSeedId ? getSummonUnitRuntimeSeed(profile.summonUnitSeedId) : undefined
   const inheritancePolicy = getSummonInheritancePolicy({ archetype, unitSeedId: unitSeed?.id })
   const importedHp = profile.summonHits > 0 ? profile.summonHits * 90 : profile.summonHp
   const genericHp = (115 + statSource.stats.maxHp * 0.16) * levelScale * (0.72 + swarmScale * 0.28)
-  const maxHp = Math.max(1, Math.round(heroLike ? statSource.stats.maxHp : importedHp || unitSeed?.hp || genericHp))
+  const maxHp = Math.max(1, Math.round(heroLike ? heroStatSource.stats.maxHp : importedHp || unitSeed?.hp || genericHp))
   const unitRule = unitSeed?.abilities.find((ability) => ability.tags.includes('illusion') || ability.tags.includes('item_restriction'))
   const getUnitRuleNumber = (key: string) => {
     const value = unitRule?.values?.[key]
@@ -9745,9 +9804,9 @@ export function applySimpleSkillSummonPressure(
   const buildingDamageMultiplier = getUnitRuleNumber('buildingDamagePct') ?? (illusion ? 0.35 : 1)
   const genericDamage = (12 + statSource.stats.damage * 0.24) * levelScale * (0.7 + swarmScale * 0.3)
   const sourceDamage = inheritancePolicy.family === 'clone'
-    ? getCloneInheritedAttackDamage(state, statSource)
+    ? getCloneInheritedAttackDamage(state, heroStatSource)
     : illusion
-      ? getIllusionInheritedAttackDamage(statSource)
+      ? getIllusionInheritedAttackDamage(heroStatSource)
       : getEffectiveArcaneDamage(state, statSource)
   const baseDamage = heroLike
     ? sourceDamage * outgoingDamage + profile.summonFlatDamage
@@ -9778,12 +9837,12 @@ export function applySimpleSkillSummonPressure(
       hp: maxHp,
       maxHp,
       damage,
-      armor: heroLike ? getEffectiveArcaneArmor(state, statSource) : unitSeed?.armor ?? 0,
-      magicResistance: heroLike ? statSource.stats.magicResistance : unitSeed?.magicResistance ?? 0,
-      range: heroLike ? statSource.stats.range : profile.summonRange > 0 ? profile.summonRange / 140 : seedRange > 0 ? seedRange / 140 : ranged ? 5.8 : 2.2,
-      visionRange: heroLike ? statSource.visionRange : profile.summonVision > 0 ? profile.summonVision / 140 : unitSeed?.vision ? unitSeed.vision / 140 : ranged ? 8.5 : 7,
-      moveSpeed: canMove ? (heroLike ? getEffectiveArcaneMoveSpeed(state, statSource) * (1 + profile.summonMoveSpeedPct) : profile.summonMoveSpeed > 0 ? profile.summonMoveSpeed / 45 : unitSeed?.movementSpeed ? unitSeed.movementSpeed / 45 : ranged ? 3.8 : 4.4) : 0,
-      attackInterval: heroLike ? getEffectiveArcaneAttackCooldown(state, statSource) : profile.summonAttackInterval > 0 ? profile.summonAttackInterval : unitSeed?.attackInterval || (ranged ? 1.35 : 1.05),
+      armor: heroLike ? getEffectiveArcaneArmor(state, heroStatSource) : unitSeed?.armor ?? 0,
+      magicResistance: heroLike ? heroStatSource.stats.magicResistance : unitSeed?.magicResistance ?? 0,
+      range: heroLike ? heroStatSource.stats.range : profile.summonRange > 0 ? profile.summonRange / 140 : seedRange > 0 ? seedRange / 140 : ranged ? 5.8 : 2.2,
+      visionRange: heroLike ? heroStatSource.visionRange : profile.summonVision > 0 ? profile.summonVision / 140 : unitSeed?.vision ? unitSeed.vision / 140 : ranged ? 8.5 : 7,
+      moveSpeed: canMove ? (heroLike ? getEffectiveArcaneMoveSpeed(state, heroStatSource) * (1 + profile.summonMoveSpeedPct) : profile.summonMoveSpeed > 0 ? profile.summonMoveSpeed / 45 : unitSeed?.movementSpeed ? unitSeed.movementSpeed / 45 : ranged ? 3.8 : 4.4) : 0,
+      attackInterval: heroLike ? getEffectiveArcaneAttackCooldown(state, heroStatSource) : profile.summonAttackInterval > 0 ? profile.summonAttackInterval : unitSeed?.attackInterval || (ranged ? 1.35 : 1.05),
       lastAttack: activatesAt - 0.5,
       spawnedAt: activatesAt,
       expiresAt: activatesAt + duration,
@@ -9802,11 +9861,12 @@ export function applySimpleSkillSummonPressure(
       lockedTargetId: options.lockTarget ? options.initialTargetId : undefined,
       expiresWithTarget: options.expiresWithTarget,
       untargetable: options.untargetable,
-      inheritedItems: heroLike ? [...statSource.items] : undefined,
-      mana: clone ? statSource.stats.mana : undefined,
-      maxMana: clone ? statSource.stats.maxMana : undefined,
+      inheritedItems,
+      mana: clone ? heroStatSource.stats.mana : undefined,
+      maxMana: clone ? heroStatSource.stats.maxMana : undefined,
       inheritedSkillLevels: clone ? { ...statSource.skillLevels } : undefined,
       abilityCooldowns: clone ? {} : undefined,
+      itemCooldowns: clone ? {} : undefined,
       cloneMaxBlindPct: clone ? getSimpleSkillNumericValue(skill, 'max_blind_chance', Math.max(1, getSimpleSkillLevel(caster, skill)), 0) / 100 : undefined,
       cloneMaxSlowPct: clone ? getSimpleSkillNumericValue(skill, 'max_slow', Math.max(1, getSimpleSkillLevel(caster, skill)), 0) / 100 : undefined,
     }
@@ -10386,7 +10446,7 @@ function getTempestDoubleCaster(state: SimulationState, summon: SummonedUnit) {
     pos: summon.pos,
     target: summon.pos,
     items: summon.inheritedItems ?? [],
-    itemCooldowns: summon.abilityCooldowns ?? {},
+    itemCooldowns: summon.itemCooldowns ?? {},
     skillLevels: summon.inheritedSkillLevels ?? {},
     stats: {
       ...owner.stats,
@@ -10431,6 +10491,114 @@ function recordTempestDoubleSkill(state: SimulationState, summon: SummonedUnit, 
       expiresAt: state.time + 1.15,
     },
   ]
+}
+
+const tempestDoubleForbiddenActiveItemTags = new Set([
+  'charges',
+  'consumable',
+  'consumable_upgrade',
+  'cooldown_reset',
+  'drop_on_death',
+  'permanent_buff',
+])
+
+const tempestDoubleForbiddenInventoryItemTags = new Set([
+  'consumable',
+  'consumable_upgrade',
+  'drop_on_death',
+  'permanent_buff',
+])
+
+export function isTempestDoubleInventoryItemAllowed(name: string) {
+  if (getConsumableByName(name)) return false
+  const item = shopItemByName.get(name)
+  if (!item) return true
+  const effects = item.effects
+  const tags = [...(item.active?.tags ?? []), ...effects.flatMap((effect) => effect.tags)]
+  return !tags.some((tag) => tempestDoubleForbiddenInventoryItemTags.has(tag)) &&
+    !effects.some((effect) => effect.kind === 'consumable' || effect.values.dropsOnDeath === true)
+}
+
+export function isTempestDoubleItemActiveAllowed(item: ShopItem) {
+  if (!item.active) return false
+  const effects = item.effects
+  const tags = [...item.active.tags, ...effects.flatMap((effect) => effect.tags)]
+  if (tags.some((tag) => tempestDoubleForbiddenActiveItemTags.has(tag))) return false
+  if (effects.some((effect) => (
+    effect.kind === 'consumable' ||
+    effect.values.dropsOnDeath === true ||
+    getActiveItemNumber(effect.values, 'charges') !== undefined ||
+    getActiveItemNumber(effect.values, 'maxCharges') !== undefined
+  ))) return false
+  return true
+}
+
+export function getTempestDoubleAllowedActiveItems(summon: SummonedUnit) {
+  if (summon.archetype !== 'clone' || summon.unitSeedId !== tempestDoubleUnitSeedId) return []
+  return getShopItemsForInventory(summon.inheritedItems ?? []).filter(isTempestDoubleItemActiveAllowed)
+}
+
+function captureTempestDoubleSelfItemEffects(state: SimulationState, summon: SummonedUnit) {
+  const captured = state.timedEffects.filter((effect) => effect.targetId === summon.id)
+  if (captured.length === 0) return
+  state.timedEffects = state.timedEffects.filter((effect) => effect.targetId !== summon.id)
+  const active = (summon.cloneItemEffects ?? []).filter((effect) => effect.expiresAt > state.time)
+  captured.forEach((effect) => {
+    active.push({
+      sourceId: effect.sourceId,
+      expiresAt: effect.expiresAt,
+      moveSpeedPct: effect.modifiers?.moveSpeedPct ?? 0,
+      attackSpeedPct: effect.modifiers?.attackSpeedPct ?? 0,
+      barrierRemaining: effect.kind === 'barrier' ? effect.barrierRemaining ?? effect.value : 0,
+    })
+  })
+  summon.cloneItemEffects = active
+}
+
+export function tryUseTempestDoubleItem(state: SimulationState, summon: SummonedUnit) {
+  if (summon.archetype !== 'clone' || summon.unitSeedId !== tempestDoubleUnitSeedId) return false
+  summon.cloneItemEffects = summon.cloneItemEffects?.filter((effect) => effect.expiresAt > state.time)
+  if ((summon.nextItemAt ?? 0) > state.time) return false
+  summon.nextItemAt = state.time + 0.25
+  const context = getTempestDoubleCaster(state, summon)
+  if (!context) return false
+  const allowedItems = getTempestDoubleAllowedActiveItems(summon).filter((item) => (
+    (summon.mana ?? 0) >= (getActiveItemNumber(item.active?.values ?? {}, 'manaCost') ?? 0)
+  ))
+  if (allowedItems.length === 0) return false
+  const allowedNames = new Set(allowedItems.map((item) => item.name))
+  const caster: Arcane = {
+    ...context.caster,
+    items: context.caster.items.filter((name) => allowedNames.has(name)),
+    itemCooldowns: summon.itemCooldowns ?? {},
+  }
+  const visibleEnemies = getTempestDoubleEnemyArcanes(state, summon)
+  const result = applySimpleActiveItemIfNeeded(state, caster, undefined, visibleEnemies)
+  if (!result.used) return false
+  const item = allowedItems.find((candidate) => candidate.name === result.used)
+  if (!item?.active) return false
+
+  summon.pos = { ...result.arcane.pos }
+  summon.hp = Math.min(summon.maxHp, result.arcane.stats.hp)
+  summon.mana = Math.min(summon.maxMana ?? result.arcane.stats.maxMana, result.arcane.stats.mana)
+  const manaCost = getActiveItemNumber(item.active.values, 'manaCost') ?? 0
+  const healthCost = getActiveItemNumber(item.active.values, 'healthCost') ?? 0
+  summon.mana = Math.max(0, (summon.mana ?? 0) - manaCost)
+  summon.hp = Math.max(1, summon.hp - healthCost)
+  summon.itemCooldowns = { ...result.arcane.itemCooldowns }
+  captureTempestDoubleSelfItemEffects(state, summon)
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `clone-item-${summon.id}-${item.id}-${state.time}`,
+      team: summon.team,
+      pos: { ...summon.pos },
+      label: item.name,
+      createdAt: state.time,
+      expiresAt: state.time + 1.05,
+    },
+  ]
+  return true
 }
 
 function resolveTempestDoubleSparkWraiths(state: SimulationState, summon: SummonedUnit) {
@@ -10613,6 +10781,15 @@ export function getTempestDoubleAccuracyPct(state: SimulationState, summon: Summ
   return 1 - getTempestDoubleLifetimeProgress(state, summon) * Math.max(0, summon.cloneMaxBlindPct ?? 0)
 }
 
+function getActiveCloneItemModifier(state: SimulationState, summon: SummonedUnit, key: 'moveSpeedPct' | 'attackSpeedPct') {
+  if (!summon.cloneItemEffects?.length) return 0
+  let total = 0
+  for (const effect of summon.cloneItemEffects) {
+    if (effect.expiresAt > state.time) total += effect[key]
+  }
+  return total
+}
+
 export function getEffectiveSummonMoveSpeed(state: SimulationState, summon: SummonedUnit) {
   let bonusPct = 0
   if (summon.sourceSkillId === spiritBearSkillId) {
@@ -10621,6 +10798,7 @@ export function getEffectiveSummonMoveSpeed(state: SimulationState, summon: Summ
   if (summon.sourceSkillId === summonFamiliarsSkillId && (summon.sharedBuffUntil ?? 0) > state.time) {
     bonusPct += getOwnerSkillProfileByAbility(state, summon.ownerId, graveChillAbilityId)?.profile.moveSpeedPct ?? 0
   }
+  bonusPct += getActiveCloneItemModifier(state, summon, 'moveSpeedPct')
   const cloneSlowMultiplier = 1 - getTempestDoubleLifetimeProgress(state, summon) * Math.max(0, summon.cloneMaxSlowPct ?? 0)
   return summon.moveSpeed * (1 + bonusPct) * cloneSlowMultiplier
 }
@@ -10636,6 +10814,7 @@ export function getEffectiveSummonAttackInterval(state: SimulationState, summon:
   ) {
     attackSpeedPct += summon.cloneField.attackSpeedPct
   }
+  attackSpeedPct += getActiveCloneItemModifier(state, summon, 'attackSpeedPct')
   return summon.attackInterval / Math.max(0.2, 1 + attackSpeedPct)
 }
 
@@ -10828,6 +11007,7 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
     if (summon.sourceSkillId === summonFamiliarsSkillId && updateFamiliarRecall(state, summon)) continue
     if (summon.healingAuraPct > 0) applySummonHealingAura(state, summon, delta)
     if (tryUseTempestDoubleSkill(state, summon)) continue
+    if (tryUseTempestDoubleItem(state, summon)) continue
     if (tryUseSummonActiveAbility(state, summon)) continue
     const lockedTarget = summon.lockedTargetId ? getCombatTargetById(state, summon.lockedTargetId) : undefined
     if (summon.lockedTargetId && (!lockedTarget || !isLockedSummonTargetValid(state, summon, lockedTarget))) {
@@ -13882,6 +14062,16 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
       targetArmor: targetSummon.armor,
       targetMagicResistance: targetSummon.magicResistance,
     }) * Math.max(0, targetSummon.damageTakenMultiplier)
+    if (updatedSummon.cloneItemEffects?.length && summonDamage > 0) {
+      updatedSummon.cloneItemEffects = updatedSummon.cloneItemEffects
+        .filter((effect) => effect.expiresAt > state.time)
+        .map((effect) => {
+          if (summonDamage <= 0 || effect.barrierRemaining <= 0) return effect
+          const absorbed = Math.min(effect.barrierRemaining, summonDamage)
+          summonDamage -= absorbed
+          return { ...effect, barrierRemaining: effect.barrierRemaining - absorbed }
+        })
+    }
     if (targetSummon.sourceSkillId === summonFamiliarsSkillId) {
       const cloak = getOwnerSkillProfileByAbility(state, targetSummon.ownerId, gravekeepersCloakAbilityId)
       const withinAura = cloak && distanceSquared(targetSummon.pos, cloak.caster.pos) <= cloak.profile.radius * cloak.profile.radius

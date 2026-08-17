@@ -622,6 +622,31 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Os aliases oficiais passaram a reconhecer `move_speed_slow_pct`, `attack_speed_bonus` e evasão do Magnetic Field. A auditoria permanece em 6 completas, 635 parciais, 12 aproximações e 81 ausentes, mas Flux e Spark Wraith agora classificam seus slows corretamente.
 - Testes cobrem snapshot, mana, cooldown independente do owner, bloqueio da ultimate, Flux, Magnetic Field, Spark Wraith e degradação. Suíte completa, lint e build verdes; benchmark de 5 minutos em 135,9x wall / 108,7x CPU, digest `51a125c1f69f4a2a` preservado. Próxima rodada da T16: implementar a allowlist de ativos de item do Tempest Double, excluindo consumíveis, Refresher e itens perdidos na morte; depois ampliar estados especiais além de Disruption.
 
+**Progresso dos itens do Tempest Double (2026-08-17)**:
+- O clone passou a decidir e usar ativos já suportados pelo runtime com mana, custo de vida, targeting, efeitos e cooldown próprios. O cooldown do owner não é consumido nem compartilhado; buffs de movimento/attack speed e barriers usados no próprio clone são mantidos em estado local compacto.
+- A allowlist bloqueia consumíveis, itens baseados em charges, upgrades consumidos permanentemente, Refresher e itens perdidos na morte. Itens de charges continuam fornecendo atributos passivos válidos, mas não copiam as cargas nem liberam o ativo.
+- Consumíveis e itens perdidos na morte não entram no snapshot do inventário do clone. A remoção também desconta seus atributos do snapshot sem apagar modificações legítimas já presentes no Arcane; o owner preserva integralmente o item original.
+- Testes cobrem classificação, inventário filtrado, exclusão de atributos da Relíquia Divina, uso ofensivo da Burst Wand, barrier defensiva, gasto de mana e independência de cooldown. Suíte completa, lint e build verdes; benchmark de 5 minutos em 162,6x wall / 125,9x CPU, digest `51a125c1f69f4a2a` preservado.
+- Próxima rodada da T16: ampliar estados especiais além de Disruption e revisar famílias de skills ainda parciais na matriz automática.
+
+---
+
+### [ ] T16.1 - Linguagem visual de ilusões, clones e criaturas controladas
+
+**Objetivo**: tornar cada família de unidade invocada reconhecível imediatamente no minimapa sem depender apenas de cor, mantendo a leitura da equipe, seleção e HP.
+
+**Estado atual**:
+- O preenchimento de todos os summons já varia a opacidade com a vida. Ilusões usam círculo e contorno tracejado; clones usam geometria interna própria; wards e healing wards possuem forma/glifo específicos. A distinção existe, mas a transparência ainda não identifica o tipo e a leitura não separa claramente ilusão comum, ilusão forte, clone heroico e criatura controlada.
+
+**Escopo**:
+- Preservar a cor da equipe e combinar forma, padrão de contorno e opacidade: ilusão comum com silhueta translúcida/tracejada, ilusão forte com segundo aro ou padrão reforçado, clone com opacidade próxima ao original e assinatura própria, criaturas/wards com glifos sólidos por família.
+- Separar a opacidade de identidade do indicador de HP, evitando que uma ilusão com vida cheia pareça uma criatura comum ou que uma unidade ferida pareça uma ilusão.
+- Derivar o estilo de `archetype`, `unitSeedId` e variante já existentes, sem adicionar payload visual redundante ao replay.
+- Exibir no painel de dados o tipo, owner, skill de origem e duração restante; manter a aura de seleção sem aumentar o tamanho da entidade.
+- Usar animação sutil somente quando ela acrescentar leitura e respeitar a carga de renderização em 1x e 16x. Nenhuma família deve depender exclusivamente de mudança de cor, favorecendo acessibilidade e leitura em teamfights.
+
+**Critérios**: ilusões, clones, wards e criaturas são distinguíveis em movimento e paradas, nos dois times e sob seleção; screenshots desktop/mobile, smoke visual e benchmark não mostram sobreposição nem regressão perceptível de FPS.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens
