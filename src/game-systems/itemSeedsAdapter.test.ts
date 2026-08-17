@@ -3,6 +3,7 @@ import { ITEM_SEEDS } from '../data/itemSeeds.ts'
 import { calculateHeroStats, exampleHero } from './heroAttributes.ts'
 import {
   consumableCatalog,
+  getConsumableById,
   getHeroBuildExample,
   getRecommendedBuildItemIds,
   getRecommendedStartingItemNames,
@@ -19,6 +20,13 @@ assert.ok(itemShopCatalog.every((item) => item.cost > 0), 'shop items should hav
 assert.ok(consumableCatalog.length > 0, 'consumable catalog should expose sustain consumables')
 assert.ok(consumableCatalog.some((item) => item.heal), 'consumables should include healing')
 assert.ok(consumableCatalog.some((item) => item.mana), 'consumables should include mana restore')
+const observerWard = getConsumableById('i008_observer_eye')
+const sentryWard = getConsumableById('i009_sentry_eye')
+assert.ok(observerWard, 'zero-cost Observer should remain in the runtime consumable catalog')
+assert.equal(observerWard.effectId, 'place_observer')
+assert.equal(observerWard.values.dayVision, 1600)
+assert.ok(sentryWard?.tags.includes('true_sight'), 'Sentry should preserve its imported detection tag')
+assert.equal(sentryWard?.values.radius, 900)
 assert.ok(itemShopCatalog.some((item) => item.id === 'i083_diffusal_edge'), 'shop catalog should expose recommended build items')
 assert.ok(!itemShopCatalog.some((item) => item.id === 'i032_small_damage_blades'), 'component-only items should not be bought as final items')
 

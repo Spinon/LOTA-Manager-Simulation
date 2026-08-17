@@ -2,19 +2,19 @@
   "schemaVersion": 1,
   "sourceItemCount": 210,
   "effectCount": 352,
-  "buyableCount": 112,
+  "buyableCount": 114,
   "statusCounts": {
     "complete": 0,
-    "partial": 131,
+    "partial": 133,
     "approximate": 0,
-    "missing": 79
+    "missing": 77
   },
   "familyCounts": {
     "acquisition": {
-      "complete": 159,
+      "complete": 165,
       "partial": 0,
       "approximate": 0,
-      "missing": 51
+      "missing": 45
     },
     "active": {
       "complete": 31,
@@ -29,10 +29,10 @@
       "missing": 0
     },
     "catalog": {
-      "complete": 206,
+      "complete": 210,
       "partial": 0,
       "approximate": 0,
-      "missing": 4
+      "missing": 0
     },
     "charges": {
       "complete": 7,
@@ -41,10 +41,10 @@
       "missing": 0
     },
     "consumable": {
-      "complete": 2,
+      "complete": 4,
       "partial": 3,
       "approximate": 0,
-      "missing": 6
+      "missing": 4
     },
     "cooldown": {
       "complete": 59,
@@ -71,10 +71,10 @@
       "missing": 36
     },
     "purchase_ai": {
-      "complete": 98,
-      "partial": 108,
+      "complete": 96,
+      "partial": 114,
       "approximate": 0,
-      "missing": 4
+      "missing": 0
     },
     "recipes": {
       "complete": 140,
@@ -96,7 +96,7 @@
     },
     "special_values": {
       "complete": 0,
-      "partial": 48,
+      "partial": 47,
       "approximate": 0,
       "missing": 0
     },
@@ -113,10 +113,10 @@
       "missing": 0
     },
     "targeting": {
-      "complete": 0,
+      "complete": 2,
       "partial": 0,
       "approximate": 61,
-      "missing": 9
+      "missing": 7
     },
     "toggle": {
       "complete": 3,
@@ -559,13 +559,13 @@
       "families": [
         {
           "id": "acquisition",
-          "status": "missing",
-          "evidence": "no acquisition route exists"
+          "status": "complete",
+          "evidence": "AI can acquire this item at base"
         },
         {
           "id": "catalog",
-          "status": "missing",
-          "evidence": "buyable source item is absent from runtime catalogs"
+          "status": "complete",
+          "evidence": "item is exposed through the runtime shop or consumable catalog"
         },
         {
           "id": "consumable",
@@ -579,8 +579,8 @@
         },
         {
           "id": "purchase_ai",
-          "status": "missing",
-          "evidence": "AI cannot purchase the item"
+          "status": "partial",
+          "evidence": "build examples, role heuristics, timing, resale, and full-inventory upgrades work; dense item AI weights and synergies are not consumed"
         },
         {
           "id": "recipes",
@@ -634,7 +634,7 @@
       "unhandledEffectValueKeys": [
         "breakRadius"
       ],
-      "fingerprint": "i006_team_smoke|map_utility|consumable|base|50|consumable|breakRadius|cooldown|duration|moveSpeedPct|acquisition:missing|catalog:missing|consumable:missing|effect_rules:partial|purchase_ai:missing|recipes:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:approximate"
+      "fingerprint": "i006_team_smoke|map_utility|consumable|base|50|consumable|breakRadius|cooldown|duration|moveSpeedPct|acquisition:complete|catalog:complete|consumable:missing|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:approximate"
     },
     {
       "itemId": "i007_recall_scroll",
@@ -648,13 +648,13 @@
       "families": [
         {
           "id": "acquisition",
-          "status": "missing",
-          "evidence": "no acquisition route exists"
+          "status": "complete",
+          "evidence": "AI can acquire this item at base"
         },
         {
           "id": "catalog",
-          "status": "missing",
-          "evidence": "buyable source item is absent from runtime catalogs"
+          "status": "complete",
+          "evidence": "item is exposed through the runtime shop or consumable catalog"
         },
         {
           "id": "consumable",
@@ -668,8 +668,8 @@
         },
         {
           "id": "purchase_ai",
-          "status": "missing",
-          "evidence": "AI cannot purchase the item"
+          "status": "partial",
+          "evidence": "build examples, role heuristics, timing, resale, and full-inventory upgrades work; dense item AI weights and synergies are not consumed"
         },
         {
           "id": "recipes",
@@ -720,7 +720,7 @@
       "unhandledEffectValueKeys": [
         "channel"
       ],
-      "fingerprint": "i007_recall_scroll|map_utility|consumable|base|100|consumable|channel|cooldown|range|acquisition:missing|catalog:missing|consumable:missing|effect_rules:partial|purchase_ai:missing|recipes:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:missing"
+      "fingerprint": "i007_recall_scroll|map_utility|consumable|base|100|consumable|channel|cooldown|range|acquisition:complete|catalog:complete|consumable:missing|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:missing"
     },
     {
       "itemId": "i008_observer_eye",
@@ -729,23 +729,23 @@
       "slot": "consumable",
       "shopTier": "base",
       "cost": 0,
-      "buyable": false,
-      "status": "missing",
+      "buyable": true,
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
-          "status": "missing",
-          "evidence": "no acquisition route exists"
+          "status": "complete",
+          "evidence": "AI can acquire this item at base"
         },
         {
           "id": "catalog",
           "status": "complete",
-          "evidence": "non-buyable component or neutral entry remains excluded from the base shop"
+          "evidence": "item is exposed through the runtime shop or consumable catalog"
         },
         {
           "id": "consumable",
-          "status": "missing",
-          "evidence": "place_observer is not a health/mana consumable and has no use routine"
+          "status": "complete",
+          "evidence": "place_observer uses team stock, normal inventory charges, strategic placement, a persistent ward entity, vision/detection, and replay state"
         },
         {
           "id": "effect_rules",
@@ -754,8 +754,8 @@
         },
         {
           "id": "purchase_ai",
-          "status": "complete",
-          "evidence": "non-buyable item correctly bypasses purchase decisions"
+          "status": "partial",
+          "evidence": "build examples, role heuristics, timing, resale, and full-inventory upgrades work; dense item AI weights and synergies are not consumed"
         },
         {
           "id": "recipes",
@@ -766,11 +766,6 @@
           "id": "restrictions",
           "status": "partial",
           "evidence": "shop exclusion is implemented, while share/drop/sell/illusion rules remain source-specific"
-        },
-        {
-          "id": "special_values",
-          "status": "partial",
-          "evidence": "1 effect values are preserved but not consumed by a generic handler"
         },
         {
           "id": "stacking",
@@ -784,8 +779,8 @@
         },
         {
           "id": "targeting",
-          "status": "missing",
-          "evidence": "point targeting has no dedicated item resolver"
+          "status": "complete",
+          "evidence": "point targeting selects nearby strategic map points and enforces allied coverage spacing"
         }
       ],
       "effectKinds": [
@@ -804,10 +799,8 @@
         "nightVision"
       ],
       "unhandledStatKeys": [],
-      "unhandledEffectValueKeys": [
-        "dayVision"
-      ],
-      "fingerprint": "i008_observer_eye|map_utility|consumable|base|0|consumable|cooldown|dayVision|duration|nightVision|acquisition:missing|catalog:complete|consumable:missing|effect_rules:partial|purchase_ai:complete|recipes:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:missing"
+      "unhandledEffectValueKeys": [],
+      "fingerprint": "i008_observer_eye|map_utility|consumable|base|0|consumable|cooldown|dayVision|duration|nightVision|acquisition:complete|catalog:complete|consumable:complete|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|stacking:partial|stats:complete|targeting:complete"
     },
     {
       "itemId": "i009_sentry_eye",
@@ -817,22 +810,22 @@
       "shopTier": "base",
       "cost": 50,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
-          "status": "missing",
-          "evidence": "no acquisition route exists"
+          "status": "complete",
+          "evidence": "AI can acquire this item at base"
         },
         {
           "id": "catalog",
-          "status": "missing",
-          "evidence": "buyable source item is absent from runtime catalogs"
+          "status": "complete",
+          "evidence": "item is exposed through the runtime shop or consumable catalog"
         },
         {
           "id": "consumable",
-          "status": "missing",
-          "evidence": "place_sentry is not a health/mana consumable and has no use routine"
+          "status": "complete",
+          "evidence": "place_sentry uses team stock, normal inventory charges, strategic placement, a persistent ward entity, vision/detection, and replay state"
         },
         {
           "id": "effect_rules",
@@ -841,8 +834,8 @@
         },
         {
           "id": "purchase_ai",
-          "status": "missing",
-          "evidence": "AI cannot purchase the item"
+          "status": "partial",
+          "evidence": "build examples, role heuristics, timing, resale, and full-inventory upgrades work; dense item AI weights and synergies are not consumed"
         },
         {
           "id": "recipes",
@@ -866,8 +859,8 @@
         },
         {
           "id": "targeting",
-          "status": "missing",
-          "evidence": "point targeting has no dedicated item resolver"
+          "status": "complete",
+          "evidence": "point targeting selects nearby strategic map points and enforces allied coverage spacing"
         }
       ],
       "effectKinds": [
@@ -887,7 +880,7 @@
       ],
       "unhandledStatKeys": [],
       "unhandledEffectValueKeys": [],
-      "fingerprint": "i009_sentry_eye|map_utility|consumable|base|50|consumable|cooldown|duration|radius|acquisition:missing|catalog:missing|consumable:missing|effect_rules:partial|purchase_ai:missing|recipes:complete|restrictions:partial|stacking:partial|stats:complete|targeting:missing"
+      "fingerprint": "i009_sentry_eye|map_utility|consumable|base|50|consumable|cooldown|duration|radius|acquisition:complete|catalog:complete|consumable:complete|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|stacking:partial|stats:complete|targeting:complete"
     },
     {
       "itemId": "i010_revealing_dust",
@@ -901,13 +894,13 @@
       "families": [
         {
           "id": "acquisition",
-          "status": "missing",
-          "evidence": "no acquisition route exists"
+          "status": "complete",
+          "evidence": "AI can acquire this item at base"
         },
         {
           "id": "catalog",
-          "status": "missing",
-          "evidence": "buyable source item is absent from runtime catalogs"
+          "status": "complete",
+          "evidence": "item is exposed through the runtime shop or consumable catalog"
         },
         {
           "id": "consumable",
@@ -921,8 +914,8 @@
         },
         {
           "id": "purchase_ai",
-          "status": "missing",
-          "evidence": "AI cannot purchase the item"
+          "status": "partial",
+          "evidence": "build examples, role heuristics, timing, resale, and full-inventory upgrades work; dense item AI weights and synergies are not consumed"
         },
         {
           "id": "recipes",
@@ -968,7 +961,7 @@
       ],
       "unhandledStatKeys": [],
       "unhandledEffectValueKeys": [],
-      "fingerprint": "i010_revealing_dust|map_utility|consumable|base|80|consumable|cooldown|duration|radius|slowPct|acquisition:missing|catalog:missing|consumable:missing|effect_rules:partial|purchase_ai:missing|recipes:complete|restrictions:partial|stacking:partial|stats:complete|targeting:approximate"
+      "fingerprint": "i010_revealing_dust|map_utility|consumable|base|80|consumable|cooldown|duration|radius|slowPct|acquisition:complete|catalog:complete|consumable:missing|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|stacking:partial|stats:complete|targeting:approximate"
     },
     {
       "itemId": "i011_refillable_bottle",
@@ -1159,18 +1152,18 @@
       "slot": "consumable",
       "shopTier": "base",
       "cost": 0,
-      "buyable": false,
+      "buyable": true,
       "status": "missing",
       "families": [
         {
           "id": "acquisition",
-          "status": "missing",
-          "evidence": "no acquisition route exists"
+          "status": "complete",
+          "evidence": "AI can acquire this item at base"
         },
         {
           "id": "catalog",
           "status": "complete",
-          "evidence": "non-buyable component or neutral entry remains excluded from the base shop"
+          "evidence": "item is exposed through the runtime shop or consumable catalog"
         },
         {
           "id": "consumable",
@@ -1184,8 +1177,8 @@
         },
         {
           "id": "purchase_ai",
-          "status": "complete",
-          "evidence": "non-buyable item correctly bypasses purchase decisions"
+          "status": "partial",
+          "evidence": "build examples, role heuristics, timing, resale, and full-inventory upgrades work; dense item AI weights and synergies are not consumed"
         },
         {
           "id": "recipes",
@@ -1235,7 +1228,7 @@
       "unhandledEffectValueKeys": [
         "xp"
       ],
-      "fingerprint": "i013_tome_training|consumable|consumable|base|0|consumable|cooldown|xp|acquisition:missing|catalog:complete|consumable:missing|effect_rules:partial|purchase_ai:complete|recipes:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:approximate"
+      "fingerprint": "i013_tome_training|consumable|consumable|base|0|consumable|cooldown|xp|acquisition:complete|catalog:complete|consumable:missing|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:approximate"
     },
     {
       "itemId": "i014_minor_branch",

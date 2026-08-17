@@ -2720,8 +2720,16 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | SummonedUnit | 
     const owner = state.arcanes.find((arcane) => arcane.id === entity.ownerId)
     const sourceSkill = owner && getArcaneRuntimeSkills(owner).find((skill) => skill.id === entity.sourceSkillId)
     const family = getSummonVisualFamily(entity.archetype, entity.unitSeedId, entity.variant)
-    const familyLabel = getSummonVisualFamilyLabel(family)
-    const sourceLabel = sourceSkill ? `${sourceSkill.key} ${getSkillShortName(sourceSkill)}` : entity.sourceSkillId
+    const familyLabel = entity.sourceSkillId === 'i008_observer_eye'
+      ? 'Observer Ward'
+      : entity.sourceSkillId === 'i009_sentry_eye'
+        ? 'Sentry Ward'
+        : getSummonVisualFamilyLabel(family)
+    const sourceLabel = sourceSkill
+      ? `${sourceSkill.key} ${getSkillShortName(sourceSkill)}`
+      : entity.sourceSkillId.startsWith('i')
+        ? entity.name
+        : entity.sourceSkillId
     const remainingDuration = Math.max(0, entity.expiresAt - state.time)
     const durationLabel = remainingDuration >= 3600 ? 'Persistente' : `${Math.ceil(remainingDuration)}s`
     return (
@@ -2739,6 +2747,8 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | SummonedUnit | 
             ['Dono', owner?.player ?? 'Ausente'],
             ['Origem', sourceLabel],
             ['Estado', entity.untargetable ? 'Intangivel' : 'Alvejavel'],
+            ...(entity.invisibleToEnemies ? [['Visibilidade', 'Oculta sem True Sight'] as [string, string]] : []),
+            ...((entity.trueSightRange ?? 0) > 0 ? [['True Sight', `${entity.trueSightRange!.toFixed(1)}`] as [string, string]] : []),
             ['Vida', `${Math.round(entity.hp)} / ${entity.maxHp}`],
             ['Dano', `${entity.damage}`],
             ['Armadura', `${entity.armor.toFixed(1)}`],

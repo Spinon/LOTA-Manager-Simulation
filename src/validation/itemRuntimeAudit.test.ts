@@ -52,6 +52,11 @@ assert.deepEqual(
 )
 assert.equal(toggleItems.some((row) => row.families.some((family) => family.id === 'toggle' && family.status === 'missing')), false)
 
+const wardItems = audit.rows.filter((row) => ['i008_observer_eye', 'i009_sentry_eye'].includes(row.itemId))
+assert.equal(wardItems.length, 2)
+assert.ok(wardItems.every((row) => row.families.some((family) => family.id === 'consumable' && family.status === 'complete')))
+assert.ok(wardItems.every((row) => row.families.some((family) => family.id === 'targeting' && family.status === 'complete')))
+
 const neutralItems = audit.rows.filter((row) => row.slot === 'neutral' || row.slot === 'neutral_enchantment')
 assert.ok(neutralItems.length > 0)
 assert.ok(neutralItems.every((row) => row.families.some((family) => family.id === 'acquisition' && family.status === 'missing')))

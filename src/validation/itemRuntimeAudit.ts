@@ -100,6 +100,7 @@ const runtimeEffectValueKeys = new Set([
   'damageFromIntPct',
   'damageFromPrimaryAttributePct',
   'damagePct',
+  'dayVision',
   'distance',
   'dps',
   'duration',
@@ -291,6 +292,7 @@ const explicitlyUnhandledMechanicTags = new Set([
 const shopItemIds = new Set(itemShopCatalog.map((item) => item.id))
 const consumableIds = new Set(consumableCatalog.map((item) => item.id))
 const persistentToggleItemIds = new Set(['i072_attribute_treads', 'i078_armlet_relic', 'i160_revenant_brooch_generic'])
+const persistentWardItemIds = new Set(['i008_observer_eye', 'i009_sentry_eye'])
 
 export function buildItemRuntimeAudit(): ItemRuntimeAudit {
   const rows = FULL_ITEM_SEEDS_V2.map(classifyItem)
@@ -320,7 +322,9 @@ export function buildItemRuntimeAudit(): ItemRuntimeAudit {
 function classifyItem(item: FullItemSeed): ItemRuntimeAuditRow {
   const families: ItemSupportFamily[] = []
   const add = (id: string, status: ItemSupportStatus, evidence: string) => mergeFamily(families, { id, status, evidence })
-  const buyable = !item.restrictions.cannotBeBought && !item.restrictions.isRecipeComponentOnly && item.cost > 0
+  const buyable = !item.restrictions.cannotBeBought &&
+    !item.restrictions.isRecipeComponentOnly &&
+    (item.cost > 0 || item.slot === 'consumable')
   const inRuntimeCatalog = shopItemIds.has(item.id) || consumableIds.has(item.id)
   const statKeys = getNonZeroStatKeys(item)
   const unhandledStatKeys = statKeys.filter((key) => !completeStatKeys.has(key) && !approximateStatKeys.has(key))
@@ -474,12 +478,15 @@ function classifyEffect(item: FullItemSeed, effect: FullItemEffectSeed): ItemSup
   } else if (effect.kind === 'consumable') {
     const restoresHealth = readNumber(effect.values.health) !== undefined || readNumber(effect.values.heal) !== undefined
     const restoresMana = readNumber(effect.values.mana) !== undefined
-    const supported = restoresHealth || restoresMana
+    const dedicatedWardRuntime = persistentWardItemIds.has(item.id)
+    const supported = restoresHealth || restoresMana || dedicatedWardRuntime
     const breakOnDamage = effectTags.has('break_on_damage')
     families.push({
       id: 'consumable',
-      status: !supported ? 'missing' : breakOnDamage || effect.target !== 'self' ? 'partial' : 'complete',
-      evidence: !supported
+      status: !supported ? 'missing' : dedicatedWardRuntime ? 'complete' : breakOnDamage || effect.target !== 'self' ? 'partial' : 'complete',
+      evidence: dedicatedWardRuntime
+        ? `${effect.id} uses team stock, normal inventory charges, strategic placement, a persistent ward entity, vision/detection, and replay state`
+        : !supported
         ? `${effect.id} is not a health/mana consumable and has no use routine`
         : breakOnDamage || effect.target !== 'self'
           ? `${effect.id} restores resources, but interruption and allied targeting are not fully modeled`
@@ -526,10 +533,13 @@ function classifyEffect(item: FullItemSeed, effect: FullItemEffectSeed): ItemSup
 
   if (effect.kind === 'active' || effect.kind === 'consumable') {
     const directTargets = new Set(['self', 'unit', 'enemy', 'area'])
+    const dedicatedPointTarget = effect.kind === 'consumable' && persistentWardItemIds.has(item.id) && effect.target === 'point'
     families.push({
       id: 'targeting',
-      status: directTargets.has(effect.target) ? 'approximate' : 'missing',
-      evidence: directTargets.has(effect.target)
+      status: dedicatedPointTarget ? 'complete' : directTargets.has(effect.target) ? 'approximate' : 'missing',
+      evidence: dedicatedPointTarget
+        ? `${effect.target} targeting selects nearby strategic map points and enforces allied coverage spacing`
+        : directTargets.has(effect.target)
         ? `${effect.target} targeting uses generic self/ally/enemy/area selection`
         : `${effect.target} targeting has no dedicated item resolver`,
     })

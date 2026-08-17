@@ -118,6 +118,8 @@ export type CampStrength = 'weak' | 'medium' | 'strong'
 export type ArcaneCombatTargetIntent = 'last_hit' | 'deny' | 'focus' | 'objective' | 'camp' | 'boss' | 'fallback'
 export type RuneKind = 'bounty' | 'power' | 'wisdom' | 'lotus'
 export type PowerRuneKind = 'haste' | 'arcane' | 'shield' | 'damage'
+export type WardKind = 'observer' | 'sentry'
+export type TeamWardStock = Record<WardKind, { available: number; nextRestockAt: number }>
 export type StructureKind = 'barracks_melee' | 'barracks_ranged' | 'tower_tier_4'
 export type TeamObjectiveKind = 'tower' | 'structure' | 'base' | 'boss' | 'pickoff'
 export type DecisionStatus = 'sharp' | 'steady' | 'hesitant' | 'tilted'
@@ -426,6 +428,8 @@ export type SummonedUnit = {
   itemCooldowns?: Record<string, number>
   cloneMaxBlindPct?: number
   cloneMaxSlowPct?: number
+  invisibleToEnemies?: boolean
+  trueSightRange?: number
   cloneField?: {
     center: Point
     radius: number
@@ -623,6 +627,7 @@ export type SimulationState = {
   teamCalls: Partial<Record<TeamId, TeamCall>>
   teamAuras: Partial<Record<TeamId, TeamAura>>
   teamFortifications: Record<TeamId, TeamFortification>
+  wardStock: Record<TeamId, TeamWardStock>
   events: MatchEvent[]
   effects: AttackEffect[]
   timedEffects: TimedEffect[]
@@ -834,6 +839,10 @@ export type ConsumableItem = {
   name: string
   cost: number
   charges: number
+  effectId: string
+  target: string
+  tags: string[]
+  values: Record<string, number | number[] | string | boolean>
   heal?: number
   mana?: number
   duration?: number
@@ -1280,6 +1289,8 @@ let shopItemByName = new Map<string, ShopItem>()
 let attributeTreadsItemName = ''
 let armletItemName = ''
 let revenantBroochItemName = ''
+let observerWardItemName = ''
+let sentryWardItemName = ''
 let shopItemsByInventory = new WeakMap<string[], ShopItem[]>()
 let abilityUpgradeSlotsByInventory = new WeakMap<string[], Set<AbilityUpgradeSlot>>()
 let runtimeSkillsByArcane = new WeakMap<object, {
@@ -1319,6 +1330,8 @@ export async function loadGameData() {
   itemPurchasePlanByInventory = new WeakMap()
   shopCandidatePoolByHero = new Map()
   consumableCatalog = itemModule.consumableCatalog
+  observerWardItemName = consumableCatalog.find((item) => item.id === observerWardItemId)?.name ?? ''
+  sentryWardItemName = consumableCatalog.find((item) => item.id === sentryWardItemId)?.name ?? ''
   getRecommendedBuildItemIdsForHero = itemModule.getRecommendedBuildItemIds
   getRecommendedStartingItemNamesForHero = itemModule.getRecommendedStartingItemNames
   getRuntimeItemSeedById = itemModule.getItemSeedById
@@ -1428,6 +1441,7 @@ export function createInitialState(seed = 'lota-default-seed', options: Simulati
       dawn: { activeUntil: 0, cooldownUntil: 0 },
       dusk: { activeUntil: 0, cooldownUntil: 0 },
     },
+    wardStock: createInitialWardStock(arcanes),
     events: [],
     effects: [],
     timedEffects: [],
@@ -1448,6 +1462,46 @@ export function createInitialState(seed = 'lota-default-seed', options: Simulati
     camps: createNeutralCamps(),
     runes: createInitialRunes(),
     boss: createBoss(),
+  }
+}
+
+export function createInitialWardStock(arcanes: Arcane[]): Record<TeamId, TeamWardStock> {
+  const createTeamStock = (team: TeamId): TeamWardStock => {
+    const carriedObserverWards = observerWardItemName
+      ? arcanes.filter((arcane) => arcane.team === team && arcane.items.includes(observerWardItemName)).length
+      : 0
+    const carriedSentryWards = sentryWardItemName
+      ? arcanes.filter((arcane) => arcane.team === team && arcane.items.includes(sentryWardItemName)).length
+      : 0
+    return {
+      observer: {
+        available: Math.max(0, wardStockRules.observer.initial - carriedObserverWards),
+        nextRestockAt: wardStockRules.observer.restockSeconds,
+      },
+      sentry: {
+        available: Math.max(0, wardStockRules.sentry.initial - carriedSentryWards),
+        nextRestockAt: wardStockRules.sentry.restockSeconds,
+      },
+    }
+  }
+  return { dawn: createTeamStock('dawn'), dusk: createTeamStock('dusk') }
+}
+
+export function restockWardShop(state: SimulationState) {
+  for (const team of ['dawn', 'dusk'] as const) {
+    for (const kind of ['observer', 'sentry'] as const) {
+      const entry = state.wardStock[team][kind]
+      const rules = wardStockRules[kind]
+      if (state.time < entry.nextRestockAt) continue
+      if (entry.available >= rules.maximum) {
+        entry.nextRestockAt = state.time + rules.restockSeconds
+        continue
+      }
+      const elapsedRestocks = Math.floor((state.time - entry.nextRestockAt) / rules.restockSeconds) + 1
+      entry.available = Math.min(rules.maximum, entry.available + elapsedRestocks)
+      entry.nextRestockAt += elapsedRestocks * rules.restockSeconds
+      if (entry.available >= rules.maximum) entry.nextRestockAt = state.time + rules.restockSeconds
+    }
   }
 }
 
@@ -1531,6 +1585,12 @@ export function getFallbackStartingItemNames(role: string) {
 const attributeTreadsItemId = 'i072_attribute_treads'
 const armletItemId = 'i078_armlet_relic'
 const revenantBroochItemId = 'i160_revenant_brooch_generic'
+const observerWardItemId = 'i008_observer_eye'
+const sentryWardItemId = 'i009_sentry_eye'
+const wardStockRules: Record<WardKind, { initial: number; maximum: number; restockSeconds: number }> = {
+  observer: { initial: 2, maximum: 4, restockSeconds: 135 },
+  sentry: { initial: 3, maximum: 10, restockSeconds: 70 },
+}
 
 export function buildArcaneStats(
   heroDefinitionId: string,
@@ -2045,6 +2105,7 @@ export function tick(
   const previousTime = executionOptions.previousWorldTime ?? next.time
   const previousDayCycle = getDayCycle(previousTime)
   next.time = Number((next.time + clockDelta).toFixed(3))
+  restockWardShop(next)
   if (next.time >= 0 && next.time >= next.nextWave) {
     const wave = spawnWave(next)
     next.creeps.push(...(
@@ -2371,6 +2432,10 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
       dawn: { ...state.teamFortifications.dawn },
       dusk: { ...state.teamFortifications.dusk },
     },
+    wardStock: {
+      dawn: { observer: { ...state.wardStock.dawn.observer }, sentry: { ...state.wardStock.dawn.sentry } },
+      dusk: { observer: { ...state.wardStock.dusk.observer }, sentry: { ...state.wardStock.dusk.sentry } },
+    },
     events: [...state.events],
     effects: state.effects.map((effect) => ({ ...effect, from: { ...effect.from }, to: { ...effect.to } })),
     timedEffects: state.timedEffects.map((effect) => ({
@@ -2479,6 +2544,7 @@ type RenderSummonFrame = [
   number | undefined, number | undefined, number | undefined,
   number, number, number,
   string | undefined, string | undefined, boolean | undefined, boolean | undefined,
+  boolean | undefined, number | undefined,
 ]
 type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number, AttackEffect['action'], string]
 type RenderMarkerFrame = [TeamId, number, number, number, number]
@@ -2518,6 +2584,7 @@ export type MatchRenderDetails = {
   teamMemory: Record<TeamId, AiMemoryEvent[]>
   teamAuras: Partial<Record<TeamId, TeamAura>>
   teamFortifications: [TeamFortification, TeamFortification]
+  wardStock?: [TeamWardStock, TeamWardStock]
   events: MatchEvent[]
   arcanes: RenderArcaneDetailFrame[]
   creeps: Array<[string, number, number]>
@@ -2565,6 +2632,10 @@ function createMatchRenderDetails(state: SimulationState): MatchRenderDetails {
     },
     teamAuras: { ...state.teamAuras },
     teamFortifications: [{ ...state.teamFortifications.dawn }, { ...state.teamFortifications.dusk }],
+    wardStock: [
+      { observer: { ...state.wardStock.dawn.observer }, sentry: { ...state.wardStock.dawn.sentry } },
+      { observer: { ...state.wardStock.dusk.observer }, sentry: { ...state.wardStock.dusk.sentry } },
+    ],
     events: state.events.map((event) => ({ ...event })),
     arcanes: state.arcanes.map((arcane) => [
       renderNumber(arcane.pos.x), renderNumber(arcane.pos.y), renderNumber(arcane.respawn), arcane.aggression,
@@ -2639,6 +2710,7 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
       summon.sharedBuffUntil, summon.cloakLayers, summon.cloakNextRecoveryAt,
       renderNumber(summon.armor), renderNumber(summon.magicResistance), renderNumber(summon.buildingDamageMultiplier),
       summon.copiedArcaneId, summon.lockedTargetId, summon.expiresWithTarget, summon.untargetable,
+      summon.invisibleToEnemies, summon.trueSightRange,
     ]),
     towerHp: state.towers.map((tower) => renderNumber(tower.hp)),
     structureHp: state.structures.map((structure) => renderNumber(structure.hp)),
@@ -2757,6 +2829,12 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
     teamCalls: {},
     teamAuras: details.teamAuras,
     teamFortifications: { dawn: details.teamFortifications[0], dusk: details.teamFortifications[1] },
+    wardStock: details.wardStock
+      ? {
+          dawn: { observer: { ...details.wardStock[0].observer }, sentry: { ...details.wardStock[0].sentry } },
+          dusk: { observer: { ...details.wardStock[1].observer }, sentry: { ...details.wardStock[1].sentry } },
+        }
+      : createInitialWardStock(arcanes),
     events: details.events,
     effects: frame.effects.map((effect, index) => ({
       id: `fx-${frame.time}-${index}`,
@@ -2794,6 +2872,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       sharedBuffUntil: summon[31], cloakLayers: summon[32], cloakNextRecoveryAt: summon[33],
       armor: summon[34] ?? 0, magicResistance: summon[35] ?? 0, buildingDamageMultiplier: summon[36] ?? 1,
       copiedArcaneId: summon[37], lockedTargetId: summon[38], expiresWithTarget: summon[39], untargetable: summon[40],
+      invisibleToEnemies: summon[41], trueSightRange: summon[42],
     })),
     towers: staticData.towers.map((tower, index): Tower => ({ ...tower, pos: tower.pos, hp: frame.towerHp[index] ?? 0, lastAttack: 0 })),
     structures: staticData.structures.map((structure, index): Structure => ({ ...structure, pos: structure.pos, hp: frame.structureHp[index] ?? 0, lastAttack: 0 })),
@@ -6312,7 +6391,12 @@ export function updateArcaneMovement(
   const activeItemResult = shouldDecide
     ? applySimpleActiveItemIfNeeded(state, dispelResult.arcane, decisionDangerScore, decisionVisibleEnemies, frameContext)
     : { arcane: dispelResult.arcane, used: undefined, interruptsDecision: false }
-  const consumableResult = shouldDecide && !atBase ? consumeItemIfNeeded(state, activeItemResult.arcane) : { arcane: activeItemResult.arcane, used: undefined }
+  const wardResult = shouldDecide && !atBase
+    ? placeWardIfUseful(state, activeItemResult.arcane, decisionDangerScore ?? 0)
+    : { arcane: activeItemResult.arcane, used: undefined }
+  const consumableResult = shouldDecide && !atBase && !wardResult.used
+    ? consumeItemIfNeeded(state, wardResult.arcane)
+    : wardResult
   const activeArcane = consumableResult.arcane
   const channelingArcane = shouldDecide
     ? startTeleportIfUseful(state, activeArcane, target, macroDecision, microDecision, atBase, canBuyAtBase)
@@ -6585,6 +6669,8 @@ export function getPregameBountyRunePlan(state: SimulationState, arcane: Arcane)
 }
 
 export function buyAtBase(state: SimulationState, arcane: Arcane): Arcane {
+  const priorityWard = getAffordableWantedWardConsumable(state, arcane)
+  if (priorityWard) return buyConsumableAtBase(state, arcane, priorityWard)
   if (arcane.tpScrolls < teleportScrollMaxCharges && arcane.stats.gold >= teleportScrollCost) {
     return {
       ...arcane,
@@ -6599,23 +6685,38 @@ export function buyAtBase(state: SimulationState, arcane: Arcane): Arcane {
   if (itemPurchase !== arcane) return itemPurchase
   if (arcane.items.length >= 6) return arcane
   const consumable = getAffordableWantedConsumable(state, arcane)
-  if (consumable) {
-    return {
-      ...arcane,
-      items: [...arcane.items, consumable.name],
-      itemCharges: withInitialItemCharges(arcane.itemCharges, consumable.name),
-      stats: {
-        ...arcane.stats,
-        gold: arcane.stats.gold - consumable.cost,
-      },
-    }
-  }
+  if (consumable) return buyConsumableAtBase(state, arcane, consumable)
 
   return arcane
 }
 
+export function buyConsumableAtBase(state: SimulationState, arcane: Arcane, consumable: ConsumableItem) {
+  const wardKind = getWardKindForConsumable(consumable)
+  if (wardKind && !consumeWardShopStock(state, arcane.team, wardKind)) return arcane
+  return {
+    ...arcane,
+    items: [...arcane.items, consumable.name],
+    itemCharges: withInitialItemCharges(arcane.itemCharges, consumable.name),
+    stats: {
+      ...arcane.stats,
+      gold: arcane.stats.gold - consumable.cost,
+    },
+  }
+}
+
+export function consumeWardShopStock(state: SimulationState, team: TeamId, kind: WardKind) {
+  const entry = state.wardStock[team][kind]
+  if (entry.available <= 0) return false
+  if (entry.available >= wardStockRules[kind].maximum) {
+    entry.nextRestockAt = state.time + wardStockRules[kind].restockSeconds
+  }
+  entry.available -= 1
+  return true
+}
+
 export function hasBasePurchaseOpportunity(state: SimulationState, arcane: Arcane) {
   return (arcane.tpScrolls < teleportScrollMaxCharges && arcane.stats.gold >= teleportScrollCost) ||
+    getAffordableWantedWardConsumable(state, arcane) !== undefined ||
     getAffordableItemPurchasePlan(arcane) !== undefined ||
     getAffordableWantedConsumable(state, arcane) !== undefined
 }
@@ -6640,6 +6741,132 @@ export function buyItemAtBase(arcane: Arcane): Arcane {
   }
 }
 
+export function getWardKindForSummon(summon: Pick<SummonedUnit, 'sourceSkillId'>): WardKind | undefined {
+  if (summon.sourceSkillId === observerWardItemId) return 'observer'
+  if (summon.sourceSkillId === sentryWardItemId) return 'sentry'
+  return undefined
+}
+
+export function spendConsumableInventoryCharge(arcane: Arcane, itemName: string) {
+  const currentCharges = getItemChargeCount(arcane, itemName) ?? 1
+  const remainingCharges = Math.max(0, currentCharges - 1)
+  return {
+    ...arcane,
+    items: remainingCharges > 0 ? arcane.items : removeFirstByName(arcane.items, itemName),
+    itemCharges: remainingCharges > 0
+      ? { ...arcane.itemCharges, [itemName]: remainingCharges }
+      : withoutItemCharges(arcane.itemCharges, itemName),
+  }
+}
+
+function getWardPlacementCandidates(state: SimulationState, arcane: Arcane) {
+  const planTarget = state.teamPlans[arcane.team]?.targetPosition
+  return [
+    ...runeSpawnPoints.bounty,
+    ...runeSpawnPoints.power,
+    ...runeSpawnPoints.lotus,
+    ...(planTarget ? [planTarget] : []),
+  ].filter((point, index, points) => points.findIndex((candidate) => distanceSquared(candidate, point) < 0.25) === index)
+}
+
+export function placeWardIfUseful(
+  state: SimulationState,
+  arcane: Arcane,
+  knownDanger = 0,
+  force = false,
+): { arcane: Arcane; used?: string; ward?: SummonedUnit } {
+  if (!arcane.role.includes('Support') || arcane.stats.hp <= 0 || arcane.respawn > state.time) return { arcane }
+  if (!force && (knownDanger > 72 || arcane.stats.hp < arcane.stats.maxHp * 0.42 || state.time < -20)) return { arcane }
+
+  const carriedWards = arcane.items
+    .map((name) => getConsumableByName(name))
+    .filter((item): item is ConsumableItem => item !== undefined && getWardKindForConsumable(item) !== undefined)
+    .filter((item) => canUseItemCharge(arcane, item.name))
+  if (carriedWards.length === 0) return { arcane }
+
+  const candidates = getWardPlacementCandidates(state, arcane)
+    .filter((point) => distanceSquared(point, arcane.pos) <= 4.2 ** 2)
+    .sort((left, right) => distanceSquared(left, arcane.pos) - distanceSquared(right, arcane.pos))
+  const fallbackPoint = force ? arcane.pos : undefined
+  const candidatePoint = candidates[0] ?? fallbackPoint
+  if (!candidatePoint || (!force && distanceSquared(candidatePoint, teamInfo[arcane.team].base) < 18 ** 2)) return { arcane }
+
+  for (const consumable of carriedWards) {
+    const kind = getWardKindForConsumable(consumable)!
+    if (!force && kind === 'sentry' && state.time < 0) continue
+    const coverageRadius = kind === 'observer' ? 9 : 5.5
+    const alreadyCovered = state.summons.some((summon) => (
+      summon.team === arcane.team &&
+      getWardKindForSummon(summon) === kind &&
+      isSummonActive(state, summon) &&
+      distanceSquared(summon.pos, candidatePoint) <= coverageRadius ** 2
+    ))
+    if (alreadyCovered) continue
+
+    const duration = getActiveItemNumber(consumable.values, 'duration') ?? (kind === 'observer' ? 360 : 420)
+    const trueSightRange = kind === 'sentry'
+      ? worldVisionToMapRadius(getActiveItemNumber(consumable.values, 'radius') ?? 900)
+      : 0
+    const enemyObserverNearby = kind === 'sentry' && state.summons.some((summon) => (
+      summon.team !== arcane.team &&
+      getWardKindForSummon(summon) === 'observer' &&
+      isSummonActive(state, summon) &&
+      distanceSquared(summon.pos, candidatePoint) <= trueSightRange ** 2
+    ))
+    if (!force && kind === 'sentry' && !enemyObserverNearby && state.time < 300) continue
+
+    const ward: SummonedUnit = {
+      id: `${arcane.id}-${kind}-ward-${Math.round(state.time * 1000)}`,
+      ownerId: arcane.id,
+      sourceSkillId: consumable.id,
+      name: consumable.name,
+      archetype: 'ward',
+      team: arcane.team,
+      pos: { ...candidatePoint },
+      hp: 100,
+      maxHp: 100,
+      damage: 0,
+      armor: 0,
+      magicResistance: 0,
+      range: 0,
+      visionRange: kind === 'observer'
+        ? worldVisionToMapRadius(getActiveItemNumber(consumable.values, 'dayVision') ?? 1600)
+        : 0,
+      moveSpeed: 0,
+      attackInterval: 99,
+      lastAttack: state.time,
+      spawnedAt: state.time,
+      expiresAt: state.time + duration,
+      goldReward: kind === 'observer' ? 100 : 50,
+      xpReward: 0,
+      canMove: false,
+      canAttack: false,
+      damageTakenMultiplier: 1,
+      buildingDamageMultiplier: 0,
+      healingAuraPct: 0,
+      channelBound: false,
+      unitSeedId: `item_${kind}_ward`,
+      invisibleToEnemies: kind === 'observer',
+      trueSightRange,
+    }
+    state.summons = [...state.summons, ward]
+    teamVisionProviderCache.delete(state)
+    state.skillMarkers = [
+      ...state.skillMarkers.slice(-23),
+      {
+        id: `ward-${arcane.id}-${state.time}`,
+        team: arcane.team,
+        pos: { ...ward.pos },
+        label: consumable.name,
+        createdAt: state.time,
+        expiresAt: state.time + 1.2,
+      },
+    ]
+    return { arcane: spendConsumableInventoryCharge(arcane, consumable.name), used: consumable.name, ward }
+  }
+  return { arcane }
+}
+
 export function consumeItemIfNeeded(state: SimulationState, arcane: Arcane): { arcane: Arcane; used?: string } {
   if (isArcaneInFowlPlay(state, arcane) && !hasArcaneAbilityUpgrade(arcane, 'shard')) return { arcane }
   const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
@@ -6653,12 +6880,7 @@ export function consumeItemIfNeeded(state: SimulationState, arcane: Arcane): { a
     .find((item) => item && ((needsHeal && item.heal) || (needsMana && item.mana)))
   if (!consumable) return { arcane }
 
-  const currentCharges = getItemChargeCount(arcane, consumable.name) ?? 1
-  const remainingCharges = Math.max(0, currentCharges - 1)
-  const items = remainingCharges > 0 ? arcane.items : removeFirstByName(arcane.items, consumable.name)
-  const itemCharges = remainingCharges > 0
-    ? { ...arcane.itemCharges, [consumable.name]: remainingCharges }
-    : withoutItemCharges(arcane.itemCharges, consumable.name)
+  const consumedArcane = spendConsumableInventoryCharge(arcane, consumable.name)
   let stats = arcane.stats
   if (consumable.heal) {
     if (consumable.duration && consumable.duration > 1) {
@@ -6688,9 +6910,7 @@ export function consumeItemIfNeeded(state: SimulationState, arcane: Arcane): { a
 
   return {
     arcane: {
-      ...arcane,
-      items,
-      itemCharges,
+      ...consumedArcane,
       stats,
     },
     used: consumable.name,
@@ -7689,6 +7909,9 @@ export function getWantedConsumable(state: SimulationState, arcane: Arcane) {
   const consumableBudget = getConsumableSlotBudget(state, arcane)
   if (carriedConsumables.length >= consumableBudget) return undefined
 
+  const wantedWard = getWantedWardConsumable(state, arcane, carriedConsumables)
+  if (wantedWard) return wantedWard
+
   const hasHeal = carriedConsumables.some((item) => item.heal)
   const hasMana = carriedConsumables.some((item) => item.mana)
   const wantsMana = arcane.role === 'Mid' || arcane.role.includes('Support')
@@ -7712,6 +7935,47 @@ export function getWantedConsumable(state: SimulationState, arcane: Arcane) {
         : undefined
 
   return candidate
+}
+
+export function getWardKindForConsumable(consumable: ConsumableItem): WardKind | undefined {
+  if (consumable.id === observerWardItemId) return 'observer'
+  if (consumable.id === sentryWardItemId) return 'sentry'
+  return undefined
+}
+
+export function getWantedWardConsumable(
+  state: SimulationState,
+  arcane: Arcane,
+  carriedConsumables = arcane.items
+    .map((name) => getConsumableByName(name))
+    .filter((item): item is ConsumableItem => item !== undefined),
+) {
+  if (!arcane.role.includes('Support')) return undefined
+  const activeWards = state.summons.filter((summon) => (
+    summon.team === arcane.team && isSummonActive(state, summon) && getWardKindForSummon(summon) !== undefined
+  ))
+  const observerTarget = state.time < 900 ? 2 : 3
+  const sentryTarget = state.time < 300 ? 1 : 2
+  const carriedKinds = new Set(carriedConsumables.map(getWardKindForConsumable).filter((kind): kind is WardKind => kind !== undefined))
+  const activeObservers = activeWards.filter((ward) => getWardKindForSummon(ward) === 'observer').length
+  const activeSentries = activeWards.filter((ward) => getWardKindForSummon(ward) === 'sentry').length
+  if (
+    !carriedKinds.has('observer') &&
+    activeObservers < observerTarget &&
+    state.wardStock[arcane.team].observer.available > 0
+  ) return consumableCatalog.find((item) => item.id === observerWardItemId)
+  if (
+    !carriedKinds.has('sentry') &&
+    activeSentries < sentryTarget &&
+    state.wardStock[arcane.team].sentry.available > 0
+  ) return consumableCatalog.find((item) => item.id === sentryWardItemId)
+  return undefined
+}
+
+export function getAffordableWantedWardConsumable(state: SimulationState, arcane: Arcane) {
+  if (arcane.items.length >= 6) return undefined
+  const ward = getWantedWardConsumable(state, arcane)
+  return ward && arcane.stats.gold >= ward.cost ? ward : undefined
 }
 
 export function getAffordableWantedConsumable(state: SimulationState, arcane: Arcane) {
@@ -9404,7 +9668,7 @@ export function getRouteCreepTarget(
   const enemyCreep = nearestRouteEnemyCreep(creep, nearbyCreeps, unitRange, mode)
   if (enemyCreep) return enemyCreep
   const enemySummon = selectTarget(state.summons.filter((summon) => (
-    summon.team !== creep.team && isSummonTargetable(state, summon) &&
+    summon.team !== creep.team && isSummonTargetable(state, summon, creep.team) &&
     isNearRoute(summon.pos, lanePath, 12)
   )), unitRange)
   if (enemySummon) return enemySummon
@@ -11746,7 +12010,7 @@ function resolveTempestDoubleSparkWraiths(state: SimulationState, summon: Summon
     const candidates: CombatTarget[] = [
       ...state.arcanes.filter((arcane) => arcane.team !== summon.team && isArcaneTargetable(state, arcane)),
       ...state.creeps.filter((creep) => creep.team !== summon.team && creep.hp > 0),
-      ...state.summons.filter((candidate) => candidate.team !== summon.team && isSummonTargetable(state, candidate)),
+      ...state.summons.filter((candidate) => candidate.team !== summon.team && isSummonTargetable(state, candidate, summon.team)),
     ]
     const target = candidates
       .filter((candidate) => isPointVisibleToTeam(state, summon.team, candidate.pos))
@@ -12103,7 +12367,7 @@ function getAstralSpiritCollisionTargets(state: SimulationState, spirit: Summone
   return [
     ...state.arcanes.filter((arcane) => arcane.team !== spirit.team && isArcaneTargetable(state, arcane)),
     ...state.creeps.filter((creep) => creep.team !== spirit.team && creep.hp > 0),
-    ...state.summons.filter((summon) => summon.id !== spirit.id && summon.team !== spirit.team && isSummonTargetable(state, summon)),
+    ...state.summons.filter((summon) => summon.id !== spirit.id && summon.team !== spirit.team && isSummonTargetable(state, summon, spirit.team)),
     ...state.camps.filter((camp) => camp.hp > 0 && camp.respawn <= state.time),
     ...(state.boss.hp > 0 && state.boss.respawn <= state.time ? [state.boss] : []),
   ]
@@ -12290,8 +12554,19 @@ export function isSummonActive(state: SimulationState, summon: SummonedUnit) {
   return summon.hp > 0 && summon.spawnedAt <= state.time && summon.expiresAt > state.time
 }
 
-export function isSummonTargetable(state: SimulationState, summon: SummonedUnit) {
-  return isSummonActive(state, summon) && !summon.untargetable
+export function isPointRevealedToTeam(state: SimulationState, team: TeamId, point: Point) {
+  return state.summons.some((summon) => (
+    summon.team === team &&
+    isSummonActive(state, summon) &&
+    (summon.trueSightRange ?? 0) > 0 &&
+    distanceSquared(summon.pos, point) <= (summon.trueSightRange ?? 0) ** 2
+  ))
+}
+
+export function isSummonTargetable(state: SimulationState, summon: SummonedUnit, viewerTeam?: TeamId) {
+  if (!isSummonActive(state, summon) || summon.untargetable) return false
+  if (!summon.invisibleToEnemies || viewerTeam === summon.team) return true
+  return viewerTeam !== undefined && isPointRevealedToTeam(state, viewerTeam, summon.pos)
 }
 
 function isLockedSummonTargetValid(state: SimulationState, summon: SummonedUnit, target: CombatTarget) {
@@ -12322,7 +12597,7 @@ export function getSummonTarget(state: SimulationState, summon: SummonedUnit): C
   const unitCandidates: CombatTarget[] = [
     ...enemyArcanes,
     ...state.creeps.filter((creep) => creep.team !== summon.team && creep.hp > 0),
-    ...state.summons.filter((other) => other.team !== summon.team && isSummonTargetable(state, other)),
+    ...state.summons.filter((other) => other.team !== summon.team && isSummonTargetable(state, other, summon.team)),
   ]
   const units = summon.sourceSkillId === spiritBearSkillId
     ? unitCandidates.filter((target) => isWithinSpiritBearLeash(state, summon, target.pos))
@@ -13509,7 +13784,7 @@ export function getRetainedArcaneCombatTarget(state: SimulationState, arcane: Ar
     if (isLaningControlMicroDecision(arcane.microDecision) && target.lane === arcane.lane) return undefined
     return { target, intent }
   }
-  if ('ownerId' in target && target.team !== arcane.team && isSummonTargetable(state, target)) {
+  if ('ownerId' in target && target.team !== arcane.team && isSummonTargetable(state, target, arcane.team)) {
     return { target, intent }
   }
   return undefined
@@ -13642,7 +13917,7 @@ export function resolveCombat(
       : undefined
     const target = aggroTarget
       ?? nearestCreepAtIndices(tower.pos, next.creeps, enemyCreepIndicesByTeam[tower.team], tower.range, next.time)
-      ?? nearest(tower.pos, next.summons.filter((summon) => summon.team !== tower.team && isSummonTargetable(next, summon)), tower.range)
+      ?? nearest(tower.pos, next.summons.filter((summon) => summon.team !== tower.team && isSummonTargetable(next, summon, tower.team)), tower.range)
       ?? nearestAliveEnemyArcane(tower.pos, next.arcanes, tower.team, next.time, tower.range, next)
     if (target) {
       tower.lastAttack = next.time
@@ -13681,7 +13956,7 @@ export function resolveCombat(
       : undefined
     const target = aggroTarget
       ?? nearestCreepAtIndices(structure.pos, next.creeps, enemyCreepIndicesByTeam[structure.team], structure.range, next.time)
-      ?? nearest(structure.pos, next.summons.filter((summon) => summon.team !== structure.team && isSummonTargetable(next, summon)), structure.range)
+      ?? nearest(structure.pos, next.summons.filter((summon) => summon.team !== structure.team && isSummonTargetable(next, summon, structure.team)), structure.range)
       ?? nearestAliveEnemyArcane(structure.pos, next.arcanes, structure.team, next.time, structure.range, next)
     if (target) {
       structure.lastAttack = next.time
@@ -13898,7 +14173,7 @@ export function resolveCombat(
           ? nearestReachableByArcane(arcane, next.camps.filter((camp) => camp.hp > 0))
           : undefined
       const enemySummonTarget = nearestReachableByArcane(arcane, next.summons.filter((summon) => (
-        summon.team !== arcane.team && isSummonTargetable(next, summon)
+        summon.team !== arcane.team && isSummonTargetable(next, summon, arcane.team)
       )))
       target = enemyArcaneTarget ?? campTarget ?? enemySummonTarget ?? nearestReachableByArcane(arcane, [
         ...fallbackEnemyCreeps,
@@ -14185,7 +14460,7 @@ export function applyPostAttackSummonItemEffects(
   const splashTargets: CombatTarget[] = [
     ...state.arcanes.filter((candidate) => candidate.team !== summon.team && candidate.id !== target.id && candidate.stats.hp > 0 && candidate.respawn <= state.time),
     ...state.creeps.filter((candidate) => candidate.team !== summon.team && candidate.id !== target.id && candidate.hp > 0),
-    ...state.summons.filter((candidate) => candidate.team !== summon.team && candidate.id !== target.id && isSummonTargetable(state, candidate)),
+    ...state.summons.filter((candidate) => candidate.team !== summon.team && candidate.id !== target.id && isSummonTargetable(state, candidate, summon.team)),
     ...state.camps.filter((candidate) => candidate.id !== target.id && candidate.hp > 0),
   ]
   splashTargets
@@ -14329,7 +14604,7 @@ export function getItemSplashTargets(state: SimulationState, arcane: Arcane, pri
   const candidates: CombatTarget[] = [
     ...state.arcanes.filter((target) => target.team !== arcane.team && target.id !== primaryTarget.id && target.stats.hp > 0 && target.respawn <= state.time),
     ...state.creeps.filter((target) => target.team !== arcane.team && target.id !== primaryTarget.id && target.hp > 0),
-    ...state.summons.filter((target) => target.team !== arcane.team && target.id !== primaryTarget.id && isSummonTargetable(state, target)),
+    ...state.summons.filter((target) => target.team !== arcane.team && target.id !== primaryTarget.id && isSummonTargetable(state, target, arcane.team)),
     ...state.camps.filter((target) => target.id !== primaryTarget.id && target.hp > 0),
   ]
   return candidates
@@ -15356,7 +15631,7 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   const damageType = source.damageType ?? 'physical'
   if (targetArcane && (isArcaneBanished(state, targetArcane) || isArcaneInvulnerable(state, targetArcane))) return
   if (targetArcane && damageType === 'physical' && hasTimedEffect(state, targetArcane.id, 'ethereal')) return
-  if (targetSummon && !isSummonTargetable(state, targetSummon)) return
+  if (targetSummon && !isSummonTargetable(state, targetSummon, source.team)) return
   const sourceArcaneIndex = getSourceArcaneIndex(indexes, source.id)
   const sourceArcane = sourceArcaneIndex < 0 ? undefined : state.arcanes[sourceArcaneIndex]
   if (targetArcane && damage > 0 && tryResolveArcaneParry(state, targetArcane, sourceArcane, source)) return

@@ -54,6 +54,10 @@ export type ConsumableItem = {
   name: string
   cost: number
   charges: number
+  effectId: string
+  target: string
+  tags: string[]
+  values: Record<string, number | number[] | string | boolean>
   heal?: number
   mana?: number
   duration?: number
@@ -344,13 +348,16 @@ export function toConsumableItem(seed: ItemSeed): ConsumableItem | undefined {
   const values = effect.values ?? {}
   const heal = readNumber(values.health) ?? readNumber(values.heal)
   const mana = readNumber(values.mana)
-  if (!heal && !mana) return undefined
 
   return {
     id: seed.id,
     name: toDisplayName(seed.id),
     cost: seed.cost,
     charges: readNumber(values.charges) ?? 1,
+    effectId: effect.id,
+    target: effect.target,
+    tags: [...new Set([...seed.tags, ...effect.tags])],
+    values,
     heal,
     mana,
     duration: readNumber(values.duration),
@@ -375,7 +382,7 @@ export const itemShopCatalog = [
   .map(toShopItem)
 
 export const consumableCatalog = runtimeItemSeeds
-  .filter((seed) => seed.cost > 0 && seed.slot === 'consumable')
+  .filter((seed) => seed.cost >= 0 && seed.slot === 'consumable')
   .map(toConsumableItem)
   .filter((item): item is ConsumableItem => item !== undefined)
 

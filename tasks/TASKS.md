@@ -746,6 +746,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - O caminho quente ignora contexto e upkeep quando não há toggle relevante; benchmark determinístico de 5 minutos em 155,1x wall / 125,2x CPU, digest `4a30d919e126418d`.
 - Próxima rodada da T17: entidade e estoque de wards, seguidos por Smoke, Dust, Recall e Tome no inventário normal.
 
+**Progresso de wards e consumíveis utilitários (2026-08-17)**:
+- O adaptador deixou de descartar consumíveis sem cura/mana e agora preserva efeito, alvo, tags e valores de todos os utilitários, incluindo o Observer gratuito. Eles continuam no inventário normal de seis slots e usam o mesmo contador persistente de cargas.
+- Observer e Sentry possuem estoque compartilhado por equipe, limites e reposição determinística. O estoque considera as wards distribuídas no início, é debitado somente na compra e atravessa clone de tick e replay compacto.
+- A IA de supports compra wards quando a cobertura cai e coloca somente em pontos estratégicos próximos, respeitando risco, fase, cobertura existente e oportunidade de deward. Auditoria headless de seis minutos registrou cinco Observers e cinco Sentries colocados sem chamada forçada.
+- Wards são entidades imóveis com duração importada, bounty e identidade visual existente. Observer fornece 1600 de visão na escala comum e fica oculto para inimigos; Sentry fornece 900 de True Sight e libera seleção/ataque do Observer detectado.
+- Testes cobrem catálogo de custo zero, carga/slot, colocação, visão, ocultação, True Sight, estoque, compra e round-trip de entidade/estoque no replay. A matriz passou para 133 itens parciais e 77 com família ausente.
+- Benchmark determinístico de 5 minutos em 157,3x wall / 127,3x CPU, digest `3a59effa8a401a53`.
+- Próxima rodada da T17: Smoke e Dust; depois Recall e Tome, preservando o inventário único e adicionando decisões por objetivo/fase.
+
 ---
 
 ### [ ] T18 - Paridade integral dos atributos importados

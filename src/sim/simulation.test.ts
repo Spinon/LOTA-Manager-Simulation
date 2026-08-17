@@ -12,6 +12,7 @@ import {
   applySummonAttackSpecials,
   applySimpleNegativeSkillEffects,
   buildArcaneStats,
+  buyConsumableAtBase,
   buyItemAtBase,
   canPayActiveItemCost,
   canTargetWithSimpleDamageSkill,
@@ -23,6 +24,7 @@ import {
   createInitialItemCharges,
   createInitialItemToggleStates,
   createInitialState,
+  consumableCatalog,
   creepTacticalActivationMargin,
   createMatchRenderFrame,
   createMatchStaticData,
@@ -123,15 +125,18 @@ import {
   isTempestDoubleInventoryItemAllowed,
   isTempestDoubleItemActiveAllowed,
   isPointVisibleToTeam,
+  isPointRevealedToTeam,
   isPersistentSpatialGrid,
   loadGameData,
   materializeMatchRenderFrame,
   matchPreparationStartSeconds,
   resetDisengagedNeutralCamps,
+  restockWardShop,
   respawnArcaneIfReady,
   runeSpawnPoints,
   processJungleStacks,
   processTimedEffects,
+  placeWardIfUseful,
   consumeItemIfNeeded,
   performArcaneBasicAttack,
   queryCreepSpatialGrid,
@@ -1153,6 +1158,57 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   const physicalAttack = resolveArcaneItemAttackEffects(toggleState, broochCarrier, enemy)
   assert.equal(physicalAttack.basicAttackDamageType, 'physical')
   assert.equal(physicalAttack.manaCostPerAttack, 0)
+}
+
+{
+  const wardState = createInitialState('persistent-item-ward-test')
+  wardState.time = 120
+  wardState.summons = []
+  const observer = consumableCatalog.find((item) => item.id === 'i008_observer_eye')!
+  const sentry = consumableCatalog.find((item) => item.id === 'i009_sentry_eye')!
+  const dawnSupport = wardState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Dedicated Support')!
+  const duskSupport = wardState.arcanes.find((arcane) => arcane.team === 'dusk' && arcane.role === 'Dedicated Support')!
+  const wardPoint = runeSpawnPoints.power[0]
+  dawnSupport.pos = { ...wardPoint }
+  dawnSupport.items = [observer.name]
+  dawnSupport.itemCharges = createInitialItemCharges(dawnSupport.items)
+
+  const observerPlacement = placeWardIfUseful(wardState, dawnSupport, 20, true)
+  assert.equal(observerPlacement.used, observer.name)
+  assert.equal(observerPlacement.arcane.items.includes(observer.name), false, 'placing the final ward charge should free its normal inventory slot')
+  assert.equal(observer.name in observerPlacement.arcane.itemCharges, false)
+  const observerEntity = observerPlacement.ward!
+  assert.equal(observerEntity.invisibleToEnemies, true)
+  assert.ok(observerEntity.visionRange > 11 && observerEntity.visionRange < 12, '1600 ward vision should use the shared world scale')
+  assert.equal(isPointVisibleToTeam(wardState, 'dawn', { x: wardPoint.x + 10, y: wardPoint.y }), true)
+  assert.equal(isSummonTargetable(wardState, observerEntity, 'dusk'), false, 'enemy Observer should remain hidden without detection')
+
+  duskSupport.pos = { ...wardPoint }
+  duskSupport.items = [sentry.name]
+  duskSupport.itemCharges = createInitialItemCharges(duskSupport.items)
+  const sentryPlacement = placeWardIfUseful(wardState, duskSupport, 20, true)
+  assert.equal(sentryPlacement.used, sentry.name)
+  assert.ok((sentryPlacement.ward?.trueSightRange ?? 0) > 6)
+  assert.equal(isPointRevealedToTeam(wardState, 'dusk', observerEntity.pos), true)
+  assert.equal(isSummonTargetable(wardState, observerEntity, 'dusk'), true, 'Sentry True Sight should expose an enemy Observer in range')
+
+  wardState.wardStock.dawn.observer = { available: 0, nextRestockAt: 120 }
+  restockWardShop(wardState)
+  assert.equal(wardState.wardStock.dawn.observer.available, 1, 'Observer stock should replenish deterministically when its timer is due')
+  const buyer = wardState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Greedy Support')!
+  buyer.items = []
+  buyer.itemCharges = {}
+  const boughtObserver = buyConsumableAtBase(wardState, buyer, observer)
+  assert.equal(boughtObserver.items.includes(observer.name), true)
+  assert.equal(wardState.wardStock.dawn.observer.available, 0, 'buying a ward should debit the shared team stock')
+
+  wardState.arcanes = wardState.arcanes.map((arcane) => arcane.id === buyer.id ? boughtObserver : arcane)
+  const wardFrame = createMatchRenderFrame(wardState)
+  const wardReplay = materializeMatchRenderFrame(wardFrame, createMatchStaticData(wardState))
+  const replayObserver = wardReplay.summons.find((summon) => summon.id === observerEntity.id)!
+  assert.equal(replayObserver.invisibleToEnemies, true)
+  assert.equal(wardReplay.summons.find((summon) => summon.id === sentryPlacement.ward?.id)?.trueSightRange, sentryPlacement.ward?.trueSightRange)
+  assert.equal(wardReplay.wardStock.dawn.observer.available, 0, 'ward stock should survive compact replay materialization')
 }
 
 {
