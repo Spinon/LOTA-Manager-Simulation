@@ -51,7 +51,7 @@ const statusPriority: Record<SkillSupportStatus, number> = {
   missing: 3,
 }
 
-const ruleLevelImmunityAbilityIds = new Set([352, 389, 661, 1501, 1504, 5014, 5028, 5238, 5249, 5274, 5331, 5429, 5467, 5619, 7852, 7902])
+const ruleLevelImmunityAbilityIds = new Set([352, 389, 661, 1250, 1501, 1504, 5014, 5028, 5238, 5249, 5274, 5331, 5429, 5467, 5619, 7852, 7902])
 
 const runtimeValueKeys = new Set([
   'attackSpeed',
@@ -66,6 +66,8 @@ const runtimeValueKeys = new Set([
   'critChance',
   'critMultiplier',
   'damage',
+  'damage_reduction_duration',
+  'damage_reduction_pct',
   'disarmDuration',
   'duration',
   'fearDuration',
@@ -80,14 +82,18 @@ const runtimeValueKeys = new Set([
   'lifestealPct',
   'linkedLifestealPct',
   'linkedSummonMoveSpeedPct',
+  'levels_per_chicken',
   'manaCost',
   'manaValue',
   'magic_resist',
   'magic_resistance_reduction',
   'moveSpeedBonusPct',
+  'movespeed_bonus_pct',
   'muteDuration',
   'nightmare_invuln_time',
   'radius',
+  'total_chickens',
+  'ally_chicken_images_take_damage_percent',
   'range',
   'root',
   'silence',

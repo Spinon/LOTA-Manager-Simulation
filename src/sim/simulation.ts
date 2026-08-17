@@ -361,7 +361,7 @@ export type Creep = {
   pullUntil?: number
   motionPlan?: CreepMotionPlan
 }
-export type SummonVariant = 'tombstone_zombie' | 'eidolon_split_child'
+export type SummonVariant = 'tombstone_zombie' | 'eidolon_split_child' | 'fowl_play_chicken'
 export type SummonInheritanceFamily = 'none' | 'illusion' | 'strong_illusion' | 'clone'
 export type SummonInheritancePolicy = {
   family: SummonInheritanceFamily
@@ -683,6 +683,7 @@ export type CombatSource = {
   damageType?: CombatDamageType
   sourcePosition?: Point
   isBasicAttack?: boolean
+  bypassesDeathPrevention?: boolean
 }
 export type MatchEvent = {
   id: string
@@ -735,7 +736,7 @@ export type TimedEffect = {
   sourceId: string
   sourceName: string
   sourceTeam: TeamId
-  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'banish' | 'invulnerable' | 'debuff_immunity' | 'ethereal' | 'parry' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot' | 'summon_mark'
+  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'banish' | 'invulnerable' | 'damage_immunity' | 'debuff_immunity' | 'ethereal' | 'parry' | 'fowl_play' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot' | 'summon_mark'
   polarity: 'positive' | 'negative'
   value: number
   stacks: number
@@ -3258,6 +3259,11 @@ export function updateBoss(boss: Boss, time: number, delta: number): Boss {
 export function respawnArcaneIfReady(arcane: Arcane, time: number, index: number): Arcane {
   if (arcane.respawn <= matchPreparationStartSeconds || arcane.respawn > time) return arcane
   const spawn = spreadPoint(teamInfo[arcane.team].base, index)
+  const itemCooldowns = { ...arcane.itemCooldowns }
+  if (arcane.heroDefinitionId === fowlPlayHeroId) {
+    const fowlPlay = getArcaneRuntimeSkills(arcane).find((skill) => skill.sourceAbilityId === fowlPlayAbilityId)
+    if (fowlPlay) delete itemCooldowns[fowlPlay.id]
+  }
   return {
     ...arcane,
     pos: spawn,
@@ -3270,6 +3276,7 @@ export function respawnArcaneIfReady(arcane: Arcane, time: number, index: number
     combatTargetIntent: undefined,
     travelPlan: undefined,
     lastHitBy: undefined,
+    itemCooldowns,
     skillStates: getPersistentSkillStatesAfterDeath(arcane),
     macroDecision: 'Avancar rota',
     microDecision: 'Renasceu na base',
@@ -6533,6 +6540,7 @@ export function buyItemAtBase(arcane: Arcane): Arcane {
 }
 
 export function consumeItemIfNeeded(state: SimulationState, arcane: Arcane): { arcane: Arcane; used?: string } {
+  if (isArcaneInFowlPlay(state, arcane) && !hasArcaneAbilityUpgrade(arcane, 'shard')) return { arcane }
   const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
   const manaRatio = arcane.stats.mana / Math.max(1, arcane.stats.maxMana)
   const needsHeal = hpRatio < 0.52 && !hasTimedEffect(state, arcane.id, 'hot')
@@ -6583,6 +6591,7 @@ export function consumeItemIfNeeded(state: SimulationState, arcane: Arcane): { a
 }
 
 export function applyDispelItemIfNeeded(state: SimulationState, arcane: Arcane): { arcane: Arcane; used?: string } {
+  if (isArcaneInFowlPlay(state, arcane) && !hasArcaneAbilityUpgrade(arcane, 'shard')) return { arcane }
   const candidate = getDispelItemCandidate(state, arcane)
   if (!candidate?.item.active?.dispelPower) return { arcane }
 
@@ -6608,6 +6617,7 @@ export function applySimpleActiveItemIfNeeded(
   visibleEnemies?: Arcane[],
   frameContext?: TickFrameContext,
 ): { arcane: Arcane; used?: string; interruptsDecision?: boolean } {
+  if (isArcaneInFowlPlay(state, arcane) && !hasArcaneAbilityUpgrade(arcane, 'shard')) return { arcane }
   if (hasTimedEffect(state, arcane.id, 'mute')) return { arcane }
   const candidate = getSimpleActiveItemCandidate(state, arcane, knownDanger, visibleEnemies, frameContext)
   const active = candidate?.item.active
@@ -7617,7 +7627,7 @@ export function getArcanePassiveCombatModifiers(state: SimulationState, arcane: 
       const expectedCritPct = hasCrit ? profile.critChance * (profile.critMultiplier - 1) : 0
       const flatDamage = !hasCrit && profile.damage > 0 ? Math.min(55, profile.damage * 0.12) : 0
       const auraDamage = hasSkillTag(skill, ['damage_aura', 'vengeance_aura', 'aura']) ? 0.025 * level : 0
-      const defensiveReduction = hasSkillTag(skill, ['dispersion', 'untouchable', 'damage_reduction', 'evasion'])
+      const defensiveReduction = skill.sourceAbilityId !== fowlPlayAbilityId && hasSkillTag(skill, ['dispersion', 'untouchable', 'damage_reduction', 'evasion'])
         ? Math.min(0.28, 0.06 + level * 0.035)
         : 0
       return {
@@ -7735,6 +7745,142 @@ export function getBulwarkPhysicalDamageMultiplier(
   return 1 - clampNumber(reductionPct / 100, 0, 1)
 }
 
+const fowlPlayAbilityId = 1250
+const fowlPlayHeroId = 'h020_hex_warden'
+
+export function isArcaneInFowlPlay(state: SimulationState, arcane: Pick<Arcane, 'id'>) {
+  return hasTimedEffect(state, arcane.id, 'fowl_play')
+}
+
+export function spawnFowlPlayChickens(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  duration: number,
+) {
+  const level = Math.max(1, getSimpleSkillLevel(arcane, skill))
+  const baseCount = Math.max(1, Math.round(getSimpleSkillNumericValue(skill, 'total_chickens', level, 1)))
+  const levelsPerChicken = Math.max(1, Math.round(getSimpleSkillNumericValue(skill, 'levels_per_chicken', level, 6)))
+  const count = Math.min(6, baseCount + Math.floor(arcane.stats.level / levelsPerChicken))
+  const incomingDamageMultiplier = Math.max(1, getSimpleSkillNumericValue(skill, 'ally_chicken_images_take_damage_percent', level, 200) / 100)
+  const timestamp = Math.round(state.time * 1000)
+  const spawned = Array.from({ length: count }, (_, index): SummonedUnit => {
+    const angle = ((index + 1) / count) * Math.PI * 2
+    const radius = 1.45 + (index % 2) * 0.35
+    return {
+      id: `${arcane.id}-fowl-play-${timestamp}-${index}`,
+      ownerId: arcane.id,
+      sourceSkillId: skill.id,
+      name: `Fowl Play ${index + 1}`,
+      archetype: 'illusion',
+      team: arcane.team,
+      pos: clampToMapBounds({ x: arcane.pos.x + Math.cos(angle) * radius, y: arcane.pos.y + Math.sin(angle) * radius }),
+      hp: arcane.stats.maxHp,
+      maxHp: arcane.stats.maxHp,
+      damage: 0,
+      armor: getEffectiveArcaneArmor(state, arcane),
+      magicResistance: getEffectiveArcaneMagicResistance(state, arcane),
+      range: arcane.stats.range,
+      visionRange: arcane.visionRange,
+      moveSpeed: getEffectiveArcaneMoveSpeed(state, arcane),
+      attackInterval: getEffectiveArcaneAttackCooldown(state, arcane),
+      lastAttack: state.time,
+      spawnedAt: state.time,
+      expiresAt: state.time + duration,
+      goldReward: 0,
+      xpReward: 0,
+      canMove: true,
+      canAttack: false,
+      damageTakenMultiplier: incomingDamageMultiplier,
+      buildingDamageMultiplier: 0,
+      healingAuraPct: 0,
+      channelBound: false,
+      variant: 'fowl_play_chicken',
+      unitSeedId: 'summon_basic_illusion',
+      copiedArcaneId: arcane.id,
+    }
+  })
+  state.summons = [...state.summons, ...spawned]
+  teamVisionProviderCache.delete(state)
+  return spawned
+}
+
+export function tryTriggerFowlPlay(
+  state: SimulationState,
+  target: Arcane,
+  incomingDamage: number,
+  source: CombatSource,
+) {
+  if (target.heroDefinitionId !== fowlPlayHeroId || source.bypassesDeathPrevention) return false
+  if (target.stats.hp <= 0 || incomingDamage < target.stats.hp || hasTimedEffect(state, target.id, 'break')) return false
+  const skill = getArcaneRuntimeSkills(target).find((candidate) => candidate.sourceAbilityId === fowlPlayAbilityId)
+  if (!skill || (target.itemCooldowns[skill.id] ?? 0) > state.time) return false
+  const level = Math.max(1, getSimpleSkillLevel(target, skill))
+  const duration = Math.max(0.1, getSimpleSkillNumericValue(skill, 'hex_duration', level, 3))
+  const damageImmunityDuration = Math.max(0.1, getSimpleSkillNumericValue(skill, 'damage_reduction_duration', level, 1))
+  const moveSpeedPct = getSimpleSkillNumericValue(skill, 'movespeed_bonus_pct', level, 5) / 100
+
+  if (target.travelPlan) materializeArcaneTravelPlan(target, state.time)
+  dispelTimedEffects(state, target.id, 'strong', 'negative')
+  target.travelPlan = undefined
+  target.channeling = undefined
+  target.combatTargetId = undefined
+  target.combatTargetIntent = undefined
+  target.forceDecision = true
+  target.nextDecisionAt = state.time
+  target.macroDecision = 'Sobreviver'
+  target.microDecision = 'Fowl Play'
+  target.aiReason = 'fowl_play_lethal_prevention'
+  target.decision = 'Fowl Play'
+  setArcaneSkillCooldown(state, target, skill.id, state.time + getSimpleSkillCooldown(skill, level))
+  addTimedEffect(state, target, {
+    sourceId: `${target.id}-${skill.id}-form`,
+    sourceName: skill.name,
+    sourceTeam: target.team,
+    kind: 'fowl_play',
+    polarity: 'positive',
+    value: 1,
+    modifiers: { moveSpeedPct },
+    duration,
+    dispelType: 'none',
+  })
+  addTimedEffect(state, target, {
+    sourceId: `${target.id}-${skill.id}-damage-immunity`,
+    sourceName: skill.name,
+    sourceTeam: target.team,
+    kind: 'damage_immunity',
+    polarity: 'positive',
+    value: getSimpleSkillNumericValue(skill, 'damage_reduction_pct', level, 100) / 100,
+    duration: damageImmunityDuration,
+    dispelType: 'none',
+  })
+  if (hasArcaneAbilityUpgrade(target, 'shard')) {
+    addTimedEffect(state, target, {
+      sourceId: `${target.id}-${skill.id}-invulnerable`,
+      sourceName: skill.name,
+      sourceTeam: target.team,
+      kind: 'invulnerable',
+      polarity: 'positive',
+      value: 1,
+      duration: Math.max(0.1, getSimpleSkillNumericValue(skill, 'invuln_duration', level, 0.1)),
+      dispelType: 'none',
+    })
+  }
+  spawnFowlPlayChickens(state, target, skill, duration)
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `fowl-play-${target.id}-${state.time}`,
+      team: target.team,
+      pos: { ...target.pos },
+      label: 'FOWL PLAY',
+      createdAt: state.time,
+      expiresAt: state.time + 1.2,
+    },
+  ]
+  return true
+}
+
 export function resolveIncomingArcaneDamage(
   state: SimulationState,
   target: Arcane,
@@ -7743,6 +7889,7 @@ export function resolveIncomingArcaneDamage(
   source?: Pick<CombatSource, 'sourcePosition' | 'isBasicAttack'>,
 ) {
   if (isArcaneInvulnerable(state, target)) return 0
+  if (hasTimedEffect(state, target.id, 'damage_immunity')) return 0
   if (damageType === 'physical' && hasTimedEffect(state, target.id, 'ethereal')) return 0
   const passive = getArcanePassiveCombatModifiers(state, target)
   const temporaryReduction = getArcaneStatModifierEffects(state, target)
@@ -7826,7 +7973,7 @@ export function isArcaneMovementDisabled(state: SimulationState, arcane: Arcane)
 }
 
 export function isArcaneAttackDisabled(state: SimulationState, arcane: Arcane) {
-  return isArcaneStunned(state, arcane) || hasTimedEffect(state, arcane.id, 'disarm') || hasTimedEffect(state, arcane.id, 'ethereal')
+  return isArcaneStunned(state, arcane) || isArcaneInFowlPlay(state, arcane) || hasTimedEffect(state, arcane.id, 'disarm') || hasTimedEffect(state, arcane.id, 'ethereal')
 }
 
 export function processTimedEffects(state: SimulationState): SimulationState {
@@ -8995,7 +9142,7 @@ export function getUnitHitboxRadius(entity: Arcane | Creep | Camp | Boss) {
 }
 
 export function isArcaneSilenced(state: SimulationState, arcane: Arcane) {
-  return hasTimedEffect(state, arcane.id, 'silence') || hasTimedEffect(state, arcane.id, 'hex') || hasTimedEffect(state, arcane.id, 'sleep') || isArcaneBanished(state, arcane)
+  return hasTimedEffect(state, arcane.id, 'silence') || hasTimedEffect(state, arcane.id, 'hex') || hasTimedEffect(state, arcane.id, 'sleep') || isArcaneInFowlPlay(state, arcane) || isArcaneBanished(state, arcane)
 }
 
 export function hasAnyCastableSkill(
@@ -9556,6 +9703,7 @@ export function resolveSimpleSkillEffects(
     label: `${arcane.player}: ${skill.name}`,
     team: arcane.team,
     damageType: getSimpleSkillDamageType(skill),
+    bypassesDeathPrevention: skill.sourceAbilityId === 5010 || skill.sourceAbilityId === 5161,
   }
   const immunityProfile = getSimpleSkillImmunityProfile(skill, level)
   if (skill.sourceAbilityId === 7902 && hasArcaneAbilityUpgrade(arcane, 'shard')) {
@@ -14470,6 +14618,9 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
     finalDamage = getStructureIncomingDamage(state, targetStructure, damage, source, damageType)
   } else if (targetBase) {
     finalDamage = getStructureIncomingDamage(state, targetBase, damage, source, damageType)
+  }
+  if (targetArcane && tryTriggerFowlPlay(state, targetArcane, finalDamage, source)) {
+    finalDamage = Math.max(0, targetArcane.stats.hp - 1)
   }
   const targetCurrentHp = targetArcane?.stats.hp ?? targetCreep?.hp ?? targetSummon?.hp ?? targetTower?.hp ?? targetStructure?.hp ?? targetBase?.hp ?? targetCamp?.hp ?? targetBoss?.hp ?? finalDamage
 

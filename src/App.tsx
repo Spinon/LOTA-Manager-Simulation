@@ -2027,9 +2027,11 @@ function getEffectGlyph(kind: TimedEffect['kind']) {
   if (kind === 'barrier') return 'B'
   if (kind === 'buff') return '+'
   if (kind === 'invulnerable') return 'I'
+  if (kind === 'damage_immunity') return '0'
   if (kind === 'debuff_immunity') return 'U'
   if (kind === 'ethereal') return 'E'
   if (kind === 'parry') return 'P'
+  if (kind === 'fowl_play') return 'F'
   return 'H'
 }
 
@@ -2037,9 +2039,11 @@ function getEffectCanvasColor(kind: TimedEffect['kind']) {
   if (kind === 'dot' || kind === 'silence') return '#ff5b6e'
   if (kind === 'barrier' || kind === 'buff' || kind === 'hot') return '#d7f171'
   if (kind === 'invulnerable') return '#fff3ba'
+  if (kind === 'damage_immunity') return '#8cf2d1'
   if (kind === 'debuff_immunity') return '#6de8c5'
   if (kind === 'ethereal') return '#d6a8ff'
   if (kind === 'parry') return '#ffae66'
+  if (kind === 'fowl_play') return '#f6dc72'
   if (kind === 'stun') return '#f6c85d'
   return '#9fd0ff'
 }
@@ -3177,9 +3181,11 @@ function getEffectKindLabel(kind: TimedEffect['kind']) {
     sleep: 'Sleep',
     banish: 'Banish',
     invulnerable: 'Invulnerable',
+    damage_immunity: 'Damage immune',
     debuff_immunity: 'Debuff immune',
     ethereal: 'Ethereal',
     parry: 'Parry',
+    fowl_play: 'Fowl Play',
     break: 'Break',
     mute: 'Mute',
     buff: 'Buff',

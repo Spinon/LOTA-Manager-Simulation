@@ -100,7 +100,10 @@ import {
   isArcaneAttackDisabled,
   isArcaneBanished,
   isArcaneDebuffImmune,
+  isArcaneInFowlPlay,
   isArcaneInvulnerable,
+  isArcaneMovementDisabled,
+  isArcaneSilenced,
   isArcaneTargetable,
   isSummonActive,
   isSummonTargetable,
@@ -2656,6 +2659,96 @@ let state: SimulationState = initialState
     .find((candidate) => candidate.sourceAbilityId === 7902)!
   assert.equal(resolveSimpleSkillEffects(baseStarbreakerState, baseStarbreakerCaster, baseStarbreakerSkill, 4, baseStarbreakerEnemy), true)
   assert.equal(isArcaneDebuffImmune(baseStarbreakerState, baseStarbreakerCaster), false, 'Starbreaker should require Shard for immunity')
+
+  const fowlState = createInitialState('fowl-play-lethal-prevention-runtime')
+  fowlState.time = 600
+  let fowlTarget = fowlState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const fowlEnemy = fowlState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  fowlTarget.heroDefinitionId = 'h020_hex_warden'
+  fowlTarget.stats.level = 12
+  fowlTarget.stats.hp = 100
+  const fowlSkill = getArcaneRuntimeSkills(fowlTarget).find((skill) => skill.sourceAbilityId === 1250)!
+  const fowlBaseMoveSpeed = getEffectiveArcaneMoveSpeed(fowlState, fowlTarget)
+  addTimedEffect(fowlState, fowlTarget, {
+    sourceId: 'fowl-play-preexisting-stun',
+    sourceName: 'Preexisting stun',
+    sourceTeam: fowlEnemy.team,
+    kind: 'stun',
+    polarity: 'negative',
+    value: 1,
+    duration: 4,
+  })
+  damageEntity(fowlState, fowlTarget.id, 500, {
+    id: fowlEnemy.id,
+    label: fowlEnemy.player,
+    team: fowlEnemy.team,
+    damageType: 'pure',
+  })
+  fowlTarget = fowlState.arcanes.find((arcane) => arcane.id === fowlTarget.id)!
+  assert.equal(fowlTarget.stats.hp, 1, 'Fowl Play should intercept lethal damage and leave the hero at one HP')
+  assert.equal(isArcaneInFowlPlay(fowlState, fowlTarget), true)
+  assert.equal(hasTimedEffect(fowlState, fowlTarget.id, 'damage_immunity'), true)
+  assert.equal(hasTimedEffect(fowlState, fowlTarget.id, 'stun'), false, 'Fowl Play should strongly dispel existing control')
+  assert.equal(isArcaneAttackDisabled(fowlState, fowlTarget), true)
+  assert.equal(isArcaneSilenced(fowlState, fowlTarget), true)
+  assert.equal(isArcaneMovementDisabled(fowlState, fowlTarget), false, 'the chicken form should still be able to move')
+  assert.ok(Math.abs(getEffectiveArcaneMoveSpeed(fowlState, fowlTarget) / fowlBaseMoveSpeed - 1.05) < 0.0001)
+  const chickens = fowlState.summons.filter((summon) => summon.variant === 'fowl_play_chicken')
+  assert.equal(chickens.length, 3, 'level 12 should create the base chicken plus one image per six levels')
+  assert.ok(chickens.every((chicken) => chicken.damage === 0 && !chicken.canAttack && chicken.damageTakenMultiplier === 2))
+  assert.ok((fowlTarget.itemCooldowns[fowlSkill.id] ?? 0) >= fowlState.time + 120)
+  assert.ok(fowlState.skillMarkers.some((marker) => marker.label === 'FOWL PLAY'))
+  damageEntity(fowlState, fowlTarget.id, 500, {
+    id: fowlEnemy.id,
+    label: fowlEnemy.player,
+    team: fowlEnemy.team,
+    damageType: 'pure',
+  })
+  fowlTarget = fowlState.arcanes.find((arcane) => arcane.id === fowlTarget.id)!
+  assert.equal(fowlTarget.stats.hp, 1, 'the one-second damage immunity should absorb follow-up damage')
+  fowlState.time += 1.01
+  damageEntity(fowlState, fowlTarget.id, 5, {
+    id: fowlEnemy.id,
+    label: fowlEnemy.player,
+    team: fowlEnemy.team,
+    damageType: 'pure',
+  })
+  resolveDeaths(fowlState)
+  const deadFowlTarget = fowlState.arcanes.find((arcane) => arcane.id === fowlTarget.id)!
+  assert.equal(deadFowlTarget.stats.hp, 0, 'Fowl Play should not retrigger while its cooldown is active')
+  const respawnedFowlTarget = respawnArcaneIfReady(deadFowlTarget, deadFowlTarget.respawn, 0)
+  assert.equal(respawnedFowlTarget.itemCooldowns[fowlSkill.id], undefined, 'Fowl Play cooldown should reset on respawn')
+
+  const shardFowlState = createInitialState('fowl-play-shard-invulnerability-runtime')
+  shardFowlState.time = 600
+  const shardFowlTarget = shardFowlState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const shardFowlEnemy = shardFowlState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  shardFowlTarget.heroDefinitionId = 'h020_hex_warden'
+  shardFowlTarget.items = [shopCatalog.find((item) => item.id === 'i136_spell_shard')!.name]
+  shardFowlTarget.stats.hp = 50
+  damageEntity(shardFowlState, shardFowlTarget.id, 100, {
+    id: shardFowlEnemy.id,
+    label: shardFowlEnemy.player,
+    team: shardFowlEnemy.team,
+    damageType: 'pure',
+  })
+  assert.equal(isArcaneInvulnerable(shardFowlState, shardFowlTarget), true, 'Shard should add the imported 0.1-second untargetable window')
+
+  const executeFowlState = createInitialState('fowl-play-execute-bypass-runtime')
+  executeFowlState.time = 600
+  const executeFowlTarget = executeFowlState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const executeFowlEnemy = executeFowlState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  executeFowlTarget.heroDefinitionId = 'h020_hex_warden'
+  executeFowlTarget.stats.hp = 50
+  damageEntity(executeFowlState, executeFowlTarget.id, 100, {
+    id: executeFowlEnemy.id,
+    label: `${executeFowlEnemy.player}: execute`,
+    team: executeFowlEnemy.team,
+    damageType: 'pure',
+    bypassesDeathPrevention: true,
+  })
+  assert.equal(executeFowlState.arcanes.find((arcane) => arcane.id === executeFowlTarget.id)!.stats.hp, 0)
+  assert.equal(isArcaneInFowlPlay(executeFowlState, executeFowlTarget), false, 'execute damage should bypass Fowl Play')
 
   const bulwarkState = createInitialState('directional-bulwark-runtime')
   bulwarkState.time = 600

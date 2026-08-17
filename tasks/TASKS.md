@@ -660,6 +660,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - A família `immunity` permanece em 16 completas e 5 aproximações: a redução direcional de Bulwark está executada, mas `forced_movement_immunity` continua pendente porque a fonte importada não traz valor, duração nem contrato confiável de ativação.
 - Suíte completa, lint e build verdes. Benchmark de 5 minutos em 149,9x wall / 120,0x CPU, digest `51a125c1f69f4a2a` preservado. Próxima rodada da T16: implementar o gatilho de morte de Fowl Play e então reavaliar os três casos cujos upgrades importados estão vazios.
 
+**Progresso de prevenção de morte e Fowl Play (2026-08-17)**:
+- Fowl Play agora intercepta dano letal antes da resolução da morte, deixa o Hex Warden com 1 HP, aplica strong dispel aos efeitos negativos e entra na recarga oficial de 120s. Break impede o disparo, e a recarga é removida no respawn.
+- A forma de 3s bloqueia ataques e skills, preserva movimento com os 5% importados e impede uso de itens sem Shard. A janela inicial reduz dano recebido em 100% por 1s; com Shard, os 0,1s importados de invulnerabilidade e o uso de itens durante a forma também são habilitados.
+- As galinhas falsas são summons inofensivos e selecionáveis, recebem 200% de dano, não concedem ouro/XP e escalam em uma imagem adicional a cada seis níveis. O minimapa e o painel identificam separadamente a forma e a imunidade a dano.
+- Culling Blade e Reaper's Scythe usam o novo contrato explícito de execução e ignoram prevenção de morte. Testes cobrem disparo letal, dispel, restrições da forma, Shard, imagens, recarga, respawn, imunidade temporária e bypass de execução.
+- Auditoria atual: 7 completas, 634 parciais, 12 aproximações e 81 ausentes; família `immunity`: 17 completas e 4 aproximações. Restam Nether Strike com valores de Shard zerados, retorno do Astral Spirit, Press the Attack com duração/resistência vazias e a imunidade a movimento forçado de Bulwark sem contrato importado suficiente.
+- Suíte completa, lint e build verdes. Benchmark de 5 minutos em 161,2x wall / 118,8x CPU, com digest `51a125c1f69f4a2a` preservado.
+- Próxima rodada da T16: modelar o retorno do Astral Spirit, que possui comportamento acionável, e manter os três upgrades sem dados confiáveis como aproximações documentadas até a fonte importada ser completada.
+
 ---
 
 ### [ ] T16.1 - Linguagem visual de ilusões, clones e criaturas controladas
