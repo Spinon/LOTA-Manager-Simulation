@@ -2563,6 +2563,97 @@ let state: SimulationState = initialState
   })
   assert.equal(hasTimedEffect(cogsState, cogsCaster.id, 'slow'), false, 'returning inside the active Cogs should restore immunity')
 
+  const handState = createInitialState('scepter-hand-of-god-immunity-runtime')
+  handState.time = 600
+  let handCaster = handState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  let handAlly = handState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.id !== handCaster.id)!
+  handCaster.heroDefinitionId = 'h058_animal_priest'
+  handCaster.skillLevels = { R: 3 }
+  handCaster.items = [shopCatalog.find((item) => item.id === 'i135_grand_spell_scepter')!.name]
+  handCaster.stats.mana = 1000
+  handCaster.stats.maxMana = Math.max(handCaster.stats.maxMana, 1000)
+  handAlly.pos = { x: handCaster.pos.x + 2, y: handCaster.pos.y }
+  handAlly.stats.hp -= 500
+  const handSkill = getHeroDefinition(handCaster.heroDefinitionId).skills!
+    .find((candidate) => candidate.sourceAbilityId === 5331)!
+  assert.deepEqual(handSkill.values.scepterChannelTime, [6])
+  assert.deepEqual(handSkill.values.scepterDebuffImmunityRadius, [800])
+  assert.deepEqual(handSkill.values.scepterDebuffImmunityResist, [60])
+  const handMana = handCaster.stats.mana
+  const handAllyHp = handAlly.stats.hp
+  assert.equal(castSimpleSkill(handState, handCaster, handSkill, 3, handCaster), true)
+  assert.equal(handCaster.channeling?.completesAt, handState.time + 6)
+  assert.equal(handCaster.stats.mana, handMana - 400)
+  assert.equal(isArcaneDebuffImmune(handState, handAlly), true)
+  assert.ok(getEffectiveArcaneMagicResistance(handState, handAlly) >= 60)
+
+  handAlly.pos = { x: handCaster.pos.x + 6.5, y: handCaster.pos.y }
+  handState.time += 1
+  processTimedEffects(handState)
+  handAlly = handState.arcanes.find((arcane) => arcane.id === handAlly.id)!
+  assert.equal(handAlly.stats.hp, handAllyHp, 'the Scepter HoT should pause outside Hand of God radius')
+  assert.equal(isArcaneDebuffImmune(handState, handAlly), false)
+  handAlly.pos = { x: handCaster.pos.x + 2, y: handCaster.pos.y }
+  handState.time += 1
+  processTimedEffects(handState)
+  handCaster = handState.arcanes.find((arcane) => arcane.id === handCaster.id)!
+  handAlly = handState.arcanes.find((arcane) => arcane.id === handAlly.id)!
+  assert.equal(handAlly.stats.hp, handAllyHp + 120, 'the imported 200% nearby boost should amplify level-three HoT to 120 per second')
+  assert.equal(isArcaneDebuffImmune(handState, handAlly), true)
+  addTimedEffect(handState, handCaster, {
+    sourceId: 'interrupt-hand-of-god',
+    sourceName: 'Interrupt Hand of God',
+    sourceTeam: 'dusk',
+    kind: 'stun',
+    polarity: 'negative',
+    value: 1,
+    piercesDebuffImmunity: true,
+    duration: 1,
+  })
+  assert.equal(handCaster.channeling, undefined, 'hard control should interrupt skill channels immediately')
+  assert.equal(isArcaneDebuffImmune(handState, handAlly), false, 'Hand of God aura should end with its source channel')
+
+  const baseHandState = createInitialState('base-hand-of-god-no-immunity-runtime')
+  baseHandState.time = 600
+  const baseHandCaster = baseHandState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  baseHandCaster.heroDefinitionId = 'h058_animal_priest'
+  baseHandCaster.skillLevels = { R: 3 }
+  baseHandCaster.stats.mana = 1000
+  baseHandCaster.stats.maxMana = Math.max(baseHandCaster.stats.maxMana, 1000)
+  baseHandState.arcanes.find((arcane) => arcane.team === baseHandCaster.team && arcane.id !== baseHandCaster.id)!.stats.hp -= 500
+  const baseHandSkill = getHeroDefinition(baseHandCaster.heroDefinitionId).skills!
+    .find((candidate) => candidate.sourceAbilityId === 5331)!
+  assert.equal(castSimpleSkill(baseHandState, baseHandCaster, baseHandSkill, 3, baseHandCaster), true)
+  assert.equal(baseHandCaster.channeling, undefined, 'Hand of God should remain immediate without Scepter')
+  assert.equal(isArcaneDebuffImmune(baseHandState, baseHandCaster), false)
+
+  const starbreakerState = createInitialState('starbreaker-shard-immunity-runtime')
+  starbreakerState.time = 600
+  const starbreakerCaster = starbreakerState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const starbreakerEnemy = starbreakerState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  starbreakerCaster.heroDefinitionId = 'h114_dawn_paladin'
+  starbreakerCaster.skillLevels = { Q: 4 }
+  starbreakerCaster.items = [shopCatalog.find((item) => item.id === 'i136_spell_shard')!.name]
+  const starbreakerSkill = getHeroDefinition(starbreakerCaster.heroDefinitionId).skills!
+    .find((candidate) => candidate.sourceAbilityId === 7902)!
+  assert.deepEqual(starbreakerSkill.values.shardImmunityResist, [50])
+  assert.equal(resolveSimpleSkillEffects(starbreakerState, starbreakerCaster, starbreakerSkill, 4, starbreakerEnemy), true)
+  assert.equal(isArcaneDebuffImmune(starbreakerState, starbreakerCaster), true)
+  assert.ok(getEffectiveArcaneMagicResistance(starbreakerState, starbreakerCaster) >= 50)
+  starbreakerState.time += 1.11
+  assert.equal(isArcaneDebuffImmune(starbreakerState, starbreakerCaster), false)
+
+  const baseStarbreakerState = createInitialState('base-starbreaker-no-immunity-runtime')
+  baseStarbreakerState.time = 600
+  const baseStarbreakerCaster = baseStarbreakerState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const baseStarbreakerEnemy = baseStarbreakerState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  baseStarbreakerCaster.heroDefinitionId = 'h114_dawn_paladin'
+  baseStarbreakerCaster.skillLevels = { Q: 4 }
+  const baseStarbreakerSkill = getHeroDefinition(baseStarbreakerCaster.heroDefinitionId).skills!
+    .find((candidate) => candidate.sourceAbilityId === 7902)!
+  assert.equal(resolveSimpleSkillEffects(baseStarbreakerState, baseStarbreakerCaster, baseStarbreakerSkill, 4, baseStarbreakerEnemy), true)
+  assert.equal(isArcaneDebuffImmune(baseStarbreakerState, baseStarbreakerCaster), false, 'Starbreaker should require Shard for immunity')
+
   const invulnerabilityState = createInitialState('rule-level-invulnerability-runtime')
   invulnerabilityState.time = 600
   const invulnerabilityCaster = invulnerabilityState.arcanes.find((arcane) => arcane.team === 'dawn')!

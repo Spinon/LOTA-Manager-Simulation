@@ -439,6 +439,16 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
   if (skill.sourceInternalName === 'arc_warden_magnetic_field') {
     assignAlias(values, skill, 'evasionPct', ['evasion_chance'], true)
   }
+  if (skill.sourceInternalName === 'chen_hand_of_god') {
+    assignUpgradeAlias(values, skill, 'scepterChannelTime', ['AbilityChannelTime'], 'scepter')
+    assignUpgradeAlias(values, skill, 'scepterDebuffImmunityRadius', ['debuff_immune_radius'], 'scepter')
+    assignUpgradeAlias(values, skill, 'scepterDebuffImmunityResist', ['debuff_immune_resist'], 'scepter')
+    assignUpgradeAlias(values, skill, 'scepterNearbyHotBoostPct', ['nearby_hot_boost'], 'scepter')
+  }
+  if (skill.sourceInternalName === 'dawnbreaker_fire_wreath') {
+    assignUpgradeAlias(values, skill, 'shardImmunityResist', ['immunity_resist'], 'shard')
+    assignUpgradeAlias(values, skill, 'shardMovementPenaltyPct', ['shard_movement_penalty'], 'shard')
+  }
   if (isGlobalAbility(skill.sourceInternalName)) values.global = true
   return values
 }
@@ -577,6 +587,7 @@ function isGlobalAbility(internal: string) {
     'sun_strike',
     'haunt',
     'charge_of_darkness',
+    'hand_of_god',
   ].some((name) => internal.includes(name))
 }
 

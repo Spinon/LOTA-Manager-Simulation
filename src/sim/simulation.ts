@@ -751,6 +751,8 @@ export type TimedEffect = {
   piercesDebuffImmunity?: boolean
   areaCenter?: Point
   areaRadius?: number
+  channelSourceId?: string
+  channelSkillId?: string
   dispelType: DispelType
   createdAt: number
   expiresAt: number
@@ -1587,6 +1589,10 @@ export function getArcaneAbilityUpgradeSlots(arcane: Pick<Arcane, 'items'>) {
   })
   abilityUpgradeSlotsByInventory.set(arcane.items, slots)
   return slots
+}
+
+export function hasArcaneAbilityUpgrade(arcane: Pick<Arcane, 'items'>, slot: AbilityUpgradeSlot) {
+  return getArcaneAbilityUpgradeSlots(arcane).has(slot)
 }
 
 export function getArcaneRuntimeSkills(
@@ -7703,6 +7709,10 @@ export function hasTimedEffect(state: SimulationState, targetId: string, kind: T
 
 export function isTimedEffectActive(state: SimulationState, effect: TimedEffect) {
   if (effect.expiresAt <= state.time) return false
+  if (effect.channelSourceId && effect.channelSkillId) {
+    const source = state.arcanes.find((arcane) => arcane.id === effect.channelSourceId)
+    if (source?.channeling?.skillId !== effect.channelSkillId) return false
+  }
   if (!effect.areaCenter || !effect.areaRadius) return true
   const target = state.arcanes.find((arcane) => arcane.id === effect.targetId)
   return Boolean(target && distanceSquared(target.pos, effect.areaCenter) <= effect.areaRadius * effect.areaRadius)
@@ -7773,6 +7783,10 @@ export function processTimedEffects(state: SimulationState): SimulationState {
   const tickedEffectIds = new Set<string>()
   state.timedEffects.forEach((effect) => {
     if ((effect.kind !== 'dot' && effect.kind !== 'hot') || (effect.nextTickAt ?? Number.POSITIVE_INFINITY) > state.time) {
+      return
+    }
+    if (!isTimedEffectActive(state, effect)) {
+      tickedEffectIds.add(effect.id)
       return
     }
 
@@ -7850,6 +7864,8 @@ export function addTimedEffect(state: SimulationState, target: Arcane, effect: O
     piercesDebuffImmunity: effect.piercesDebuffImmunity,
     areaCenter: effect.areaCenter ? { ...effect.areaCenter } : undefined,
     areaRadius: effect.areaRadius,
+    channelSourceId: effect.channelSourceId,
+    channelSkillId: effect.channelSkillId,
     nextTickAt: effect.kind === 'dot' || effect.kind === 'hot'
       ? existing?.nextTickAt ?? state.time + (effect.tickInterval ?? 1)
       : undefined,
@@ -7862,6 +7878,21 @@ export function addTimedEffect(state: SimulationState, target: Arcane, effect: O
     timedEffect,
     ...state.timedEffects.filter((current) => current.id !== id),
   ].slice(0, 160)
+
+  if (
+    target.channeling &&
+    effect.polarity === 'negative' &&
+    ['stun', 'hex', 'sleep', 'banish', 'fear', 'taunt'].includes(effect.kind)
+  ) {
+    const channel = target.channeling
+    target.channeling = undefined
+    target.macroDecision = getChannelMacroDecision(channel)
+    target.microDecision = `${channel.label} interrompido`
+    target.aiReason = `${channel.kind}_interrupted`
+    target.decision = target.microDecision
+    target.forceDecision = true
+    target.nextDecisionAt = state.time + 0.1
+  }
 
   if (
     target.travelPlan &&
@@ -9275,6 +9306,8 @@ export function applySimpleSkillImmunityState(
   duration: number,
   value = 1,
   area?: { center: Point; radius: number },
+  magicResistanceFloorOverride = 0,
+  channel?: { sourceId: string; skillId: string },
 ) {
   if (duration <= 0) return false
   const profile = getSimpleSkillImmunityProfile(skill, Math.max(1, level))
@@ -9285,12 +9318,14 @@ export function applySimpleSkillImmunityState(
     kind,
     polarity: target.team === caster.team ? 'positive' : 'negative',
     value,
-    modifiers: kind === 'debuff_immunity' && profile.magicResistanceFloor > 0
-      ? { magicResistanceFloor: profile.magicResistanceFloor }
+    modifiers: kind === 'debuff_immunity' && Math.max(profile.magicResistanceFloor, magicResistanceFloorOverride) > 0
+      ? { magicResistanceFloor: Math.max(profile.magicResistanceFloor, magicResistanceFloorOverride) }
       : undefined,
     piercesDebuffImmunity: profile.piercesDebuffImmunity,
     areaCenter: area ? { ...area.center } : undefined,
     areaRadius: area?.radius,
+    channelSourceId: channel?.sourceId,
+    channelSkillId: channel?.skillId,
     duration,
   })
   return hasTimedEffect(state, target.id, kind)
@@ -9309,6 +9344,9 @@ export function castSimpleSkill(
   }
   if (skill.sourceAbilityId === 1497) return castTwinBladeStanceSwitch(state, arcane, skill, level)
   if (skill.sourceAbilityId === 1504) return castTwinBladeParry(state, arcane, skill, level)
+  if (skill.sourceAbilityId === 5331 && hasArcaneAbilityUpgrade(arcane, 'scepter')) {
+    return castScepterHandOfGod(state, arcane, skill, level)
+  }
   if (skill.sourceAbilityId === 5607) return castStoredRemnantSkill(state, arcane, skill, level, fallbackTarget)
   if (isConfirmedGlobalSkill(skill) && !shouldCastGlobalSkill(state, arcane, skill)) return false
   const profile = getSkillEffectProfile(skill, level)
@@ -9345,8 +9383,9 @@ export function startSimpleSkillChannel(
   target: CombatTarget,
   profile = getSkillEffectProfile(skill, level),
   manaCost = getSimpleSkillManaCost(arcane, skill, level),
+  durationOverride?: number,
 ) {
-  const channelDuration = getSimpleSkillChannelDuration(skill, level)
+  const channelDuration = durationOverride ?? getSimpleSkillChannelDuration(skill, level)
   if (channelDuration <= 0 || arcane.channeling) return false
 
   finishSimpleSkillCast(state, arcane, skill, manaCost, target)
@@ -9385,6 +9424,62 @@ export function startSimpleSkillChannel(
   return true
 }
 
+export function castScepterHandOfGod(
+  state: SimulationState,
+  arcane: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+) {
+  if (!hasArcaneAbilityUpgrade(arcane, 'scepter')) return false
+  const channelDuration = Math.max(0.1, getSimpleSkillNumericValue(skill, 'scepterChannelTime', level, 0))
+  const radius = Math.max(0, getSimpleSkillNumericValue(skill, 'scepterDebuffImmunityRadius', level, 0) / 140)
+  const resistance = Math.max(0, getSimpleSkillNumericValue(skill, 'scepterDebuffImmunityResist', level, 0))
+  if (channelDuration <= 0 || radius <= 0 || resistance <= 0) return false
+
+  const profile = getSkillEffectProfile(skill, level)
+  const manaCost = getSimpleSkillManaCost(arcane, skill, level)
+  if (arcane.stats.mana < manaCost || arcane.channeling) return false
+  const center = { ...arcane.pos }
+  if (!startSimpleSkillChannel(state, arcane, skill, level, arcane, profile, manaCost, channelDuration)) return false
+
+  const hotPerSecond = Math.max(0, getSimpleSkillNumericValue(skill, 'heal_per_second', level, 0)) *
+    (1 + Math.max(0, getSimpleSkillNumericValue(skill, 'scepterNearbyHotBoostPct', level, 0)) / 100)
+  state.arcanes
+    .filter((ally) => ally.team === arcane.team && ally.stats.hp > 0 && ally.respawn <= state.time && distanceSquared(ally.pos, center) <= radius * radius)
+    .forEach((ally) => {
+      applySimpleSkillImmunityState(
+        state,
+        arcane,
+        skill,
+        level,
+        ally,
+        'debuff_immunity',
+        channelDuration,
+        1,
+        { center, radius },
+        resistance,
+        { sourceId: arcane.id, skillId: skill.id },
+      )
+      if (hotPerSecond > 0) {
+        addTimedEffect(state, ally, {
+          sourceId: `${arcane.id}-${skill.id}-scepter-hot`,
+          sourceName: skill.name,
+          sourceTeam: arcane.team,
+          kind: 'hot',
+          polarity: 'positive',
+          value: hotPerSecond,
+          tickInterval: 1,
+          areaCenter: center,
+          areaRadius: radius,
+          channelSourceId: arcane.id,
+          channelSkillId: skill.id,
+          duration: channelDuration,
+        })
+      }
+    })
+  return true
+}
+
 export function resolveSimpleSkillEffects(
   state: SimulationState,
   arcane: Arcane,
@@ -9405,6 +9500,23 @@ export function resolveSimpleSkillEffects(
     damageType: getSimpleSkillDamageType(skill),
   }
   const immunityProfile = getSimpleSkillImmunityProfile(skill, level)
+  if (skill.sourceAbilityId === 7902 && hasArcaneAbilityUpgrade(arcane, 'shard')) {
+    const shardResistance = Math.max(0, getSimpleSkillNumericValue(skill, 'shardImmunityResist', level, 0))
+    if (shardResistance > 0) {
+      applySimpleSkillImmunityState(
+        state,
+        arcane,
+        skill,
+        level,
+        arcane,
+        'debuff_immunity',
+        Math.max(0.1, getSimpleSkillNumericValue(skill, 'duration', level, profile.duration)),
+        1,
+        undefined,
+        shardResistance,
+      )
+    }
+  }
   if (!isSimpleSkillChanneled(skill) && immunityProfile.debuffImmunityDuration > 0) {
     const area = skill.sourceAbilityId === 5238
       ? {

@@ -644,6 +644,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - O índice de efeitos temporários passou a agrupar também por alvo e tipo e reutiliza uma lista vazia compartilhada. Isso manteve o Parry fora do caminho caro de todo dano e elevou o benchmark A/B de 105,2x para 136,6x wall e de 85,7x para 107,2x CPU, com digest `51a125c1f69f4a2a` preservado.
 - Auditoria atual: 7 completas, 634 parciais, 12 aproximações e 81 ausentes; família `immunity`: 14 completas e 7 aproximações. Próxima rodada da T16: tratar os sete casos restantes de upgrades, passivas disparadas e defesa direcional somente onde os valores importados permitirem execução fiel.
 
+**Progresso de imunidades condicionadas a upgrades (2026-08-17)**:
+- Hand of God foi corrigida como habilidade global. Sem Scepter, cura imediatamente e não concede imunidade; com Scepter, canaliza por 6s e cria ao redor do caster a aura importada de 800 unidades, 60% de resistência e HoT com bônus de 200%. Aliados suspendem imunidade e cura ao sair da área e recuperam ambas ao retornar durante a canalização.
+- O Shard de Starbreaker concede imunidade a debuffs e piso de 50% de resistência mágica durante os 1,1s importados da sequência. A habilidade base permanece sem imunidade.
+- Valores de upgrade antes descartados agora chegam ao runtime com aliases explícitos, sem alterar as habilidades concedidas por Scepter/Shard nem aplicar o bônus quando o item não está no inventário.
+- Efeitos sustentados por canal agora declaram a fonte e a skill mantenedora. Controle forte interrompe canais imediatamente, e a aura/HoT deixa de funcionar no mesmo instante em vez de sobreviver até o prazo original.
+- Auditoria atual: 7 completas, 634 parciais, 12 aproximações e 81 ausentes; família `immunity`: 16 completas e 5 aproximações. Os casos restantes são Fowl Play por gatilho de morte, Nether Strike com valores de Shard zerados, retorno do Astral Spirit, Press the Attack com duração/resistência vazias e Bulwark direcional sem orientação persistida.
+- Suíte completa, lint e build verdes. Benchmark de 5 minutos em 141,9x wall / 115,8x CPU, digest `51a125c1f69f4a2a` preservado. Próxima rodada da T16: modelar orientação persistente para Bulwark ou avançar o gatilho de morte de Fowl Play, escolhendo o contrato que também sirva às outras habilidades pendentes.
+
 ---
 
 ### [ ] T16.1 - Linguagem visual de ilusões, clones e criaturas controladas
