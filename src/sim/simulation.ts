@@ -361,6 +361,15 @@ export type Creep = {
   motionPlan?: CreepMotionPlan
 }
 export type SummonVariant = 'tombstone_zombie' | 'eidolon_split_child'
+export type SummonInheritanceFamily = 'none' | 'illusion' | 'strong_illusion' | 'clone'
+export type SummonInheritancePolicy = {
+  family: SummonInheritanceFamily
+  copiesHeroPassives: boolean
+  itemPassives: 'none' | 'illusion_safe' | 'full'
+  copiesItemActives: boolean
+  copiesTemporaryBuffs: boolean
+  receivesTeamAuras: boolean
+}
 export type SummonedUnit = {
   id: string
   ownerId: string
@@ -402,6 +411,7 @@ export type SummonedUnit = {
   lockedTargetId?: string
   expiresWithTarget?: boolean
   untargetable?: boolean
+  inheritedItems?: string[]
   lastHitBy?: CombatSource
 }
 export type Tower = {
@@ -2269,6 +2279,7 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
     summons: state.summons.map((summon) => ({
       ...summon,
       pos: { ...summon.pos },
+      inheritedItems: summon.inheritedItems ? [...summon.inheritedItems] : undefined,
       lastHitBy: summon.lastHitBy ? { ...summon.lastHitBy } : undefined,
     })),
     towers: state.towers.map((tower) => ({ ...tower, pos: { ...tower.pos } })),
@@ -7405,7 +7416,77 @@ const emptyArcanePassiveCombatModifiers: ArcanePassiveCombatModifiers = {
   lifestealPct: 0,
   incomingDamagePct: 0,
 }
+const summonInheritancePolicies: Record<SummonInheritanceFamily, SummonInheritancePolicy> = {
+  none: {
+    family: 'none',
+    copiesHeroPassives: false,
+    itemPassives: 'none',
+    copiesItemActives: false,
+    copiesTemporaryBuffs: false,
+    receivesTeamAuras: false,
+  },
+  illusion: {
+    family: 'illusion',
+    copiesHeroPassives: false,
+    itemPassives: 'illusion_safe',
+    copiesItemActives: false,
+    copiesTemporaryBuffs: false,
+    receivesTeamAuras: true,
+  },
+  strong_illusion: {
+    family: 'strong_illusion',
+    copiesHeroPassives: false,
+    itemPassives: 'illusion_safe',
+    copiesItemActives: false,
+    copiesTemporaryBuffs: false,
+    receivesTeamAuras: true,
+  },
+  clone: {
+    family: 'clone',
+    copiesHeroPassives: true,
+    itemPassives: 'full',
+    copiesItemActives: false,
+    copiesTemporaryBuffs: false,
+    receivesTeamAuras: true,
+  },
+}
 const arcanePassiveCombatModifiersCache = new Map<string, WeakMap<SkillLevels, WeakMap<string[], ArcanePassiveCombatModifiers>>>()
+
+export function getSummonInheritancePolicy(
+  summon: Pick<SummonedUnit, 'archetype' | 'unitSeedId'>,
+): SummonInheritancePolicy {
+  if (summon.archetype === 'clone') return summonInheritancePolicies.clone
+  if (summon.archetype !== 'illusion') return summonInheritancePolicies.none
+  return summon.unitSeedId === 'summon_strong_illusion'
+    ? summonInheritancePolicies.strong_illusion
+    : summonInheritancePolicies.illusion
+}
+
+export function getIllusionInheritedAttackDamage(arcane: Arcane) {
+  const hero = getHeroDefinition(arcane.heroDefinitionId)
+  const itemModifiers = getItemStatModifiers(arcane.items, hero).map((modifier): StatModifier => {
+    const flat = { ...modifier.flat }
+    const percent = { ...modifier.percent }
+    delete flat.damageMin
+    delete flat.damageMax
+    delete percent.damage
+    return { ...modifier, flat, percent }
+  })
+  const calculated = calculateHeroStats(hero, arcane.stats.level, [
+    ...itemModifiers,
+    ...getStatBonusModifiers(arcane.statBonusLevels),
+  ])
+  return calculated.offense.averageDamage
+}
+
+export function getCloneInheritedAttackDamage(state: SimulationState, arcane: Arcane) {
+  const passive = getArcanePassiveCombatModifiers(state, arcane)
+  return applyFlatAndPercentModifiers(
+    arcane.stats.damage,
+    [passive.flatDamage],
+    [passive.damagePct],
+  )
+}
 
 export function getArcanePassiveCombatModifiers(state: SimulationState, arcane: Arcane) {
   if (hasTimedEffect(state, arcane.id, 'break')) {
@@ -9604,6 +9685,7 @@ export function applySimpleSkillSummonPressure(
   const ward = archetype === 'ward'
   const healingWard = archetype === 'healing_ward'
   const unitSeed = profile.summonUnitSeedId ? getSummonUnitRuntimeSeed(profile.summonUnitSeedId) : undefined
+  const inheritancePolicy = getSummonInheritancePolicy({ archetype, unitSeedId: unitSeed?.id })
   const importedHp = profile.summonHits > 0 ? profile.summonHits * 90 : profile.summonHp
   const genericHp = (115 + statSource.stats.maxHp * 0.16) * levelScale * (0.72 + swarmScale * 0.28)
   const maxHp = Math.max(1, Math.round(heroLike ? statSource.stats.maxHp : importedHp || unitSeed?.hp || genericHp))
@@ -9620,7 +9702,11 @@ export function applySimpleSkillSummonPressure(
     : getUnitRuleNumber('incomingDamagePct') ?? (illusion ? 2 : 1)
   const buildingDamageMultiplier = getUnitRuleNumber('buildingDamagePct') ?? (illusion ? 0.35 : 1)
   const genericDamage = (12 + statSource.stats.damage * 0.24) * levelScale * (0.7 + swarmScale * 0.3)
-  const sourceDamage = getEffectiveArcaneDamage(state, statSource)
+  const sourceDamage = inheritancePolicy.family === 'clone'
+    ? getCloneInheritedAttackDamage(state, statSource)
+    : illusion
+      ? getIllusionInheritedAttackDamage(statSource)
+      : getEffectiveArcaneDamage(state, statSource)
   const baseDamage = heroLike
     ? sourceDamage * outgoingDamage + profile.summonFlatDamage
     : profile.summonDamage || unitSeed?.damage || genericDamage
@@ -9674,6 +9760,7 @@ export function applySimpleSkillSummonPressure(
       lockedTargetId: options.lockTarget ? options.initialTargetId : undefined,
       expiresWithTarget: options.expiresWithTarget,
       untargetable: options.untargetable,
+      inheritedItems: heroLike ? [...statSource.items] : undefined,
     }
   })
   state.summons = [...state.summons, ...spawned]
@@ -10373,8 +10460,8 @@ export function getSummonAttackCenterRange(summon: SummonedUnit, target: CombatT
   return attackRange + getEntityCollisionRadius(target) * 0.7
 }
 
-export function getSummonAttackDamage(summon: SummonedUnit, target: CombatTarget) {
-  return summon.damage * (isStructureLikeTarget(target) ? summon.buildingDamageMultiplier : 1)
+export function getSummonAttackDamage(summon: SummonedUnit, target: CombatTarget, baseDamage = summon.damage) {
+  return baseDamage * (isStructureLikeTarget(target) ? summon.buildingDamageMultiplier : 1)
 }
 
 export function resolveSummonExplosion(state: SimulationState, summon: SummonedUnit) {
@@ -11575,13 +11662,15 @@ export function resolveCombat(
       resolveSummonExplosion(next, summon)
       continue
     }
-    const attackDamage = getSummonAttackDamage(summon, target)
+    const itemAttack = resolveSummonItemAttackEffects(next, summon, target)
+    const attackDamage = getSummonAttackDamage(summon, target, itemAttack.physicalDamage) * getSummonAuraMultiplier(next, summon)
     damageEntity(next, target.id, attackDamage, {
       id: summon.id,
       label: summon.name,
       team: summon.team,
       damageType: 'physical',
     })
+    applyPostAttackSummonItemEffects(next, summon, target, itemAttack, attackDamage)
     applySpiritLinkSummonLifesteal(next, summon, target, attackDamage)
     applySummonAttackSpecials(next, summon, target)
   }
@@ -11963,6 +12052,226 @@ export function applyPostAttackItemEffects(
       damageType: 'physical',
     }))
   }
+}
+
+export type SummonItemAttackResolution = {
+  physicalDamage: number
+  magicDamage: number
+  lifestealPct: number
+  cleavePct: number
+  multiTargetPct: number
+  bashDuration: number
+  effects: RuntimeItemEffect[]
+}
+
+const illusionSafeItemPassiveTags = ['critical', 'mana_burn']
+const cloneItemAttackTags = [
+  ...illusionSafeItemPassiveTags,
+  'attack_proc', 'magic_damage', 'magical', 'chain_lightning', 'bash',
+  'lifesteal', 'lifesteal_amp', 'cleave', 'multi_target_attack', 'extra_projectiles',
+  'attack_modifier', 'slow', 'armor_reduction', 'dot', 'max_health_dot',
+]
+const emptySummonInheritedItemEffects: RuntimeItemEffect[] = []
+const summonInheritedItemEffectsCache = new Map<string, RuntimeItemEffect[]>()
+
+export function getSummonInheritedItemEffects(summon: SummonedUnit) {
+  const policy = getSummonInheritancePolicy(summon)
+  if (policy.itemPassives === 'none' || !summon.inheritedItems?.length) return emptySummonInheritedItemEffects
+  const cacheKey = `${policy.itemPassives}:${summon.inheritedItems.join('|')}`
+  const cached = summonInheritedItemEffectsCache.get(cacheKey)
+  if (cached) return cached
+  const allowedTags = policy.itemPassives === 'full' ? cloneItemAttackTags : illusionSafeItemPassiveTags
+  const effects = getShopItemsForInventory(summon.inheritedItems)
+    .flatMap((item) => item.effects)
+    .filter((effect) => (
+      (effect.kind === 'passive' || effect.kind === 'toggle') &&
+      !effect.tags.includes('stat_bonus') &&
+      !effect.tags.includes('single_target_spell_proc') &&
+      (effect.cooldown ?? 0) <= 0 &&
+      hasAnyItemTag(effect.tags, allowedTags)
+    ))
+  summonInheritedItemEffectsCache.set(cacheKey, effects)
+  return effects
+}
+
+function getSummonCopiedArcane(state: SimulationState, summon: SummonedUnit) {
+  const sourceId = summon.copiedArcaneId ?? summon.ownerId
+  return state.arcanes.find((arcane) => arcane.id === sourceId)
+}
+
+export function resolveSummonItemAttackEffects(
+  state: SimulationState,
+  summon: SummonedUnit,
+  target: CombatTarget,
+): SummonItemAttackResolution {
+  const effects = getSummonInheritedItemEffects(summon)
+  const sourceArcane = getSummonCopiedArcane(state, summon)
+  const policy = getSummonInheritancePolicy(summon)
+  let physicalDamage = summon.damage
+  let magicDamage = 0
+  let bashDuration = 0
+  let cleavePct = 0
+  let multiTargetPct = 0
+
+  if (sourceArcane) {
+    for (const effect of effects) {
+      const tags = effect.tags
+      if (hasAnyItemTag(tags, ['critical']) && rollChance(
+        state,
+        getItemEffectChance(effect, sourceArcane),
+        `${summon.id}:${target.id}:${effect.effectId}:critical`,
+      )) {
+        physicalDamage *= (getActiveItemNumber(effect.values, 'critMultiplier') ?? 160) / 100
+      }
+      if (policy.itemPassives === 'full' && hasAnyItemTag(tags, ['attack_proc', 'magic_damage', 'magical', 'chain_lightning']) && rollChance(
+        state,
+        getItemEffectChance(effect, sourceArcane),
+        `${summon.id}:${target.id}:${effect.effectId}:magic-proc`,
+      )) {
+        magicDamage += getItemProcDamage(sourceArcane, effect)
+      }
+      if (policy.itemPassives === 'full' && hasAnyItemTag(tags, ['bash']) && rollChance(
+        state,
+        getItemEffectChance(effect, sourceArcane),
+        `${summon.id}:${target.id}:${effect.effectId}:bash`,
+      )) {
+        magicDamage += getActiveItemNumber(effect.values, 'bonusDamage') ?? 60
+        bashDuration = Math.max(bashDuration, getActiveItemNumber(effect.values, 'stun') ?? 0.8)
+      }
+      if (hasAnyItemTag(tags, ['mana_burn']) && 'player' in target) {
+        const illusionScale = policy.itemPassives === 'full'
+          ? 1
+          : sourceArcane.stats.attackType === 'ranged' ? 0.1 : 0.2
+        const requestedBurn = (getActiveItemNumber(effect.values, 'manaBurn') ?? 28) * illusionScale
+        const burnedMana = Math.min(target.stats.mana, requestedBurn)
+        target.stats.mana -= burnedMana
+        physicalDamage += burnedMana * ((getActiveItemNumber(effect.values, 'damageFromBurnPct') ?? 80) / 100)
+      }
+      if (policy.itemPassives === 'full' && hasAnyItemTag(tags, ['cleave']) && sourceArcane.stats.attackType === 'melee') {
+        cleavePct = Math.max(cleavePct, getActiveItemNumber(effect.values, 'cleavePct') ?? 35)
+      }
+      if (policy.itemPassives === 'full' && hasAnyItemTag(tags, ['multi_target_attack', 'extra_projectiles']) && sourceArcane.stats.attackType === 'ranged' && rollChance(
+        state,
+        getItemEffectChance(effect, sourceArcane),
+        `${summon.id}:${target.id}:${effect.effectId}:multi-target`,
+      )) {
+        multiTargetPct = Math.max(multiTargetPct, getActiveItemNumber(effect.values, 'damagePct') ?? 55)
+      }
+    }
+  }
+
+  const lifestealPct = policy.itemPassives === 'full'
+    ? getItemPassiveNumber(effects, ['lifesteal', 'lifesteal_amp'], 'lifestealPct') ?? 0
+    : 0
+  return { physicalDamage, magicDamage, lifestealPct, cleavePct, multiTargetPct, bashDuration, effects }
+}
+
+export function getSummonAuraMultiplier(state: SimulationState, summon: SummonedUnit) {
+  return getSummonInheritancePolicy(summon).receivesTeamAuras ? getAuraMultiplier(state, summon.team) : 1
+}
+
+export function applyPostAttackSummonItemEffects(
+  state: SimulationState,
+  summon: SummonedUnit,
+  target: CombatTarget,
+  resolution: SummonItemAttackResolution,
+  dealtPhysicalDamage: number,
+) {
+  if (resolution.magicDamage > 0) {
+    damageEntity(state, target.id, resolution.magicDamage, {
+      id: `${summon.id}-item-proc`,
+      label: `${summon.name}: proc item`,
+      team: summon.team,
+      damageType: 'magical',
+    })
+  }
+  if ('player' in target) {
+    applySummonItemAttackDebuffs(state, summon, target, resolution.effects)
+    if (resolution.bashDuration > 0) {
+      addTimedEffect(state, target, {
+        sourceId: `${summon.id}-item-bash`,
+        sourceName: `${summon.name}: bash`,
+        sourceTeam: summon.team,
+        kind: 'stun',
+        polarity: 'negative',
+        value: 1,
+        duration: resolution.bashDuration,
+      })
+    }
+  }
+  if (resolution.lifestealPct > 0 && dealtPhysicalDamage > 0) {
+    const liveSummon = state.summons.find((candidate) => candidate.id === summon.id)
+    if (liveSummon) liveSummon.hp = Math.min(liveSummon.maxHp, liveSummon.hp + dealtPhysicalDamage * (resolution.lifestealPct / 100))
+  }
+  if (resolution.cleavePct <= 0 && resolution.multiTargetPct <= 0) return
+  const splashPct = Math.max(resolution.cleavePct, resolution.multiTargetPct)
+  const splashTargets: CombatTarget[] = [
+    ...state.arcanes.filter((candidate) => candidate.team !== summon.team && candidate.id !== target.id && candidate.stats.hp > 0 && candidate.respawn <= state.time),
+    ...state.creeps.filter((candidate) => candidate.team !== summon.team && candidate.id !== target.id && candidate.hp > 0),
+    ...state.summons.filter((candidate) => candidate.team !== summon.team && candidate.id !== target.id && isSummonTargetable(state, candidate)),
+    ...state.camps.filter((candidate) => candidate.id !== target.id && candidate.hp > 0),
+  ]
+  splashTargets
+    .filter((candidate) => distance(candidate.pos, target.pos) <= 5.5)
+    .sort((left, right) => distance(left.pos, target.pos) - distance(right.pos, target.pos))
+    .slice(0, resolution.multiTargetPct > 0 ? 3 : 5)
+    .forEach((candidate) => damageEntity(state, candidate.id, dealtPhysicalDamage * (splashPct / 100), {
+      id: `${summon.id}-item-splash`,
+      label: `${summon.name}: ataque em area`,
+      team: summon.team,
+      damageType: 'physical',
+    }))
+}
+
+function applySummonItemAttackDebuffs(
+  state: SimulationState,
+  summon: SummonedUnit,
+  target: Arcane,
+  effects: RuntimeItemEffect[],
+) {
+  if (getSummonInheritancePolicy(summon).itemPassives !== 'full') return
+  effects.forEach((effect) => {
+    if (!effect.tags.includes('attack_modifier')) return
+    const slowPct = getActiveItemNumber(effect.values, 'slowPct') ?? getActiveItemNumber(effect.values, 'moveSlowPct') ?? 0
+    if (slowPct > 0) {
+      addTimedEffect(state, target, {
+        sourceId: `${summon.id}-${effect.effectId}`,
+        sourceName: `${summon.name}: item`,
+        sourceTeam: summon.team,
+        kind: 'slow',
+        polarity: 'negative',
+        value: Math.min(0.8, slowPct / 100),
+        duration: getActiveItemNumber(effect.values, 'duration') ?? 2.5,
+      })
+    }
+    const armorReduction = getActiveItemNumber(effect.values, 'armorReduction') ?? 0
+    if (armorReduction > 0) {
+      addTimedEffect(state, target, {
+        sourceId: `${summon.id}-${effect.effectId}`,
+        sourceName: `${summon.name}: item`,
+        sourceTeam: summon.team,
+        kind: 'buff',
+        polarity: 'negative',
+        value: 1,
+        modifiers: { armorFlat: -armorReduction },
+        duration: getActiveItemNumber(effect.values, 'duration') ?? 5,
+      })
+    }
+    const dps = getActiveItemNumber(effect.values, 'dps') ?? target.stats.maxHp * ((getActiveItemNumber(effect.values, 'maxHealthDpsPct') ?? 0) / 100)
+    if (dps > 0) {
+      addTimedEffect(state, target, {
+        sourceId: `${summon.id}-${effect.effectId}-dot`,
+        sourceName: `${summon.name}: item`,
+        sourceTeam: summon.team,
+        kind: 'dot',
+        polarity: 'negative',
+        value: dps,
+        damageType: 'magical',
+        tickInterval: 1,
+        duration: getActiveItemNumber(effect.values, 'duration') ?? 3,
+      })
+    }
+  })
 }
 
 export function applyItemAttackDebuffs(state: SimulationState, arcane: Arcane, target: Arcane, effects: RuntimeItemEffect[]) {

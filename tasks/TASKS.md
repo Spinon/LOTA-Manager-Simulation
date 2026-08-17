@@ -601,6 +601,13 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Cópia, alvo vinculado, expiração conjunta e intangibilidade atravessam replay normal/comprimido. Testes cobrem os valores importados e as cinco famílias; auditoria: 6 completas, 635 parciais, 12 aproximações e 81 ausentes.
 - Próxima rodada da T16: revisar por família quais skills, passivas de item, auras e procs clones/ilusões podem copiar; depois modelar o banimento de Disruption e subskills de controle como Reality sem poluir o replay.
 
+**Progresso das regras de herança de clones e ilusões (2026-08-17)**:
+- O runtime ganhou políticas explícitas para summon comum, ilusão, ilusão forte e clone. Ilusões deixaram de copiar silenciosamente buffs temporários, dano bruto dos itens e passivas genéricas do herói; seu dano-base herdado conserva atributos e stats permitidos antes de aplicar o multiplicador da skill.
+- O inventário elegível é congelado no nascimento da unidade. Ilusões copiam somente crítico passivo e mana burn adaptado, reduzido para 20% do valor em melee e 10% em ranged; procs de magia, bash, lifesteal, cleave e modificadores de ataque ficam fora dessa família.
+- Clones copiam a contribuição das passivas do herói e os efeitos ofensivos passivos/toggle sem cooldown que o runtime já executa, incluindo crítico, mana burn, proc mágico, bash, lifesteal, cleave e debuffs de ataque. Ativos, consumíveis, cooldowns e buffs temporários continuam deliberadamente não herdados.
+- Summons hero-like recebem a aura coletiva dinâmica do time; summons comuns não. A classificação de efeitos herdáveis é cacheada pela composição do inventário, sem acrescentar dados aos frames do replay.
+- Testes cobrem isolamento de buffs, dano de atributo, snapshot do inventário, allowlist de ilusão, diferenças melee/ranged, passivos de clone, exclusão de ativos e aura. Suíte completa, lint e build verdes; benchmark de 5 minutos em 156,6x wall / 118,2x CPU, com digest `51a125c1f69f4a2a` preservado. Próxima rodada da T16: implementar banimento de Disruption e Reality; depois auditar exceções específicas de clone, uso de skills e compartilhamento de cooldowns sem confundir isso com itens ativos.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

@@ -55,9 +55,14 @@ import {
   getEffectiveArcaneMoveSpeed,
   getEffectiveSummonAttackInterval,
   getEffectiveSummonMoveSpeed,
+  getCloneInheritedAttackDamage,
+  getIllusionInheritedAttackDamage,
   getShopItemsForInventory,
   getSimulationEntityIndexes,
   getSummonAttackDamage,
+  getSummonAuraMultiplier,
+  getSummonInheritancePolicy,
+  getSummonInheritedItemEffects,
   getTeamMatchOutcome,
   getSimpleSkillAffectedTargets,
   getSimpleSkillExecuteMultiplier,
@@ -103,6 +108,7 @@ import {
   queryCreepSpatialGrid,
   resolveDeaths,
   resolveCombat,
+  resolveSummonItemAttackEffects,
   resolveSimpleSkillEffects,
   resolveCompletedChannels,
   simulationFrameSeconds,
@@ -2005,7 +2011,7 @@ let state: SimulationState = initialState
   })
   const illusion = skillState.summons[0]
   assert.equal(illusion.maxHp, liveCaster.stats.maxHp, 'illusions should copy their owner health pool')
-  assert.equal(illusion.damage, Math.round(getEffectiveArcaneDamage(skillState, liveCaster) * 0.25), 'illusions should scale effective owner damage by the official output percentage')
+  assert.equal(illusion.damage, Math.round(getIllusionInheritedAttackDamage(liveCaster) * 0.25), 'illusions should scale inherited attribute damage by the official output percentage')
   assert.equal(illusion.armor, getEffectiveArcaneArmor(skillState, liveCaster), 'illusions should snapshot effective owner armor')
   assert.equal(illusion.magicResistance, liveCaster.stats.magicResistance)
   assert.equal(illusion.range, liveCaster.stats.range)
@@ -2056,6 +2062,92 @@ let state: SimulationState = initialState
   assert.equal(clone.goldReward, 70)
   assert.equal(clone.xpReward, 70)
 
+  const inheritanceState = createInitialState('hero-like-inheritance-policy')
+  inheritanceState.time = 600
+  const inheritanceOwner = inheritanceState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const inheritanceTarget = inheritanceState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  const inheritedItems = ['Crystal Edge', 'Diffusal Edge', 'Chain Lightning Hammer']
+  inheritanceOwner.heroDefinitionId = 'h101_demon_metamorph'
+  inheritanceOwner.skillLevels = {}
+  inheritanceOwner.items = inheritedItems
+  inheritanceOwner.stats = buildArcaneStats(
+    inheritanceOwner.heroDefinitionId,
+    18,
+    8_000,
+    inheritanceOwner.stats.xp,
+    1,
+    1,
+    inheritedItems,
+  )
+  addTimedEffect(inheritanceState, inheritanceOwner, {
+    sourceId: 'temporary-double-damage',
+    sourceName: 'Temporary Damage',
+    sourceTeam: inheritanceOwner.team,
+    kind: 'buff',
+    polarity: 'positive',
+    value: 1,
+    modifiers: { damagePct: 1 },
+    duration: 30,
+  })
+  const inheritedBaseDamage = getIllusionInheritedAttackDamage(inheritanceOwner)
+  const inheritedCloneDamage = getCloneInheritedAttackDamage(inheritanceState, inheritanceOwner)
+  assert.ok(inheritedBaseDamage < inheritanceOwner.stats.damage, 'illusion damage inheritance should exclude raw item damage while preserving item attributes')
+  assert.ok(inheritedCloneDamage < getEffectiveArcaneDamage(inheritanceState, inheritanceOwner), 'clones should not snapshot temporary damage buffs')
+
+  applySimpleSkillSummonPressure(inheritanceState, inheritanceOwner, areaRoot, {
+    ...profile,
+    summonCount: 1,
+    summonDuration: 20,
+    summonArchetype: 'illusion',
+    summonMode: 'cast',
+    summonOutgoingDamagePct: 100,
+  })
+  const inheritedIllusion = inheritanceState.summons[0]
+  assert.equal(inheritedIllusion.damage, Math.round(inheritedBaseDamage))
+  assert.deepEqual(inheritedIllusion.inheritedItems, inheritedItems)
+  assert.equal(getSummonInheritancePolicy(inheritedIllusion).copiesHeroPassives, false)
+  assert.equal(getSummonInheritancePolicy(inheritedIllusion).copiesItemActives, false)
+  const illusionItemEffects = getSummonInheritedItemEffects(inheritedIllusion)
+  assert.equal(illusionItemEffects.some((effect) => effect.effectId === 'minor_crit'), true, 'illusions should inherit safe critical passives')
+  assert.equal(illusionItemEffects.some((effect) => effect.effectId === 'mana_burn_attack'), true, 'illusions should inherit reduced mana burn')
+  assert.equal(illusionItemEffects.some((effect) => effect.effectId === 'chain_lightning_proc'), false, 'illusions should not inherit spell-like attack procs')
+  const targetManaBeforeIllusion = inheritanceTarget.stats.mana
+  const illusionItemAttack = resolveSummonItemAttackEffects(inheritanceState, inheritedIllusion, inheritanceTarget)
+  const expectedIllusionManaBurn = inheritanceOwner.stats.attackType === 'ranged' ? 4 : 8
+  assert.equal(targetManaBeforeIllusion - inheritanceTarget.stats.mana, expectedIllusionManaBurn, 'illusions should apply the attack-type-specific reduced Diffusal mana burn')
+  assert.equal(illusionItemAttack.magicDamage, 0)
+  inheritanceOwner.items = []
+  assert.equal(getSummonInheritedItemEffects(inheritedIllusion).some((effect) => effect.effectId === 'mana_burn_attack'), true, 'summons should retain an inventory snapshot after their source changes items')
+
+  inheritanceOwner.items = inheritedItems
+  applySimpleSkillSummonPressure(inheritanceState, inheritanceOwner, areaRoot, {
+    ...profile,
+    summonCount: 1,
+    summonDuration: 20,
+    summonArchetype: 'clone',
+    summonMode: 'cast',
+    summonOutgoingDamagePct: 100,
+  })
+  const inheritedClone = inheritanceState.summons.find((summon) => summon.archetype === 'clone')!
+  assert.equal(inheritedClone.damage, Math.round(inheritedCloneDamage))
+  assert.equal(getSummonInheritancePolicy(inheritedClone).copiesHeroPassives, true)
+  assert.equal(getSummonInheritancePolicy(inheritedClone).itemPassives, 'full')
+  assert.equal(getSummonInheritancePolicy(inheritedClone).copiesItemActives, false)
+  const cloneItemEffects = getSummonInheritedItemEffects(inheritedClone)
+  assert.equal(cloneItemEffects.some((effect) => effect.effectId === 'chain_lightning_proc'), true, 'clones should inherit eligible attack procs')
+  assert.equal(cloneItemEffects.some((effect) => effect.kind === 'active'), false, 'clones should not copy item actives in the current restriction tier')
+  let cloneMagicProc = 0
+  for (let attempt = 0; attempt < 40 && cloneMagicProc === 0; attempt += 1) {
+    inheritanceState.time += 0.1
+    inheritanceTarget.stats.mana = inheritanceTarget.stats.maxMana
+    cloneMagicProc = resolveSummonItemAttackEffects(inheritanceState, inheritedClone, inheritanceTarget).magicDamage
+  }
+  assert.ok(cloneMagicProc > 0, 'clone attack procs should resolve deterministically from the cloned inventory')
+  inheritanceState.teamAuras[inheritedIllusion.team] = { name: 'Test Aura', attributeMultiplier: 1.2, expiresAt: 700 }
+  assert.equal(getSummonAuraMultiplier(inheritanceState, inheritedIllusion), 1.2)
+  assert.equal(getSummonAuraMultiplier(inheritanceState, inheritedClone), 1.2)
+  assert.equal(getSummonAuraMultiplier(inheritanceState, wardSummon), 1, 'ordinary summons should not inherit hero-only team attribute auras')
+
   const targetCopyState = createInitialState('target-copy-illusion-runtime')
   targetCopyState.time = 600
   const targetCopyCaster = targetCopyState.arcanes.find((arcane) => arcane.team === 'dawn')!
@@ -2089,7 +2181,7 @@ let state: SimulationState = initialState
   assert.equal(reflections[0].copiedArcaneId, copyTargets[0].id)
   assert.equal(reflections[0].lockedTargetId, copyTargets[0].id)
   assert.equal(reflections[0].maxHp, copyTargets[0].stats.maxHp, 'target-copy illusions should inherit the copied enemy snapshot')
-  assert.equal(reflections[0].damage, Math.round(getEffectiveArcaneDamage(targetCopyState, copyTargets[0]) * 0.75))
+  assert.equal(reflections[0].damage, Math.round(getIllusionInheritedAttackDamage(copyTargets[0]) * 0.75))
   assert.equal(isSummonTargetable(targetCopyState, reflections[0]), false, 'Reflection illusions should remain invulnerable and untargetable')
   const reflectionHp = reflections[0].hp
   damageEntity(targetCopyState, reflections[0].id, 999, { id: copyTargets[0].id, label: copyTargets[0].player, team: copyTargets[0].team })
@@ -2126,7 +2218,7 @@ let state: SimulationState = initialState
   assert.equal(disruptions[0].spawnedAt, 602.75, 'Disruption copies should activate after the official banish delay')
   assert.equal(isSummonActive(disruptionState, disruptions[0]), false)
   assert.equal(createMatchRenderFrame(disruptionState).summons.length, 0, 'delayed copies should stay outside the replay until activation')
-  assert.equal(disruptions[0].damage, Math.round(getEffectiveArcaneDamage(disruptionState, disruptionTarget) * 0.5 + 65))
+  assert.equal(disruptions[0].damage, Math.round(getIllusionInheritedAttackDamage(disruptionTarget) * 0.5 + 65))
   disruptionState.time = 602.75
   assert.equal(isSummonActive(disruptionState, disruptions[0]), true)
   assert.equal(createMatchRenderFrame(disruptionState).summons.length, 2)
