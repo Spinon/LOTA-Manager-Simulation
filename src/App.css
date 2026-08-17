@@ -659,6 +659,26 @@
   pointer-events: none;
 }
 
+.charge-badge {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  z-index: 2;
+  min-width: 11px;
+  height: 11px;
+  padding: 0 2px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(215, 241, 113, 0.62);
+  border-radius: 3px;
+  color: #07120b;
+  background: #d7f171;
+  font-size: 0.5rem;
+  font-weight: 950;
+  line-height: 1;
+  pointer-events: none;
+}
+
 .skill-level-badge {
   position: absolute;
   right: 2px;

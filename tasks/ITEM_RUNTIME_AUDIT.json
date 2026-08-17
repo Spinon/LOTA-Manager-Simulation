@@ -5,9 +5,9 @@
   "buyableCount": 112,
   "statusCounts": {
     "complete": 0,
-    "partial": 121,
+    "partial": 128,
     "approximate": 0,
-    "missing": 89
+    "missing": 82
   },
   "familyCounts": {
     "acquisition": {
@@ -17,10 +17,10 @@
       "missing": 51
     },
     "active": {
-      "complete": 30,
+      "complete": 31,
       "partial": 14,
-      "approximate": 3,
-      "missing": 12
+      "approximate": 4,
+      "missing": 10
     },
     "aura": {
       "complete": 0,
@@ -35,10 +35,10 @@
       "missing": 4
     },
     "charges": {
-      "complete": 0,
+      "complete": 7,
       "partial": 0,
       "approximate": 0,
-      "missing": 7
+      "missing": 0
     },
     "consumable": {
       "complete": 2,
@@ -65,10 +65,10 @@
       "missing": 15
     },
     "passive": {
-      "complete": 162,
+      "complete": 163,
       "partial": 0,
       "approximate": 0,
-      "missing": 37
+      "missing": 36
     },
     "purchase_ai": {
       "complete": 98,
@@ -96,7 +96,7 @@
     },
     "special_values": {
       "complete": 0,
-      "partial": 57,
+      "partial": 51,
       "approximate": 0,
       "missing": 0
     },
@@ -134,7 +134,7 @@
       "shopTier": "base",
       "cost": 90,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -148,8 +148,8 @@
         },
         {
           "id": "charges",
-          "status": "missing",
-          "evidence": "eat_tree_regen declares charges, but inventory entries do not preserve a per-item charge counter"
+          "status": "complete",
+          "evidence": "eat_tree_regen initializes, serializes, displays, checks, and spends persistent inventory charges per successful use"
         },
         {
           "id": "consumable",
@@ -175,11 +175,6 @@
           "id": "restrictions",
           "status": "partial",
           "evidence": "shop exclusion is implemented, while share/drop/sell/illusion rules remain source-specific"
-        },
-        {
-          "id": "special_values",
-          "status": "partial",
-          "evidence": "1 effect values are preserved but not consumed by a generic handler"
         },
         {
           "id": "stacking",
@@ -213,10 +208,8 @@
         "heal"
       ],
       "unhandledStatKeys": [],
-      "unhandledEffectValueKeys": [
-        "charges"
-      ],
-      "fingerprint": "i001_regen_rations|consumable|consumable|base|90|consumable|charges|cooldown|duration|heal|acquisition:complete|catalog:complete|charges:missing|consumable:complete|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:approximate"
+      "unhandledEffectValueKeys": [],
+      "fingerprint": "i001_regen_rations|consumable|consumable|base|90|consumable|charges|cooldown|duration|heal|acquisition:complete|catalog:complete|charges:complete|consumable:complete|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|stacking:partial|stats:complete|targeting:approximate"
     },
     {
       "itemId": "i002_healing_salve",
@@ -985,7 +978,7 @@
       "shopTier": "base",
       "cost": 675,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -1004,8 +997,8 @@
         },
         {
           "id": "charges",
-          "status": "missing",
-          "evidence": "drink_charge declares charges, but inventory entries do not preserve a per-item charge counter"
+          "status": "complete",
+          "evidence": "drink_charge initializes, serializes, displays, checks, and spends persistent inventory charges per successful use"
         },
         {
           "id": "cooldown",
@@ -1036,11 +1029,6 @@
           "id": "restrictions",
           "status": "partial",
           "evidence": "shop exclusion is implemented, while share/drop/sell/illusion rules remain source-specific"
-        },
-        {
-          "id": "special_values",
-          "status": "partial",
-          "evidence": "1 effect values are preserved but not consumed by a generic handler"
         },
         {
           "id": "stacking",
@@ -1079,10 +1067,8 @@
         "radius"
       ],
       "unhandledStatKeys": [],
-      "unhandledEffectValueKeys": [
-        "charges"
-      ],
-      "fingerprint": "i011_refillable_bottle|consumable|inventory|base|675|active|charges|cooldown|duration|health|mana|manaCost|radius|acquisition:complete|active:complete|catalog:complete|charges:missing|cooldown:complete|effect_rules:partial|purchase_ai:partial|recipes:complete|resource_cost:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:approximate"
+      "unhandledEffectValueKeys": [],
+      "fingerprint": "i011_refillable_bottle|consumable|inventory|base|675|active|charges|cooldown|duration|health|mana|manaCost|radius|acquisition:complete|active:complete|catalog:complete|charges:complete|cooldown:complete|effect_rules:partial|purchase_ai:partial|recipes:complete|resource_cost:complete|restrictions:partial|stacking:partial|stats:complete|targeting:approximate"
     },
     {
       "itemId": "i012_rain_barrier_drops",
@@ -1092,7 +1078,7 @@
       "shopTier": "base",
       "cost": 225,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -1106,13 +1092,13 @@
         },
         {
           "id": "charges",
-          "status": "missing",
-          "evidence": "auto_magic_barrier_charge declares charges, but inventory entries do not preserve a per-item charge counter"
+          "status": "complete",
+          "evidence": "auto_magic_barrier_charge initializes, serializes, displays, and automatically spends persistent barrier charges on qualifying damage"
         },
         {
           "id": "passive",
-          "status": "missing",
-          "evidence": "i012_rain_barrier_drops_stat_bonus reaches static or on-attack passive handlers; auto_magic_barrier_charge has no generic passive handler"
+          "status": "complete",
+          "evidence": "i012_rain_barrier_drops_stat_bonus reaches static or on-attack passive handlers; auto_magic_barrier_charge reaches static or on-attack passive handlers"
         },
         {
           "id": "purchase_ai",
@@ -1128,11 +1114,6 @@
           "id": "restrictions",
           "status": "partial",
           "evidence": "shop exclusion is implemented, while share/drop/sell/illusion rules remain source-specific"
-        },
-        {
-          "id": "special_values",
-          "status": "partial",
-          "evidence": "2 effect values are preserved but not consumed by a generic handler"
         },
         {
           "id": "stacking",
@@ -1168,11 +1149,8 @@
       "unhandledStatKeys": [
         "resources.manaRegen"
       ],
-      "unhandledEffectValueKeys": [
-        "charges",
-        "threshold"
-      ],
-      "fingerprint": "i012_rain_barrier_drops|consumable|inventory|base|225|passive|resources.manaRegen|barrier|charges|cooldown|manaRegen|threshold|acquisition:complete|catalog:complete|charges:missing|passive:missing|purchase_ai:partial|recipes:complete|restrictions:partial|special_values:partial|stacking:partial|stats:partial"
+      "unhandledEffectValueKeys": [],
+      "fingerprint": "i012_rain_barrier_drops|consumable|inventory|base|225|passive|resources.manaRegen|barrier|charges|cooldown|manaRegen|threshold|acquisition:complete|catalog:complete|charges:complete|passive:complete|purchase_ai:partial|recipes:complete|restrictions:partial|stacking:partial|stats:partial"
     },
     {
       "itemId": "i013_tome_training",
@@ -5128,7 +5106,7 @@
       "shopTier": "base",
       "cost": 450,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -5147,8 +5125,8 @@
         },
         {
           "id": "charges",
-          "status": "missing",
-          "evidence": "spell_charge_restore declares charges, but inventory entries do not preserve a per-item charge counter"
+          "status": "complete",
+          "evidence": "spell_charge_restore gains charges from nearby combat events, serializes them, displays them, and spends them per successful use"
         },
         {
           "id": "cooldown",
@@ -5184,11 +5162,6 @@
           "id": "restrictions",
           "status": "partial",
           "evidence": "shop exclusion is implemented, while share/drop/sell/illusion rules remain source-specific"
-        },
-        {
-          "id": "special_values",
-          "status": "partial",
-          "evidence": "3 effect values are preserved but not consumed by a generic handler"
         },
         {
           "id": "stacking",
@@ -5235,12 +5208,8 @@
         "strength"
       ],
       "unhandledStatKeys": [],
-      "unhandledEffectValueKeys": [
-        "healthPerCharge",
-        "manaPerCharge",
-        "maxCharges"
-      ],
-      "fingerprint": "i068_magic_wand|early|inventory|base|450|active|passive|attributes.agility|attributes.intelligence|attributes.strength|agility|cooldown|healthPerCharge|intelligence|manaCost|manaPerCharge|maxCharges|radius|strength|acquisition:complete|active:complete|catalog:complete|charges:missing|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:approximate|resource_cost:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:approximate"
+      "unhandledEffectValueKeys": [],
+      "fingerprint": "i068_magic_wand|early|inventory|base|450|active|passive|attributes.agility|attributes.intelligence|attributes.strength|agility|cooldown|healthPerCharge|intelligence|manaCost|manaPerCharge|maxCharges|radius|strength|acquisition:complete|active:complete|catalog:complete|charges:complete|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:approximate|resource_cost:complete|restrictions:partial|stacking:partial|stats:complete|targeting:approximate"
     },
     {
       "itemId": "i069_soul_battery",
@@ -12519,7 +12488,7 @@
       "shopTier": "base",
       "cost": 880,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -12528,8 +12497,8 @@
         },
         {
           "id": "active",
-          "status": "missing",
-          "evidence": "soul_charge cannot be selected or resolved by the generic active-item runtime"
+          "status": "complete",
+          "evidence": "soul_charge has AI selection and a matching generic runtime action"
         },
         {
           "id": "catalog",
@@ -12538,8 +12507,8 @@
         },
         {
           "id": "charges",
-          "status": "missing",
-          "evidence": "soul_charge declares charges, but inventory entries do not preserve a per-item charge counter"
+          "status": "complete",
+          "evidence": "soul_charge gains charges from nearby combat events, serializes them, displays them, and spends them per successful use"
         },
         {
           "id": "cooldown",
@@ -12627,7 +12596,7 @@
         "resources.manaRegen"
       ],
       "unhandledEffectValueKeys": [],
-      "fingerprint": "i143_spirit_urn|support|inventory|base|880|active|passive|attributes.agility|attributes.intelligence|attributes.strength|defense.armor|resources.manaRegen|agility|armor|cooldown|damage|duration|heal|intelligence|manaCost|manaRegen|radius|strength|acquisition:complete|active:missing|catalog:complete|charges:missing|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:complete|resource_cost:complete|restrictions:partial|stacking:partial|stats:partial|targeting:approximate"
+      "fingerprint": "i143_spirit_urn|support|inventory|base|880|active|passive|attributes.agility|attributes.intelligence|attributes.strength|defense.armor|resources.manaRegen|agility|armor|cooldown|damage|duration|heal|intelligence|manaCost|manaRegen|radius|strength|acquisition:complete|active:complete|catalog:complete|charges:complete|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:complete|resource_cost:complete|restrictions:partial|stacking:partial|stats:partial|targeting:approximate"
     },
     {
       "itemId": "i144_spirit_vessel_generic",
@@ -12646,8 +12615,8 @@
         },
         {
           "id": "active",
-          "status": "partial",
-          "evidence": "vessel_charge applies a supported core action but omits at least one declared mechanic"
+          "status": "approximate",
+          "evidence": "vessel_charge maps a specialized state to the generic timed-effect model"
         },
         {
           "id": "catalog",
@@ -12746,7 +12715,7 @@
       "unhandledEffectValueKeys": [
         "healReductionPct"
       ],
-      "fingerprint": "i144_spirit_vessel_generic|support|inventory|base|2780|active|passive|attributes.agility|attributes.intelligence|attributes.strength|defense.armor|mobility.movementSpeed|agility|armor|cooldown|currentHealthDamagePct|duration|healReductionPct|intelligence|manaCost|movementSpeed|radius|strength|acquisition:complete|active:partial|catalog:complete|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:approximate|resource_cost:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:approximate"
+      "fingerprint": "i144_spirit_vessel_generic|support|inventory|base|2780|active|passive|attributes.agility|attributes.intelligence|attributes.strength|defense.armor|mobility.movementSpeed|agility|armor|cooldown|currentHealthDamagePct|duration|healReductionPct|intelligence|manaCost|movementSpeed|radius|strength|acquisition:complete|active:approximate|catalog:complete|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:approximate|resource_cost:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:approximate"
     },
     {
       "itemId": "i145_healing_mechanism",
@@ -12971,7 +12940,7 @@
       "shopTier": "base",
       "cost": 2400,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -12990,8 +12959,8 @@
         },
         {
           "id": "charges",
-          "status": "missing",
-          "evidence": "release_heal_charges declares charges, but inventory entries do not preserve a per-item charge counter"
+          "status": "complete",
+          "evidence": "release_heal_charges gains charges from nearby combat events, serializes them, displays them, and spends them per successful use"
         },
         {
           "id": "cooldown",
@@ -13027,11 +12996,6 @@
           "id": "restrictions",
           "status": "partial",
           "evidence": "shop exclusion is implemented, while share/drop/sell/illusion rules remain source-specific"
-        },
-        {
-          "id": "special_values",
-          "status": "partial",
-          "evidence": "2 effect values are preserved but not consumed by a generic handler"
         },
         {
           "id": "stacking",
@@ -13084,11 +13048,8 @@
         "resources.healthRegen",
         "resources.manaRegen"
       ],
-      "unhandledEffectValueKeys": [
-        "healPerCharge",
-        "maxCharges"
-      ],
-      "fingerprint": "i147_holy_locket_generic|support|inventory|base|2400|active|passive|attributes.strength|resources.healthRegen|resources.manaRegen|resources.maxHealth|resources.maxMana|cooldown|healAmpPct|healPerCharge|healthRegen|manaCost|manaRegen|maxCharges|maxHealth|maxMana|radius|strength|acquisition:complete|active:complete|catalog:complete|charges:missing|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:complete|resource_cost:complete|restrictions:partial|special_values:partial|stacking:partial|stats:partial|targeting:approximate"
+      "unhandledEffectValueKeys": [],
+      "fingerprint": "i147_holy_locket_generic|support|inventory|base|2400|active|passive|attributes.strength|resources.healthRegen|resources.manaRegen|resources.maxHealth|resources.maxMana|cooldown|healAmpPct|healPerCharge|healthRegen|manaCost|manaRegen|maxCharges|maxHealth|maxMana|radius|strength|acquisition:complete|active:complete|catalog:complete|charges:complete|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:complete|resource_cost:complete|restrictions:partial|stacking:partial|stats:partial|targeting:approximate"
     },
     {
       "itemId": "i148_pavise_barrier",
@@ -13320,7 +13281,7 @@
       "shopTier": "base",
       "cost": 1650,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -13339,8 +13300,8 @@
         },
         {
           "id": "charges",
-          "status": "missing",
-          "evidence": "drum_charge declares charges, but inventory entries do not preserve a per-item charge counter"
+          "status": "complete",
+          "evidence": "drum_charge initializes, serializes, displays, checks, and spends persistent inventory charges per successful use"
         },
         {
           "id": "cooldown",
@@ -13376,11 +13337,6 @@
           "id": "restrictions",
           "status": "partial",
           "evidence": "shop exclusion is implemented, while share/drop/sell/illusion rules remain source-specific"
-        },
-        {
-          "id": "special_values",
-          "status": "partial",
-          "evidence": "1 effect values are preserved but not consumed by a generic handler"
         },
         {
           "id": "stacking",
@@ -13430,10 +13386,8 @@
         "strength"
       ],
       "unhandledStatKeys": [],
-      "unhandledEffectValueKeys": [
-        "charges"
-      ],
-      "fingerprint": "i150_war_drums_generic|support|inventory|base|1650|active|passive|attributes.agility|attributes.intelligence|attributes.strength|mobility.movementSpeed|agility|attackSpeed|charges|cooldown|duration|intelligence|manaCost|moveSpeedPct|movementSpeed|radius|strength|acquisition:complete|active:complete|catalog:complete|charges:missing|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:complete|resource_cost:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:approximate"
+      "unhandledEffectValueKeys": [],
+      "fingerprint": "i150_war_drums_generic|support|inventory|base|1650|active|passive|attributes.agility|attributes.intelligence|attributes.strength|mobility.movementSpeed|agility|attackSpeed|charges|cooldown|duration|intelligence|manaCost|moveSpeedPct|movementSpeed|radius|strength|acquisition:complete|active:complete|catalog:complete|charges:complete|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:complete|resource_cost:complete|restrictions:partial|stacking:partial|stats:complete|targeting:approximate"
     },
     {
       "itemId": "i151_bearing_boots_generic",
@@ -14787,8 +14741,8 @@
         },
         {
           "id": "active",
-          "status": "missing",
-          "evidence": "distill_essence cannot be selected or resolved by the generic active-item runtime; place_essence_trap applies a supported core action but omits at least one declared mechanic"
+          "status": "partial",
+          "evidence": "distill_essence has AI selection and a matching generic runtime action; place_essence_trap applies a supported core action but omits at least one declared mechanic"
         },
         {
           "id": "catalog",
@@ -14882,7 +14836,7 @@
         "resources.manaRegen"
       ],
       "unhandledEffectValueKeys": [],
-      "fingerprint": "i164_essence_distiller_generic|support|inventory|base|3600|active|passive|attributes.agility|attributes.intelligence|attributes.strength|defense.armor|resources.manaRegen|agility|armor|cooldown|damage|duration|heal|intelligence|manaCost|manaRegen|radius|slowPct|strength|acquisition:complete|active:missing|catalog:complete|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:complete|resource_cost:complete|restrictions:partial|stacking:partial|stats:partial|targeting:missing"
+      "fingerprint": "i164_essence_distiller_generic|support|inventory|base|3600|active|passive|attributes.agility|attributes.intelligence|attributes.strength|defense.armor|resources.manaRegen|agility|armor|cooldown|damage|duration|heal|intelligence|manaCost|manaRegen|radius|slowPct|strength|acquisition:complete|active:partial|catalog:complete|cooldown:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:complete|resource_cost:complete|restrictions:partial|stacking:partial|stats:partial|targeting:missing"
     },
     {
       "itemId": "i165_specialist_array_generic",

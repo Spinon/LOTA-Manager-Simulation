@@ -1089,9 +1089,11 @@ function TeamPanel({
                   {Array.from({ length: 6 }, (_, index) => {
                     const item = arcane.items[index]
                     const cooldown = item ? getCooldownRemaining(arcane.itemCooldowns, item, time) : 0
+                    const charges = item ? arcane.itemCharges[item] : undefined
                     return (
-                      <i key={index} title={getInventorySlotTitle(item, arcane.itemCooldowns, time)} className={getInventorySlotClassName(item, cooldown)}>
+                      <i key={index} title={getInventorySlotTitle(item, arcane.itemCooldowns, arcane.itemCharges, time)} className={getInventorySlotClassName(item, cooldown)}>
                         {getInventoryGlyph(item)}
+                        {charges !== undefined && <b className="charge-badge">{charges}</b>}
                         {cooldown > 0 && <span className="cooldown-badge">{Math.ceil(cooldown)}</span>}
                       </i>
                     )
@@ -2890,13 +2892,14 @@ function ArcaneInventoryCard({ arcane, now }: { arcane: Arcane; now: number }) {
         <InventoryStrip
           items={arcane.items}
           cooldowns={arcane.itemCooldowns}
+          charges={arcane.itemCharges}
           now={now}
           selectedItem={activeItem}
           onItemSelect={setSelectedItem}
         />
         <TpSlot arcane={arcane} now={now} />
       </div>
-      <ItemDetail itemName={activeItem} cooldowns={arcane.itemCooldowns} now={now} />
+      <ItemDetail itemName={activeItem} cooldowns={arcane.itemCooldowns} charges={arcane.itemCharges} now={now} />
       <span className="inventory-note">{getNextPurchaseLabel(arcane)}</span>
     </>
   )
@@ -2905,12 +2908,14 @@ function ArcaneInventoryCard({ arcane, now }: { arcane: Arcane; now: number }) {
 function InventoryStrip({
   items,
   cooldowns = {},
+  charges = {},
   now = 0,
   selectedItem,
   onItemSelect,
 }: {
   items: string[]
   cooldowns?: Record<string, number>
+  charges?: Record<string, number>
   now?: number
   selectedItem?: string
   onItemSelect?: (item: string) => void
@@ -2920,6 +2925,7 @@ function InventoryStrip({
       {Array.from({ length: 6 }, (_, index) => {
         const item = items[index]
         const cooldown = item ? getCooldownRemaining(cooldowns, item, now) : 0
+        const chargeCount = item ? charges[item] : undefined
         const className = [
           getInventorySlotClassName(item, cooldown),
           item && item === selectedItem ? 'selected' : '',
@@ -2937,11 +2943,12 @@ function InventoryStrip({
             key={index}
             type="button"
             className={className}
-            title={getInventorySlotTitle(item, cooldowns, now)}
+            title={getInventorySlotTitle(item, cooldowns, charges, now)}
             aria-pressed={item === selectedItem}
             onClick={() => onItemSelect?.(item)}
           >
             {getInventoryGlyph(item)}
+            {chargeCount !== undefined && <b className="charge-badge">{chargeCount}</b>}
             {cooldown > 0 && <span className="cooldown-badge">{Math.ceil(cooldown)}</span>}
           </button>
         )
@@ -2950,7 +2957,7 @@ function InventoryStrip({
   )
 }
 
-function ItemDetail({ itemName, cooldowns, now }: { itemName?: string; cooldowns: Record<string, number>; now: number }) {
+function ItemDetail({ itemName, cooldowns, charges, now }: { itemName?: string; cooldowns: Record<string, number>; charges: Record<string, number>; now: number }) {
   if (!itemName) return <div className="item-detail empty">Clique em um item para ver detalhes.</div>
   const shopItem = shopCatalog.find((item) => item.name === itemName)
   const consumable = getConsumableByName(itemName)
@@ -2970,6 +2977,7 @@ function ItemDetail({ itemName, cooldowns, now }: { itemName?: string; cooldowns
       <div className="item-detail-head">
         <strong>{itemName}</strong>
         <span>{consumable ? `${consumable.cost}g / consumivel` : `${shopItem?.cost ?? 0}g`}</span>
+        {charges[itemName] !== undefined && <em>{charges[itemName]} cargas</em>}
         {cooldown > 0 && <em>CD {cooldown.toFixed(1)}s</em>}
       </div>
       {shopItem && <ItemStatSummary item={shopItem} />}
@@ -3407,17 +3415,19 @@ function getInventorySlotClassName(item: string | undefined, cooldown: number) {
   return classes.join(' ')
 }
 
-function getInventorySlotTitle(item: string | undefined, cooldowns: Record<string, number>, now: number) {
+function getInventorySlotTitle(item: string | undefined, cooldowns: Record<string, number>, charges: Record<string, number>, now: number) {
   if (!item) return 'Slot vazio'
   const cooldown = getCooldownRemaining(cooldowns, item, now)
   const shopItem = shopCatalog.find((candidate) => candidate.name === item)
   const activeLine = shopItem?.active ? ` / cd ${shopItem.active.cooldown}s` : ''
+  const chargesLine = charges[item] === undefined ? '' : ` / ${charges[item]} cargas`
   const remainingLine = cooldown > 0 ? ` / pronto em ${cooldown.toFixed(1)}s` : ''
-  return `${item}${activeLine}${remainingLine}`
+  return `${item}${chargesLine}${activeLine}${remainingLine}`
 }
 
 function getCooldownRemaining(cooldowns: Record<string, number>, key: string, now: number) {
-  return Math.max(0, (cooldowns[key] ?? 0) - now)
+  const readyAt = cooldowns[key]
+  return readyAt === undefined ? 0 : Math.max(0, readyAt - now)
 }
 
 function getShortDecision(decision: string) {

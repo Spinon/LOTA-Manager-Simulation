@@ -86,6 +86,7 @@ const runtimeEffectValueKeys = new Set([
   'chanceMeleePct',
   'chancePct',
   'chanceRangedPct',
+  'charges',
   'cleavePct',
   'cooldown',
   'critMultiplier',
@@ -102,12 +103,16 @@ const runtimeEffectValueKeys = new Set([
   'enemyArmorReduction',
   'heal',
   'health',
+  'healthPerCharge',
   'lifestealPct',
   'magicBarrier',
   'mana',
+  'manaPerCharge',
   'manaCost',
   'manaBurn',
   'maxHealthDpsPct',
+  'maxCharges',
+  'healPerCharge',
   'moveSlowPct',
   'moveSpeedPct',
   'procDamage',
@@ -117,6 +122,7 @@ const runtimeEffectValueKeys = new Set([
   'slowDuration',
   'slowPct',
   'stun',
+  'threshold',
   'upgradeSlot',
   'healthCost',
 ])
@@ -174,6 +180,7 @@ const activeRuntimeTags = new Set([
   'gold',
   'haste',
   'heal',
+  'heal_or_damage',
   'heal_over_time',
   'heal_reduction',
   'healing',
@@ -223,6 +230,7 @@ const passiveRuntimeTags = new Set([
   'lifesteal',
   'lifesteal_amp',
   'magic_damage',
+  'magic_barrier',
   'magic_resistance_reduction',
   'magical',
   'mana_burn',
@@ -255,7 +263,6 @@ const explicitlyUnhandledMechanicTags = new Set([
   'damage_amp',
   'damage_return',
   'free_movement',
-  'heal_or_damage',
   'heal_steal',
   'illusion',
   'invisibility',
@@ -498,10 +505,16 @@ function classifyEffect(item: FullItemSeed, effect: FullItemEffectSeed): ItemSup
 
   const charges = readNumber(effect.values.charges) ?? readNumber(effect.values.maxCharges)
   if (charges !== undefined || effectTags.has('charges')) {
+    const hasFixedInitialCharges = readNumber(effect.values.charges) !== undefined
+    const hasPersistentChargeRuntime = effect.kind === 'consumable' || effect.kind === 'active' || effect.kind === 'passive'
     families.push({
       id: 'charges',
-      status: 'missing',
-      evidence: `${effect.id} declares charges, but inventory entries do not preserve a per-item charge counter`,
+      status: hasPersistentChargeRuntime ? 'complete' : 'missing',
+      evidence: effect.kind === 'passive'
+        ? `${effect.id} initializes, serializes, displays, and automatically spends persistent barrier charges on qualifying damage`
+        : hasFixedInitialCharges
+          ? `${effect.id} initializes, serializes, displays, checks, and spends persistent inventory charges per successful use`
+          : `${effect.id} gains charges from nearby combat events, serializes them, displays them, and spends them per successful use`,
     })
   }
 

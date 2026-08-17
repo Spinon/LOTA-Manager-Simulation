@@ -24,7 +24,22 @@ assert.deepEqual(
 
 const chargedItems = audit.rows.filter((row) => row.families.some((family) => family.id === 'charges'))
 assert.ok(chargedItems.length > 0, 'charged items should remain visible in the implementation queue')
-assert.ok(chargedItems.every((row) => row.families.some((family) => family.id === 'charges' && family.status === 'missing')))
+assert.deepEqual(
+  chargedItems
+    .filter((row) => row.families.some((family) => family.id === 'charges' && family.status === 'complete'))
+    .map((row) => row.itemId)
+    .sort(),
+  ['i001_regen_rations', 'i011_refillable_bottle', 'i012_rain_barrier_drops', 'i068_magic_wand', 'i143_spirit_urn', 'i147_holy_locket_generic', 'i150_war_drums_generic'],
+  'all declared charges should use the persistent inventory counter and their matching event path',
+)
+assert.deepEqual(
+  chargedItems
+    .filter((row) => row.families.some((family) => family.id === 'charges' && family.status === 'missing'))
+    .map((row) => row.itemId)
+    .sort(),
+  [],
+  'no declared item charge should remain disconnected from runtime events',
+)
 
 const neutralItems = audit.rows.filter((row) => row.slot === 'neutral' || row.slot === 'neutral_enchantment')
 assert.ok(neutralItems.length > 0)

@@ -728,6 +728,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Suíte completa, lint e build verdes. Benchmark de 5 minutos em 126,4x wall / 102,9x CPU, digest `51a125c1f69f4a2a` preservado.
 - Próxima rodada da T17: criar estado serializável de instância/charges dentro do inventário único de seis slots, sem reintroduzir inventário separado para consumíveis.
 
+**Progresso do inventário com cargas (2026-08-17)**:
+- `itemCharges` agora é estado dinâmico do mesmo inventário de seis slots, não um inventário paralelo. A contagem nasce no spawn/compra, persiste em clones de tick e no replay compacto, permanece após a morte e é removida quando o item deixa o inventário.
+- Consumíveis gastam uma carga por uso e só liberam o slot na última. Ativos permanentes de cargas fixas permanecem no slot ao chegar a zero e deixam de ser selecionados pela IA; cooldown e custo de recurso continuam independentes da contagem.
+- Rations, Bottle e Drums possuem ciclo fixo completo. Wand e Locket agora recebem cargas por casts inimigos próximos e convertem todo o estoque em cura/mana; Urn e Vessel recebem uma carga na morte inimiga para o portador elegível mais próximo e escolhem cura ou dano gradual; Raindrops bloqueia dano mágico acima do limiar, gasta uma carga e libera o slot ao zerar.
+- Os sete itens que declaram cargas na fonte estão completos nessa família, incluindo persistência no replay e indicadores no inventário. A matriz passou para 128 itens parciais e 82 com família ausente; as pendências restantes não pertencem mais ao ciclo de charges.
+- Testes cobrem consumo parcial/final, replay, limite por casts, seleção única por morte, escala de Wand, escolha ofensiva da Urn e barreira automática. Suíte completa, lint e build verdes; benchmark determinístico de 5 minutos em 170,5x wall / 134,0x CPU, digest `3f80541c0f6fea34`.
+- O HUD compacto e o Inspector mostram a quantidade no próprio slot e no detalhe do item. Testes cobrem uso intermediário/final, ativo zerado e round-trip pelo replay.
+- Próxima rodada da T17: integrar consumíveis utilitários, aquisição de wards e toggles persistentes, começando pelos itens que hoje ainda não entram no catálogo de compra/uso.
+
 ---
 
 ### [ ] T18 - Paridade integral dos atributos importados

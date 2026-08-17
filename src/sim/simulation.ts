@@ -311,6 +311,7 @@ export type Arcane = {
   lastDecisionPos: Point
   decision: string
   items: string[]
+  itemCharges: Record<string, number>
   itemCooldowns: Record<string, number>
   skillStates: Record<string, RuntimeParentSkillState>
   tpScrolls: number
@@ -1315,7 +1316,7 @@ export async function loadGameData() {
   toRuntimeItemModifier = itemModule.toItemModifier
 }
 
-export const rosterSeed: Omit<Arcane, 'pos' | 'facing' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'nextCombatEvaluationAt' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCooldowns' | 'skillStates' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'kills' | 'deaths' | 'assists' | 'damageDealt' | 'heroDamageDealt' | 'structureDamageDealt' | 'damageTaken' | 'healingDone' | 'healingReceived' | 'laneCreepKills' | 'denies' | 'neutralKills' | 'objectiveKills' | 'stats'>[] = [
+export const rosterSeed: Omit<Arcane, 'pos' | 'facing' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'nextCombatEvaluationAt' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCharges' | 'itemCooldowns' | 'skillStates' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'kills' | 'deaths' | 'assists' | 'damageDealt' | 'heroDamageDealt' | 'structureDamageDealt' | 'damageTaken' | 'healingDone' | 'healingReceived' | 'laneCreepKills' | 'denies' | 'neutralKills' | 'objectiveKills' | 'stats'>[] = [
   { id: 'd-quasar', team: 'dawn', player: 'Quasar', name: 'Sword Tempest', heroDefinitionId: 'h007_sword_tempest', role: 'Safe Lane', lane: 'bot', portrait: 'ST', items: ['Blade', 'Boots'] },
   { id: 'd-aster', team: 'dawn', player: 'Aster', name: 'Storm Channeler', heroDefinitionId: 'h014_storm_channeler', role: 'Mid', lane: 'mid', portrait: 'SC', items: ['Wand'] },
   { id: 'd-bulwark', team: 'dawn', player: 'Bulwark', name: 'Tide Colossus', heroDefinitionId: 'h022_tide_colossus', role: 'Offlane', lane: 'top', portrait: 'TC', items: ['Shield'] },
@@ -1365,6 +1366,7 @@ export function createInitialState(seed = 'lota-default-seed', options: Simulati
       lastDecisionPos: pos,
       decision: 'Saindo da base',
       items: startingItems,
+      itemCharges: createInitialItemCharges(startingItems),
       itemCooldowns: {},
       skillStates: {},
       tpScrolls: 1,
@@ -2335,6 +2337,7 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
       target: { ...arcane.target },
       movementDestination: arcane.movementDestination ? { ...arcane.movementDestination } : undefined,
       lastDecisionPos: { ...arcane.lastDecisionPos },
+      itemCharges: { ...arcane.itemCharges },
       itemCooldowns: { ...arcane.itemCooldowns },
       skillStates: Object.fromEntries(Object.entries(arcane.skillStates).map(([key, value]) => [key, {
         ...value,
@@ -2404,6 +2407,7 @@ type RenderArcaneDetailFrame = [
   SkillLevels, number, number, number, number, number, number, number, number,
   number, number, number, number, number, number, number, number, RenderStatsFrame,
   Record<string, RuntimeParentSkillState>,
+  Record<string, number>,
 ]
 
 type RenderArcaneFrame = [
@@ -2525,6 +2529,7 @@ function createMatchRenderDetails(state: SimulationState): MatchRenderDetails {
         ...value,
         ...(value.positions ? { positions: value.positions.map((position) => ({ ...position })) } : {}),
       }])),
+      { ...arcane.itemCharges },
     ]),
     creeps: state.creeps.map((creep) => [creep.id, renderNumber(creep.damage), renderNumber(creep.visionRange)]),
   }
@@ -2655,6 +2660,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       lastDecisionPos: { ...pos },
       decision: arcane[7],
       items: arcane[15],
+      itemCharges: arcane[39] ?? {},
       itemCooldowns: arcane[16],
       skillStates: arcane[38] ?? {},
       tpScrolls: arcane[17],
@@ -6537,6 +6543,7 @@ export function buyAtBase(state: SimulationState, arcane: Arcane): Arcane {
     return {
       ...arcane,
       items: [...arcane.items, consumable.name],
+      itemCharges: withInitialItemCharges(arcane.itemCharges, consumable.name),
       stats: {
         ...arcane.stats,
         gold: arcane.stats.gold - consumable.cost,
@@ -6558,10 +6565,14 @@ export function buyItemAtBase(arcane: Arcane): Arcane {
   if (!purchase) return arcane
   const retainedItems = purchase.soldItemName ? removeFirstByName(arcane.items, purchase.soldItemName) : arcane.items
   const items = [...retainedItems, purchase.item.name]
+  const retainedCharges = purchase.soldItemName
+    ? withoutItemCharges(arcane.itemCharges, purchase.soldItemName)
+    : arcane.itemCharges
 
   return {
     ...arcane,
     items,
+    itemCharges: withInitialItemCharges(retainedCharges, purchase.item.name),
     stats: rebuildArcaneStatsAfterItemChange(arcane, items, arcane.stats.gold - purchase.netCost),
   }
 }
@@ -6579,7 +6590,12 @@ export function consumeItemIfNeeded(state: SimulationState, arcane: Arcane): { a
     .find((item) => item && ((needsHeal && item.heal) || (needsMana && item.mana)))
   if (!consumable) return { arcane }
 
-  const items = removeFirstByName(arcane.items, consumable.name)
+  const currentCharges = getItemChargeCount(arcane, consumable.name) ?? 1
+  const remainingCharges = Math.max(0, currentCharges - 1)
+  const items = remainingCharges > 0 ? arcane.items : removeFirstByName(arcane.items, consumable.name)
+  const itemCharges = remainingCharges > 0
+    ? { ...arcane.itemCharges, [consumable.name]: remainingCharges }
+    : withoutItemCharges(arcane.itemCharges, consumable.name)
   let stats = arcane.stats
   if (consumable.heal) {
     if (consumable.duration && consumable.duration > 1) {
@@ -6611,6 +6627,7 @@ export function consumeItemIfNeeded(state: SimulationState, arcane: Arcane): { a
     arcane: {
       ...arcane,
       items,
+      itemCharges,
       stats,
     },
     used: consumable.name,
@@ -6626,13 +6643,13 @@ export function applyDispelItemIfNeeded(state: SimulationState, arcane: Arcane):
   if (removed === 0) return { arcane }
 
   return {
-    arcane: spendActiveItemCost({
+    arcane: spendActiveItemCharge(spendActiveItemCost({
       ...arcane,
       itemCooldowns: {
         ...arcane.itemCooldowns,
         [candidate.item.name]: state.time + candidate.item.active.cooldown,
       },
-    }, candidate.item),
+    }, candidate.item), candidate.item.name),
     used: candidate.item.name,
   }
 }
@@ -6656,12 +6673,59 @@ export function applySimpleActiveItemIfNeeded(
   let interruptsDecision = false
   const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
   const tags = active.tags
+  const usesHealOrDamage = hasAnyItemTag(tags, ['heal_or_damage'])
+  const chargeMultiplier = getActiveItemChargeMultiplier(arcane, item.name)
   let cachedAllyTargets: Arcane[] | undefined
   const getAllyTargets = () => cachedAllyTargets ??= getSimpleActiveItemAllyTargets(state, arcane, item)
 
-  if (hasAnyItemTag(tags, ['restore_health', 'heal_over_time', 'healing', 'heal'])) {
+  if (usesHealOrDamage) {
+    const enemyTarget = getSimpleActiveItemEnemyTarget(state, arcane, item)
+    if (enemyTarget) {
+      const duration = active.duration ?? getActiveItemNumber(active.values, 'duration') ?? 8
+      const totalDamage = getActiveItemNumber(active.values, 'damage') ??
+        enemyTarget.stats.maxHp * ((getActiveItemNumber(active.values, 'currentHealthDamagePct') ?? 0) / 100) * duration
+      if (totalDamage > 0) {
+        addTimedEffect(state, enemyTarget, {
+          sourceId: `${arcane.id}-${item.id}`,
+          sourceName: `${arcane.player}: ${item.name}`,
+          sourceTeam: arcane.team,
+          kind: 'dot',
+          polarity: 'negative',
+          value: totalDamage / Math.max(1, duration),
+          damageType: 'magical',
+          tickInterval: 1,
+          duration,
+        })
+        addSimpleItemEffect(state, arcane, enemyTarget)
+        applied = true
+        interruptsDecision = true
+      }
+    } else {
+      const allyTarget = getAllyTargets()[0] ?? arcane
+      const duration = active.duration ?? getActiveItemNumber(active.values, 'duration') ?? 8
+      const totalHealing = getActiveItemNumber(active.values, 'heal') ?? 200
+      if (allyTarget.stats.hp < allyTarget.stats.maxHp && totalHealing > 0) {
+        addTimedEffect(state, allyTarget, {
+          sourceId: `${arcane.id}-${item.id}`,
+          sourceName: `${arcane.player}: ${item.name}`,
+          sourceTeam: arcane.team,
+          kind: 'hot',
+          polarity: 'positive',
+          value: totalHealing / Math.max(1, duration),
+          tickInterval: 1,
+          duration,
+        })
+        addSimpleItemEffect(state, arcane, allyTarget)
+        applied = true
+      }
+    }
+  }
+
+  if (!usesHealOrDamage && hasAnyItemTag(tags, ['restore_health', 'heal_over_time', 'healing', 'heal'])) {
     const allyTargets = getAllyTargets()
-    const healing = getActiveItemNumber(active.values, 'health') ?? getActiveItemNumber(active.values, 'heal') ?? 180
+    const healing = getActiveItemNumber(active.values, 'health') ??
+      getActiveItemNumber(active.values, 'heal') ??
+      (getActiveItemNumber(active.values, 'healthPerCharge') ?? getActiveItemNumber(active.values, 'healPerCharge') ?? 180) * chargeMultiplier
     if (hasAnyItemTag(tags, ['team']) || active.target === 'area') {
       applyHealthToArcanes(state, allyTargets, healing, arcane.id)
       applied = allyTargets.length > 0
@@ -6674,9 +6738,10 @@ export function applySimpleActiveItemIfNeeded(
     }
   }
 
-  if (hasAnyItemTag(tags, ['restore_mana'])) {
+  if (!usesHealOrDamage && hasAnyItemTag(tags, ['restore_mana', 'mana_over_time'])) {
     const allyTargets = getAllyTargets()
-    const mana = getActiveItemNumber(active.values, 'mana') ?? 120
+    const mana = getActiveItemNumber(active.values, 'mana') ??
+      (getActiveItemNumber(active.values, 'manaPerCharge') ?? 120) * chargeMultiplier
     if (hasAnyItemTag(tags, ['team']) || active.target === 'area') {
       applyManaToArcanes(state, allyTargets, mana)
       applied = allyTargets.length > 0
@@ -6770,8 +6835,8 @@ export function applySimpleActiveItemIfNeeded(
     }
   }
 
-  const activeDamage = getActiveItemDamage(arcane, item)
-  const enemyTarget = activeDamage > 0 || hasAnyItemTag(tags, ['slow', 'attack_slow', 'disarm', 'stun', 'disable', 'hex', 'cyclone', 'root', 'silence', 'armor_reduction', 'heal_reduction'])
+  const activeDamage = usesHealOrDamage ? 0 : getActiveItemDamage(arcane, item)
+  const enemyTarget = !usesHealOrDamage && (activeDamage > 0 || hasAnyItemTag(tags, ['slow', 'attack_slow', 'disarm', 'stun', 'disable', 'hex', 'cyclone', 'root', 'silence', 'armor_reduction', 'heal_reduction']))
     ? getSimpleActiveItemEnemyTarget(state, arcane, item)
     : undefined
   if (enemyTarget) {
@@ -6863,6 +6928,7 @@ export function applySimpleActiveItemIfNeeded(
   if (!applied) return { arcane }
 
   nextArcane = spendActiveItemCost(nextArcane, item)
+  nextArcane = spendActiveItemCharge(nextArcane, item.name)
 
   return {
     arcane: {
@@ -6887,6 +6953,7 @@ export function getSimpleActiveItemCandidate(
   for (const item of getShopItemsForInventory(arcane.items)) {
     if (!item.active || (arcane.itemCooldowns[item.name] ?? 0) > state.time) continue
     if (!canPayActiveItemCost(arcane, item)) continue
+    if (!canUseItemCharge(arcane, item.name)) continue
     if (shouldUseSimpleActiveItem(state, arcane, item, knownDanger, visibleEnemies, frameContext)) {
       return { name: item.name, item }
     }
@@ -6909,9 +6976,20 @@ export function shouldUseSimpleActiveItem(
   const manaRatio = arcane.stats.mana / Math.max(1, arcane.stats.maxMana)
 
   if (active.dispelPower && getDispelItemCandidate(state, arcane)?.item.id === item.id) return false
-  if (hasAnyItemTag(tags, ['restore_health', 'heal_over_time', 'healing', 'heal'])) {
+  if (hasAnyItemTag(tags, ['heal_or_damage'])) {
+    if (getSimpleActiveItemEnemyTarget(state, arcane, item)) return true
     const allyTargets = getSimpleActiveItemAllyTargets(state, arcane, item)
     return hpRatio < 0.48 || allyTargets.some((ally) => ally.stats.hp / Math.max(1, ally.stats.maxHp) < 0.48)
+  }
+  const restoresHealth = hasAnyItemTag(tags, ['restore_health', 'heal_over_time', 'healing', 'heal'])
+  const restoresMana = hasAnyItemTag(tags, ['restore_mana', 'mana_over_time'])
+  if (restoresHealth || restoresMana) {
+    const allyTargets = getSimpleActiveItemAllyTargets(state, arcane, item)
+    const needsHealth = restoresHealth && (
+      hpRatio < 0.48 || allyTargets.some((ally) => ally.stats.hp / Math.max(1, ally.stats.maxHp) < 0.48)
+    )
+    const needsMana = restoresMana && manaRatio < 0.28
+    return needsHealth || needsMana
   }
   if (hasAnyItemTag(tags, ['magic_barrier', 'physical_barrier', 'team_barrier', 'barrier', 'damage_immunity', 'link_barrier', 'debuff_immunity', 'ethereal', 'physical_immunity'])) {
     const danger = knownDanger ?? getDangerScore(state, arcane, visibleEnemies, frameContext)
@@ -6935,7 +7013,6 @@ export function shouldUseSimpleActiveItem(
     return danger > 68 || activeCombatIntent || urgentRotation
   }
   if (hasAnyItemTag(tags, ['damage', 'magic_damage', 'magical_damage', 'nuke', 'slow', 'attack_slow', 'silence', 'disarm', 'stun', 'disable', 'hex', 'cyclone', 'root', 'armor_reduction', 'heal_reduction'])) return getSimpleActiveItemEnemyTarget(state, arcane, item) !== undefined
-  if (hasAnyItemTag(tags, ['restore_mana'])) return manaRatio < 0.28
   if (hasAnyItemTag(tags, ['gold', 'xp', 'creep_only'])) return getSimpleActiveItemCreepTarget(state, arcane, item) !== undefined
   return false
 }
@@ -6962,6 +7039,7 @@ export function getSimpleActiveItemCreepTarget(state: SimulationState, arcane: A
 export function getSimpleActiveItemAllyTargets(state: SimulationState, arcane: Arcane, item: ShopItem) {
   const active = item.active
   if (!active) return [arcane]
+  if (active.target === 'self') return [arcane]
   const radius = (getActiveItemNumber(active.values, 'radius') ?? 900) / 100
   const targetAllies = state.arcanes.filter((ally) => (
     ally.team === arcane.team &&
@@ -7072,6 +7150,185 @@ export function canPayActiveItemCost(arcane: Arcane, item: ShopItem) {
   return arcane.stats.mana >= manaCost && arcane.stats.hp > healthCost
 }
 
+type ItemChargeDefinition = {
+  initial: number
+  maximum?: number
+  sourceKind: RuntimeItemEffect['kind'] | 'consumable'
+  spendMode: 'one' | 'all'
+}
+
+export function getItemChargeDefinition(itemName: string): ItemChargeDefinition | undefined {
+  const consumable = getConsumableByName(itemName)
+  if (consumable) {
+    return {
+      initial: Math.max(1, Math.floor(consumable.charges)),
+      maximum: Math.max(1, Math.floor(consumable.charges)),
+      sourceKind: 'consumable',
+      spendMode: 'one',
+    }
+  }
+
+  const item = shopItemByName.get(itemName)
+  const chargedEffect = item?.effects.find((effect) => (
+    getActiveItemNumber(effect.values, 'charges') !== undefined ||
+    getActiveItemNumber(effect.values, 'maxCharges') !== undefined
+  )) ?? item?.effects.find((effect) => effect.kind === 'active' && effect.tags.includes('charges'))
+    ?? item?.effects.find((effect) => effect.tags.includes('charges'))
+  if (!chargedEffect) return undefined
+  const initial = Math.max(0, Math.floor(getActiveItemNumber(chargedEffect.values, 'charges') ?? 0))
+  const explicitMaximum = getActiveItemNumber(chargedEffect.values, 'maxCharges')
+  const maximum = Math.max(initial, Math.floor(explicitMaximum ?? (initial > 0 ? initial : 99)))
+  return {
+    initial,
+    maximum,
+    sourceKind: chargedEffect.kind,
+    spendMode: explicitMaximum !== undefined ? 'all' : 'one',
+  }
+}
+
+export function createInitialItemCharges(items: string[]) {
+  return items.reduce<Record<string, number>>((charges, itemName) => (
+    withInitialItemCharges(charges, itemName)
+  ), {})
+}
+
+export function withInitialItemCharges(charges: Record<string, number>, itemName: string) {
+  const definition = getItemChargeDefinition(itemName)
+  if (!definition) return charges
+  return {
+    ...charges,
+    [itemName]: definition.initial,
+  }
+}
+
+export function withoutItemCharges(charges: Record<string, number>, itemName: string) {
+  if (!(itemName in charges)) return charges
+  const nextCharges = { ...charges }
+  delete nextCharges[itemName]
+  return nextCharges
+}
+
+export function getItemChargeCount(arcane: Pick<Arcane, 'itemCharges'>, itemName: string) {
+  if (itemName in arcane.itemCharges) return arcane.itemCharges[itemName]
+  return getItemChargeDefinition(itemName)?.initial
+}
+
+export function canUseItemCharge(arcane: Pick<Arcane, 'itemCharges'>, itemName: string) {
+  const charges = getItemChargeCount(arcane, itemName)
+  return charges === undefined || charges > 0
+}
+
+export function getActiveItemChargeMultiplier(arcane: Pick<Arcane, 'itemCharges'>, itemName: string) {
+  const definition = getItemChargeDefinition(itemName)
+  if (definition?.spendMode !== 'all') return 1
+  return Math.max(1, getItemChargeCount(arcane, itemName) ?? 0)
+}
+
+export function spendActiveItemCharge(arcane: Arcane, itemName: string) {
+  const definition = getItemChargeDefinition(itemName)
+  if (!definition || definition.sourceKind === 'passive' || definition.sourceKind === 'consumable') return arcane
+  const charges = getItemChargeCount(arcane, itemName) ?? 0
+  if (charges <= 0) return arcane
+  return {
+    ...arcane,
+    itemCharges: {
+      ...arcane.itemCharges,
+      [itemName]: definition.spendMode === 'all' ? 0 : charges - 1,
+    },
+  }
+}
+
+export function grantItemCharge(arcane: Arcane, itemName: string, amount = 1) {
+  const definition = getItemChargeDefinition(itemName)
+  if (!definition || amount <= 0) return arcane
+  const current = getItemChargeCount(arcane, itemName) ?? 0
+  const next = Math.min(definition.maximum ?? 99, current + amount)
+  if (next === current) return arcane
+  return {
+    ...arcane,
+    itemCharges: {
+      ...arcane.itemCharges,
+      [itemName]: next,
+    },
+  }
+}
+
+const spellChargeItemIds = new Set(['i068_magic_wand', 'i147_holy_locket_generic'])
+const soulChargeItemIds = new Set(['i143_spirit_urn', 'i144_spirit_vessel_generic'])
+const rainBarrierItemId = 'i012_rain_barrier_drops'
+
+function getInventoryItemById(arcane: Pick<Arcane, 'items'>, itemId: string) {
+  return arcane.items
+    .map((name) => shopItemByName.get(name))
+    .find((item) => item?.id === itemId)
+}
+
+function grantInventoryItemChargeInPlace(arcane: Arcane, itemName: string) {
+  const charged = grantItemCharge(arcane, itemName)
+  arcane.itemCharges = charged.itemCharges
+}
+
+export function grantNearbySpellItemCharges(state: SimulationState, caster: Arcane) {
+  for (const holder of state.arcanes) {
+    if (holder.team === caster.team || holder.stats.hp <= 0 || holder.respawn > state.time) continue
+    for (const item of getShopItemsForInventory(holder.items)) {
+      if (!spellChargeItemIds.has(item.id)) continue
+      const radius = worldVisionToMapRadius(getActiveItemNumber(item.active?.values ?? {}, 'radius') ?? 1200)
+      if (distanceSquared(holder.pos, caster.pos) > radius * radius) continue
+      grantInventoryItemChargeInPlace(holder, item.name)
+    }
+  }
+}
+
+export function grantSpiritItemChargesFromDeaths(state: SimulationState, deadArcanes: Arcane[]) {
+  const collectionRadius = worldVisionToMapRadius(1200)
+  for (const victim of deadArcanes) {
+    const holder = state.arcanes
+      .flatMap((arcane) => getShopItemsForInventory(arcane.items)
+        .filter((item) => soulChargeItemIds.has(item.id))
+        .map((item) => ({ arcane, item })))
+      .filter(({ arcane }) => (
+        arcane.team !== victim.team &&
+        arcane.stats.hp > 0 &&
+        arcane.respawn <= state.time &&
+        distanceSquared(arcane.pos, victim.pos) <= collectionRadius * collectionRadius
+      ))
+      .sort((left, right) => distanceSquared(left.arcane.pos, victim.pos) - distanceSquared(right.arcane.pos, victim.pos))[0]
+    if (holder) grantInventoryItemChargeInPlace(holder.arcane, holder.item.name)
+  }
+}
+
+export function applyRainBarrierCharge(state: SimulationState, target: Arcane, damage: number, damageType: CombatDamageType) {
+  if (damageType !== 'magical' || damage <= 0) return damage
+  const item = getInventoryItemById(target, rainBarrierItemId)
+  const effect = item?.effects.find((candidate) => candidate.kind === 'passive' && hasAnyItemTag(candidate.tags, ['magic_barrier', 'charges']))
+  if (!item || !effect || !canUseItemCharge(target, item.name)) return damage
+  const threshold = getActiveItemNumber(effect.values, 'threshold') ?? 75
+  if (damage < threshold) return damage
+
+  const barrier = getActiveItemNumber(effect.values, 'barrier') ?? 120
+  const remainingCharges = Math.max(0, (getItemChargeCount(target, item.name) ?? 0) - 1)
+  target.itemCharges = remainingCharges > 0
+    ? { ...target.itemCharges, [item.name]: remainingCharges }
+    : withoutItemCharges(target.itemCharges, item.name)
+  if (remainingCharges === 0) {
+    target.items = removeFirstByName(target.items, item.name)
+    target.stats = rebuildArcaneStatsAfterItemChange(target, target.items, target.stats.gold)
+  }
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `rain-barrier-${target.id}-${state.time}`,
+      team: target.team,
+      pos: { ...target.pos },
+      label: `BARREIRA ${remainingCharges}`,
+      createdAt: state.time,
+      expiresAt: state.time + 0.9,
+    },
+  ]
+  return Math.max(0, damage - barrier)
+}
+
 export function spendActiveItemCost(arcane: Arcane, item: ShopItem) {
   const active = item.active
   if (!active) return arcane
@@ -7173,6 +7430,7 @@ export function getDispelItemCandidate(state: SimulationState, arcane: Arcane) {
     .filter((item) => item.active?.dispelPower !== undefined)
     .filter((item) => (arcane.itemCooldowns[item.name] ?? 0) <= state.time)
     .filter((item) => canPayActiveItemCost(arcane, item))
+    .filter((item) => canUseItemCharge(arcane, item.name))
     .map((item) => ({ name: item.name, item }))
     .find((candidate) => shouldUseDispelPower(activeDebuffs, candidate.item.active?.dispelPower ?? 'basic'))
 }
@@ -7974,7 +8232,8 @@ export function resolveIncomingArcaneDamage(
     targetMagicResistance: getEffectiveArcaneMagicResistance(state, target),
   })
 
-  return absorbDamageWithBarriers(state, target.id, resolvedDamage)
+  const damageAfterRainBarrier = applyRainBarrierCharge(state, target, resolvedDamage, damageType)
+  return absorbDamageWithBarriers(state, target.id, damageAfterRainBarrier)
 }
 
 export function hasTimedEffect(state: SimulationState, targetId: string, kind: TimedEffect['kind']) {
@@ -12261,6 +12520,7 @@ export function finishSimpleSkillCast(state: SimulationState, arcane: Arcane, sk
     arcane.itemCooldowns = liveArcane.itemCooldowns
     arcane.skillStates = liveArcane.skillStates
   }
+  grantNearbySpellItemCharges(state, liveArcane)
 }
 
 export function updateParentSkillStateAfterCast(
@@ -14525,6 +14785,7 @@ export function resolveDeaths(state: SimulationState): SimulationState {
 
   if (deadArcanes.length) {
     collectRingmasterSouvenirsFromDeaths(next, deadArcanes)
+    grantSpiritItemChargesFromDeaths(next, deadArcanes)
     const arcaneRewards = new Map<string, { gold: number; xp: number }>()
     const kdaChanges = new Map<string, { kills: number; deaths: number; assists: number }>()
     const addArcaneReward = (arcaneId: string, gold: number, xp: number) => {

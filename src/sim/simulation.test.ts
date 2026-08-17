@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import {
   addTimedEffect,
+  applyRainBarrierCharge,
   applySimpleActiveItemIfNeeded,
   applySimpleSkillDispel,
   applySimpleSkillDisplacement,
@@ -18,6 +19,7 @@ import {
   collectTacticalArcaneTravelActivations,
   canUseArcaneKinematicFastPath,
   createArcaneTravelPlanIfUseful,
+  createInitialItemCharges,
   createInitialState,
   creepTacticalActivationMargin,
   createMatchRenderFrame,
@@ -42,6 +44,7 @@ import {
   getCampClearAssessment,
   getHeroDefinition,
   getItemPurchasePlan,
+  getItemChargeCount,
   getShopCandidatePool,
   getPlayerAiProfile,
   getPlayerMentalState,
@@ -92,6 +95,8 @@ import {
   getRoleFarmPriority,
   getRoleGpmTarget,
   grantRingmasterSouvenir,
+  grantNearbySpellItemCharges,
+  grantSpiritItemChargesFromDeaths,
   getArcaneEconomyNeed,
   getArcaneCoordinationReliability,
   getTowerTankAssessment,
@@ -124,6 +129,7 @@ import {
   runeSpawnPoints,
   processJungleStacks,
   processTimedEffects,
+  consumeItemIfNeeded,
   performArcaneBasicAttack,
   queryCreepSpatialGrid,
   resolveDeaths,
@@ -955,6 +961,128 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   }
   assert.equal(canPayActiveItemCost(unsafeCaster, soulBattery), false, 'health-cost items must leave the caster alive')
   assert.equal(applySimpleActiveItemIfNeeded(activeItemState, unsafeCaster).used, undefined)
+}
+
+{
+  const chargedConsumableState = createInitialState('charged-consumable-runtime-test')
+  chargedConsumableState.time = 180
+  const carrier = chargedConsumableState.arcanes[0]
+  carrier.items = ['Regen Rations']
+  carrier.itemCharges = createInitialItemCharges(carrier.items)
+  carrier.stats = { ...carrier.stats, hp: carrier.stats.maxHp * 0.3 }
+
+  assert.equal(getItemChargeCount(carrier, 'Regen Rations'), 3)
+  const firstUse = consumeItemIfNeeded(chargedConsumableState, carrier)
+  assert.equal(firstUse.used, 'Regen Rations')
+  assert.deepEqual(firstUse.arcane.items, ['Regen Rations'], 'a multi-charge consumable should keep its single inventory slot')
+  assert.equal(getItemChargeCount(firstUse.arcane, 'Regen Rations'), 2)
+
+  chargedConsumableState.arcanes[0] = firstUse.arcane
+  const chargedFrame = createMatchRenderFrame(chargedConsumableState)
+  const chargedReplay = materializeMatchRenderFrame(chargedFrame, createMatchStaticData(chargedConsumableState))
+  assert.equal(getItemChargeCount(chargedReplay.arcanes[0], 'Regen Rations'), 2, 'item charges should survive compact replay materialization')
+
+  const finalChargeState = createInitialState('charged-consumable-final-use-test')
+  finalChargeState.time = 180
+  const finalCarrier = finalChargeState.arcanes[0]
+  finalCarrier.items = ['Regen Rations']
+  finalCarrier.itemCharges = { 'Regen Rations': 1 }
+  finalCarrier.stats = { ...finalCarrier.stats, hp: finalCarrier.stats.maxHp * 0.3 }
+  const finalUse = consumeItemIfNeeded(finalChargeState, finalCarrier)
+  assert.equal(finalUse.arcane.items.includes('Regen Rations'), false, 'the final consumable charge should release its inventory slot')
+  assert.equal('Regen Rations' in finalUse.arcane.itemCharges, false)
+
+  const chargedActiveState = createInitialState('charged-active-item-runtime-test')
+  chargedActiveState.time = 600
+  const drummer = chargedActiveState.arcanes[0]
+  const drums = shopCatalog.find((item) => item.id === 'i150_war_drums_generic')!
+  drummer.items = [drums.name]
+  drummer.itemCharges = createInitialItemCharges(drummer.items)
+  drummer.microDecision = 'Atacando objetivo'
+  const drumUse = applySimpleActiveItemIfNeeded(chargedActiveState, drummer)
+  assert.equal(drumUse.used, drums.name)
+  assert.deepEqual(drumUse.arcane.items, [drums.name], 'charged permanent items should remain in their slot')
+  assert.equal(getItemChargeCount(drumUse.arcane, drums.name), 7)
+  const emptyDrummer = { ...drummer, itemCharges: { [drums.name]: 0 } }
+  assert.equal(applySimpleActiveItemIfNeeded(chargedActiveState, emptyDrummer).used, undefined, 'zero-charge active items must not be selected')
+}
+
+{
+  const chargeEventState = createInitialState('event-generated-item-charge-test')
+  chargeEventState.time = 300
+  const wandHolder = chargeEventState.arcanes[0]
+  const enemyCaster = chargeEventState.arcanes.find((arcane) => arcane.team !== wandHolder.team)!
+  const wand = shopCatalog.find((item) => item.id === 'i068_magic_wand')!
+  wandHolder.items = [wand.name]
+  wandHolder.itemCharges = createInitialItemCharges(wandHolder.items)
+  wandHolder.pos = { x: 50, y: 50 }
+  enemyCaster.pos = { x: 51, y: 50 }
+
+  for (let cast = 0; cast < 25; cast += 1) grantNearbySpellItemCharges(chargeEventState, enemyCaster)
+  assert.equal(getItemChargeCount(wandHolder, wand.name), 20, 'nearby enemy spell casts should fill but not exceed the Wand limit')
+
+  wandHolder.itemCharges = { [wand.name]: 3 }
+  wandHolder.stats = {
+    ...wandHolder.stats,
+    hp: wandHolder.stats.maxHp * 0.3,
+    mana: wandHolder.stats.maxMana * 0.2,
+  }
+  enemyCaster.pos = { x: 90, y: 90 }
+  const wandUse = applySimpleActiveItemIfNeeded(chargeEventState, wandHolder)
+  assert.equal(wandUse.used, wand.name)
+  assert.equal(wandUse.arcane.stats.hp, wandHolder.stats.hp + 45, 'Wand health restoration should scale with all stored charges')
+  assert.equal(wandUse.arcane.stats.mana, wandHolder.stats.mana + 45, 'Wand mana restoration should scale with all stored charges')
+  assert.equal(getItemChargeCount(wandUse.arcane, wand.name), 0, 'Wand should release all stored charges on use')
+}
+
+{
+  const soulChargeState = createInitialState('soul-charge-on-death-test')
+  soulChargeState.time = 420
+  const victim = soulChargeState.arcanes[0]
+  const holders = soulChargeState.arcanes.filter((arcane) => arcane.team !== victim.team).slice(0, 2)
+  const urn = shopCatalog.find((item) => item.id === 'i143_spirit_urn')!
+  victim.pos = { x: 50, y: 50 }
+  victim.stats = { ...victim.stats, hp: 0 }
+  holders.forEach((holder, index) => {
+    holder.items = [urn.name]
+    holder.itemCharges = createInitialItemCharges(holder.items)
+    holder.pos = { x: 51 + index * 2, y: 50 }
+  })
+
+  grantSpiritItemChargesFromDeaths(soulChargeState, [victim])
+  assert.equal(getItemChargeCount(holders[0], urn.name), 1, 'the nearest eligible Urn should receive the death charge')
+  assert.equal(getItemChargeCount(holders[1], urn.name), 0, 'one death should not charge every nearby Urn')
+
+  const enemyTarget = soulChargeState.arcanes.find((arcane) => arcane.team === victim.team && arcane.id !== victim.id)!
+  enemyTarget.pos = { x: 52, y: 50 }
+  const urnUse = applySimpleActiveItemIfNeeded(soulChargeState, holders[0])
+  assert.equal(urnUse.used, urn.name)
+  assert.equal(getItemChargeCount(urnUse.arcane, urn.name), 0)
+  assert.ok(soulChargeState.timedEffects.some((effect) => (
+    effect.kind === 'dot' && effect.targetId === enemyTarget.id && effect.sourceName.includes(urn.name)
+  )), 'an offensive Urn use should create damage over time instead of also healing')
+  assert.equal(soulChargeState.timedEffects.some((effect) => effect.kind === 'hot' && effect.sourceName.includes(urn.name)), false)
+}
+
+{
+  const rainBarrierState = createInitialState('rain-barrier-charge-test')
+  rainBarrierState.time = 180
+  const target = rainBarrierState.arcanes[0]
+  const rainDrops = shopCatalog.find((item) => item.id === 'i012_rain_barrier_drops')!
+  target.items = [rainDrops.name]
+  target.itemCharges = createInitialItemCharges(target.items)
+
+  assert.equal(applyRainBarrierCharge(rainBarrierState, target, 74, 'magical'), 74, 'sub-threshold magic damage should preserve Raindrops')
+  assert.equal(getItemChargeCount(target, rainDrops.name), 6)
+  assert.equal(applyRainBarrierCharge(rainBarrierState, target, 100, 'physical'), 100, 'physical damage should not consume Raindrops')
+  assert.equal(getItemChargeCount(target, rainDrops.name), 6)
+  assert.equal(applyRainBarrierCharge(rainBarrierState, target, 100, 'magical'), 0, 'a qualifying charge should absorb up to its barrier value')
+  assert.equal(getItemChargeCount(target, rainDrops.name), 5)
+
+  target.itemCharges = { [rainDrops.name]: 1 }
+  applyRainBarrierCharge(rainBarrierState, target, 160, 'magical')
+  assert.equal(target.items.includes(rainDrops.name), false, 'Raindrops should leave the normal inventory after its final charge')
+  assert.equal(rainDrops.name in target.itemCharges, false)
 }
 
 {
