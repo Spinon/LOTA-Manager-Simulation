@@ -51,7 +51,7 @@ const statusPriority: Record<SkillSupportStatus, number> = {
   missing: 3,
 }
 
-const ruleLevelImmunityAbilityIds = new Set([352, 389, 661, 1250, 1501, 1504, 5014, 5028, 5238, 5249, 5274, 5331, 5429, 5467, 5619, 7852, 7902])
+const ruleLevelImmunityAbilityIds = new Set([352, 389, 661, 1250, 1392, 1501, 1504, 5014, 5028, 5238, 5249, 5274, 5331, 5429, 5467, 5619, 7852, 7902])
 
 const runtimeValueKeys = new Set([
   'attackSpeed',
@@ -62,10 +62,13 @@ const runtimeValueKeys = new Set([
   'cloakMaxLayers',
   'cloakMinimumDamage',
   'cloakRecoveryTime',
+  'controllable',
   'cooldown',
   'critChance',
   'critMultiplier',
   'damage',
+  'damage_creeps',
+  'damage_heroes',
   'damage_reduction_duration',
   'damage_reduction_pct',
   'disarmDuration',
@@ -88,9 +91,13 @@ const runtimeValueKeys = new Set([
   'magic_resist',
   'magic_resistance_reduction',
   'moveSpeedBonusPct',
+  'move_pct_cap',
+  'move_pct_creeps',
+  'move_pct_heroes',
   'movespeed_bonus_pct',
   'muteDuration',
   'nightmare_invuln_time',
+  'pass_damage',
   'radius',
   'total_chickens',
   'ally_chicken_images_take_damage_percent',
@@ -98,6 +105,8 @@ const runtimeValueKeys = new Set([
   'root',
   'silence',
   'sleepDuration',
+  'scepter_magic_immune_per_hero',
+  'scepterDebuffImmunityPerHero',
   'slow',
   'slowPct',
   'stun',

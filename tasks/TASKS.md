@@ -669,6 +669,16 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Suíte completa, lint e build verdes. Benchmark de 5 minutos em 161,2x wall / 118,8x CPU, com digest `51a125c1f69f4a2a` preservado.
 - Próxima rodada da T16: modelar o retorno do Astral Spirit, que possui comportamento acionável, e manter os três upgrades sem dados confiáveis como aproximações documentadas até a fonte importada ser completada.
 
+**Progresso de Astral Spirit e retorno de summons (2026-08-17)**:
+- Astral Spirit agora é uma unidade intangível própria: percorre o segmento até o ponto escolhido, causa os 50 de dano mágico importados uma única vez por unidade atravessada e retorna dinamicamente à posição atual do dono. A IA aciona o retorno após uma janela curta de uso, mantendo os 10s oficiais como limite máximo.
+- O espírito separa contatos com heróis e creeps, incluindo ilusões/clones e neutros, e converte a contagem no retorno em dano plano e velocidade por 10s. Os valores por nível e o teto de 40% são consumidos diretamente do catálogo; o novo modificador de dano plano também alimenta a faixa exibida e o combate efetivo.
+- O Scepter deixou de ler o valor-base zero e recebe um alias explícito para os 2s importados por herói. No retorno, aplica imunidade a debuffs com piso de 50% de resistência mágica pela duração acumulada; sem Scepter, nenhum estado de imunidade é criado.
+- O minimapa representa o espírito com variante circular translúcida, contorno interrompido e núcleo próprio, preservando seleção e cor de equipe sem torná-lo alvo. O snapshot profundo mantém rota e contatos isolados, enquanto o replay continua transportando apenas a variante visual necessária.
+- Testes cobrem ausência de dano instantâneo, ida e volta, contato único, dois heróis e duas creeps, bônus exatos de 190 de dano e 17% de movimento, expiração, Scepter e ausência de imunidade sem upgrade.
+- Auditoria atual: 7 completas, 633 parciais, 13 aproximações e 81 ausentes; família `immunity`: 18 completas e 3 aproximações. Astral Spirit agora só permanece aproximado pelo targeting genérico de área; Nether Strike, Press the Attack e a imunidade a movimento forçado de Bulwark seguem sem valores/contrato importado suficientes.
+- Suíte completa, lint e build verdes. Benchmark de 5 minutos em 149,2x wall / 119,4x CPU, com digest `51a125c1f69f4a2a` preservado.
+- Próxima rodada: executar a T16.1 para consolidar a linguagem visual de ilusões, clones e criaturas controladas antes de abrir a auditoria integral de itens.
+
 ---
 
 ### [ ] T16.1 - Linguagem visual de ilusões, clones e criaturas controladas

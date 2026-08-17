@@ -361,7 +361,7 @@ export type Creep = {
   pullUntil?: number
   motionPlan?: CreepMotionPlan
 }
-export type SummonVariant = 'tombstone_zombie' | 'eidolon_split_child' | 'fowl_play_chicken'
+export type SummonVariant = 'tombstone_zombie' | 'eidolon_split_child' | 'fowl_play_chicken' | 'astral_spirit'
 export type SummonInheritanceFamily = 'none' | 'illusion' | 'strong_illusion' | 'clone'
 export type SummonInheritancePolicy = {
   family: SummonInheritanceFamily
@@ -441,6 +441,26 @@ export type SummonedUnit = {
     attackSpeedPct: number
     barrierRemaining: number
   }>
+  astralSpiritState?: {
+    phase: 'outbound' | 'waiting' | 'returning'
+    destination: Point
+    returnBy: number
+    returnAfter: number
+    radius: number
+    passDamage: number
+    heroDamageBonus: number
+    creepDamageBonus: number
+    heroMoveSpeedPct: number
+    creepMoveSpeedPct: number
+    moveSpeedCapPct: number
+    buffDuration: number
+    scepterImmunityPerHero: number
+    immunityResistance: number
+    skillLevel: number
+    hitEntityIds: string[]
+    heroHits: number
+    creepHits: number
+  }
   lastHitBy?: CombatSource
 }
 export type Tower = {
@@ -741,6 +761,7 @@ export type TimedEffect = {
   value: number
   stacks: number
   modifiers?: {
+    damageFlat?: number
     damagePct?: number
     armorFlat?: number
     moveSpeedPct?: number
@@ -2341,6 +2362,11 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
       cloneField: summon.cloneField ? { ...summon.cloneField, center: { ...summon.cloneField.center } } : undefined,
       clonePendingCasts: summon.clonePendingCasts?.map((cast) => ({ ...cast, pos: { ...cast.pos } })),
       cloneItemEffects: summon.cloneItemEffects?.map((effect) => ({ ...effect })),
+      astralSpiritState: summon.astralSpiritState ? {
+        ...summon.astralSpiritState,
+        destination: { ...summon.astralSpiritState.destination },
+        hitEntityIds: [...summon.astralSpiritState.hitEntityIds],
+      } : undefined,
       lastHitBy: summon.lastHitBy ? { ...summon.lastHitBy } : undefined,
     })),
     towers: state.towers.map((tower) => ({ ...tower, pos: { ...tower.pos } })),
@@ -7649,7 +7675,7 @@ export function getEffectiveArcaneDamage(state: SimulationState, arcane: Arcane)
   const passive = getArcanePassiveCombatModifiers(state, arcane)
   return applyFlatAndPercentModifiers(
     arcane.stats.damage,
-    [passive.flatDamage],
+    [passive.flatDamage, ...modifiers.map((effect) => effect.modifiers?.damageFlat ?? 0)],
     [...modifiers.map((effect) => effect.modifiers?.damagePct ?? 0), passive.damagePct],
   )
 }
@@ -7658,9 +7684,10 @@ export function getEffectiveArcaneDamageRange(state: SimulationState, arcane: Ar
   const modifiers = getArcaneStatModifierEffects(state, arcane)
   const passive = getArcanePassiveCombatModifiers(state, arcane)
   const percents = [...modifiers.map((effect) => effect.modifiers?.damagePct ?? 0), passive.damagePct]
+  const flats = [passive.flatDamage, ...modifiers.map((effect) => effect.modifiers?.damageFlat ?? 0)]
   return {
-    min: applyFlatAndPercentModifiers(arcane.stats.damageMin, [passive.flatDamage], percents),
-    max: applyFlatAndPercentModifiers(arcane.stats.damageMax, [passive.flatDamage], percents),
+    min: applyFlatAndPercentModifiers(arcane.stats.damageMin, flats, percents),
+    max: applyFlatAndPercentModifiers(arcane.stats.damageMax, flats, percents),
   }
 }
 
@@ -9695,6 +9722,9 @@ export function resolveSimpleSkillEffects(
   commitCast = true,
   centerOverride?: Point,
 ) {
+  if (skill.sourceAbilityId === astralSpiritAbilityId) {
+    return resolveAstralSpiritCast(state, arcane, skill, level, target, commitCast)
+  }
   const manaCost = getSimpleSkillManaCost(arcane, skill, level)
   const affectedTargets = getSimpleSkillAffectedTargets(state, arcane, skill, profile, target, centerOverride)
 
@@ -10455,6 +10485,86 @@ export function applySimpleSkillCastSummons(
     }
   }
   return spawned
+}
+
+const astralSpiritAbilityId = 1392
+
+export function resolveAstralSpiritCast(
+  state: SimulationState,
+  caster: Arcane,
+  skill: HeroSkillDefinition,
+  level: number,
+  target: CombatTarget,
+  commitCast = true,
+) {
+  const activeSpirit = state.summons.find((summon) => (
+    summon.ownerId === caster.id && summon.variant === 'astral_spirit' && isSummonActive(state, summon)
+  ))
+  if (activeSpirit) return false
+
+  const spiritDuration = Math.max(0.5, getSimpleSkillNumericValue(skill, 'spirit_duration', level, 10))
+  const destination = clampToMapBounds({ ...target.pos })
+  const spirit: SummonedUnit = {
+    id: `${caster.id}-astral-spirit-${Math.round(state.time * 1000)}`,
+    ownerId: caster.id,
+    sourceSkillId: skill.id,
+    name: `${skill.name}: Astral Spirit`,
+    archetype: 'unit',
+    team: caster.team,
+    pos: { ...caster.pos },
+    hp: 1,
+    maxHp: 1,
+    damage: 0,
+    armor: 0,
+    magicResistance: 100,
+    range: 0,
+    visionRange: Math.max(2, getSimpleSkillNumericValue(skill, 'radius', level, 275) / 140),
+    moveSpeed: Math.max(1, getSimpleSkillNumericValue(skill, 'speed', level, 900) / 45),
+    attackInterval: 99,
+    lastAttack: state.time,
+    spawnedAt: state.time,
+    expiresAt: state.time + spiritDuration + 12,
+    goldReward: 0,
+    xpReward: 0,
+    canMove: true,
+    canAttack: false,
+    damageTakenMultiplier: 0,
+    buildingDamageMultiplier: 0,
+    healingAuraPct: 0,
+    channelBound: false,
+    variant: 'astral_spirit',
+    untargetable: true,
+    astralSpiritState: {
+      phase: 'outbound',
+      destination,
+      returnBy: state.time + spiritDuration,
+      returnAfter: state.time + Math.min(spiritDuration, 2.25),
+      radius: Math.max(0.5, getSimpleSkillNumericValue(skill, 'radius', level, 275) / 140),
+      passDamage: Math.max(0, getSimpleSkillNumericValue(skill, 'pass_damage', level, 50)),
+      heroDamageBonus: Math.max(0, getSimpleSkillNumericValue(skill, 'damage_heroes', level, 0)),
+      creepDamageBonus: Math.max(0, getSimpleSkillNumericValue(skill, 'damage_creeps', level, 0)),
+      heroMoveSpeedPct: Math.max(0, getSimpleSkillNumericValue(skill, 'move_pct_heroes', level, 0)) / 100,
+      creepMoveSpeedPct: Math.max(0, getSimpleSkillNumericValue(skill, 'move_pct_creeps', level, 0)) / 100,
+      moveSpeedCapPct: Math.max(0, getSimpleSkillNumericValue(skill, 'move_pct_cap', level, 40)) / 100,
+      buffDuration: Math.max(0.1, getSimpleSkillNumericValue(skill, 'buff_duration', level, 10)),
+      scepterImmunityPerHero: hasArcaneAbilityUpgrade(caster, 'scepter')
+        ? Math.max(0, getSimpleSkillNumericValue(skill, 'scepterDebuffImmunityPerHero', level, 0))
+        : 0,
+      immunityResistance: Math.max(0, getSimpleSkillNumericValue(skill, 'immunity_resist', level, 50)),
+      skillLevel: level,
+      hitEntityIds: [],
+      heroHits: 0,
+      creepHits: 0,
+    },
+  }
+  state.summons = [...state.summons, spirit]
+  teamVisionProviderCache.delete(state)
+  addSimpleSkillEffect(state, caster, target)
+  if (commitCast) {
+    finishSimpleSkillCast(state, caster, skill, getSimpleSkillManaCost(caster, skill, level), target)
+    registerCombatSkillReservation(state, caster, skill, level, target, getSkillEffectProfile(skill, level))
+  }
+  return true
 }
 
 const eldritchSummoningSkillId = 'h029_soul_warlock_innate_1_1274'
@@ -11476,6 +11586,139 @@ export function tryUseHauntReality(state: SimulationState, owner: Arcane) {
   return true
 }
 
+function getAstralSpiritCollisionTargets(state: SimulationState, spirit: SummonedUnit) {
+  return [
+    ...state.arcanes.filter((arcane) => arcane.team !== spirit.team && isArcaneTargetable(state, arcane)),
+    ...state.creeps.filter((creep) => creep.team !== spirit.team && creep.hp > 0),
+    ...state.summons.filter((summon) => summon.id !== spirit.id && summon.team !== spirit.team && isSummonTargetable(state, summon)),
+    ...state.camps.filter((camp) => camp.hp > 0 && camp.respawn <= state.time),
+    ...(state.boss.hp > 0 && state.boss.respawn <= state.time ? [state.boss] : []),
+  ]
+}
+
+function applyAstralSpiritPassDamage(
+  state: SimulationState,
+  spirit: SummonedUnit,
+  from: Point,
+  to: Point,
+  owner: Arcane,
+) {
+  const runtime = spirit.astralSpiritState
+  if (!runtime) return
+  const hitIds = new Set(runtime.hitEntityIds)
+  for (const target of getAstralSpiritCollisionTargets(state, spirit)) {
+    if (hitIds.has(target.id)) continue
+    const closestPoint = projectPointToSegment(target.pos, from, to)
+    const contactRadius = runtime.radius + getEntityCollisionRadius(target) * 0.6
+    if (distanceSquared(target.pos, closestPoint) > contactRadius * contactRadius) continue
+
+    hitIds.add(target.id)
+    runtime.hitEntityIds.push(target.id)
+    const heroLike = 'player' in target || ('ownerId' in target && (target.archetype === 'illusion' || target.archetype === 'clone'))
+    if (heroLike) runtime.heroHits += 1
+    else runtime.creepHits += 1
+    if ('player' in target) {
+      applyTowerAggro(state, target.team, owner.id)
+      applyCreepAggro(state, target.team, owner.id)
+    }
+    if (runtime.passDamage > 0) {
+      damageEntity(state, target.id, runtime.passDamage, {
+        id: owner.id,
+        label: `${owner.player}: Astral Spirit`,
+        team: owner.team,
+        damageType: 'magical',
+        sourcePosition: spirit.pos,
+      })
+    }
+  }
+}
+
+function completeAstralSpiritReturn(state: SimulationState, spirit: SummonedUnit, owner: Arcane) {
+  const runtime = spirit.astralSpiritState
+  if (!runtime) return
+  const damageFlat = runtime.heroHits * runtime.heroDamageBonus + runtime.creepHits * runtime.creepDamageBonus
+  const moveSpeedPct = Math.min(
+    runtime.moveSpeedCapPct,
+    runtime.heroHits * runtime.heroMoveSpeedPct + runtime.creepHits * runtime.creepMoveSpeedPct,
+  )
+  if (damageFlat > 0 || moveSpeedPct > 0) {
+    addTimedEffect(state, owner, {
+      sourceId: `${spirit.id}-return-buff`,
+      sourceName: 'Astral Spirit',
+      sourceTeam: owner.team,
+      kind: 'buff',
+      polarity: 'positive',
+      value: 1,
+      modifiers: { damageFlat, moveSpeedPct },
+      duration: runtime.buffDuration,
+      dispelType: 'basic',
+    })
+  }
+  const immunityDuration = runtime.heroHits * runtime.scepterImmunityPerHero
+  if (immunityDuration > 0) {
+    const skill = getArcaneRuntimeSkills(owner).find((candidate) => candidate.sourceAbilityId === astralSpiritAbilityId)
+    if (skill) {
+      applySimpleSkillImmunityState(
+        state,
+        owner,
+        skill,
+        runtime.skillLevel,
+        owner,
+        'debuff_immunity',
+        immunityDuration,
+        1,
+        undefined,
+        runtime.immunityResistance,
+      )
+    }
+  }
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `astral-return-${spirit.id}-${state.time}`,
+      team: owner.team,
+      pos: { ...owner.pos },
+      label: `SPIRIT ${runtime.heroHits}H ${runtime.creepHits}C`,
+      createdAt: state.time,
+      expiresAt: state.time + 1.2,
+    },
+  ]
+  spirit.pos = { ...owner.pos }
+  spirit.expiresAt = state.time
+  teamVisionProviderCache.delete(state)
+}
+
+export function updateAstralSpiritRuntime(state: SimulationState, spirit: SummonedUnit, delta: number) {
+  const runtime = spirit.astralSpiritState
+  if (spirit.variant !== 'astral_spirit' || !runtime) return false
+  const owner = state.arcanes.find((arcane) => arcane.id === spirit.ownerId)
+  if (!owner || owner.stats.hp <= 0 || owner.respawn > state.time) {
+    spirit.expiresAt = state.time
+    return true
+  }
+
+  if (runtime.phase === 'waiting') {
+    if (state.time >= runtime.returnAfter || state.time >= runtime.returnBy) runtime.phase = 'returning'
+    return true
+  }
+
+  const destination = runtime.phase === 'returning' ? owner.pos : runtime.destination
+  const from = { ...spirit.pos }
+  const travelDistance = Math.max(0, spirit.moveSpeed * delta)
+  spirit.pos = moveToward(spirit.pos, destination, travelDistance)
+  applyAstralSpiritPassDamage(state, spirit, from, spirit.pos, owner)
+
+  if (distanceSquared(spirit.pos, destination) <= 0.05 * 0.05 || distance(from, destination) <= travelDistance) {
+    spirit.pos = { ...destination }
+    if (runtime.phase === 'returning') completeAstralSpiritReturn(state, spirit, owner)
+    else runtime.phase = state.time >= runtime.returnAfter || state.time >= runtime.returnBy ? 'returning' : 'waiting'
+  } else if (state.time >= runtime.returnBy) {
+    runtime.phase = 'returning'
+  }
+  teamVisionProviderCache.delete(state)
+  return true
+}
+
 export function updateSummonedUnits(state: SimulationState, delta: number) {
   state.arcanes.forEach((arcane) => tryUseHauntReality(state, arcane))
   for (const summon of state.summons) {
@@ -11489,6 +11732,10 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
     }
     if (summon.sourceSkillId === tombstoneSkillId && summon.variant !== 'tombstone_zombie') {
       updateTombstoneZombieSpawning(state, summon)
+      continue
+    }
+    if (summon.variant === 'astral_spirit') {
+      updateAstralSpiritRuntime(state, summon, delta)
       continue
     }
     updateFamiliarCloak(state, summon)

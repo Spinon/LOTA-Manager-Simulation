@@ -1783,20 +1783,21 @@ function drawSummonLayer(
     const ward = archetype === 'ward' || archetype === 'healing_ward'
     const illusion = archetype === 'illusion'
     const clone = archetype === 'clone'
+    const astralSpirit = summon[26] === 'astral_spirit'
     context.save()
     context.translate(point.x, point.y)
-    if (!ward && !illusion) context.rotate(Math.PI / 4)
+    if (!ward && !illusion && !astralSpirit) context.rotate(Math.PI / 4)
     context.fillStyle = 'rgba(4, 8, 12, 0.82)'
-    if (illusion) {
+    if (illusion || astralSpirit) {
       context.beginPath()
       context.arc(0, 0, radius + 1.5, 0, Math.PI * 2)
       context.fill()
     } else {
       context.fillRect(-radius - 1.5, -radius - 1.5, (radius + 1.5) * 2, (radius + 1.5) * 2)
     }
-    context.fillStyle = teamInfo[summon[4]].primary
-    context.globalAlpha = 0.42 + hpRatio * 0.5
-    if (illusion) {
+    context.fillStyle = astralSpirit ? '#9fe7ff' : teamInfo[summon[4]].primary
+    context.globalAlpha = astralSpirit ? 0.58 : 0.42 + hpRatio * 0.5
+    if (illusion || astralSpirit) {
       context.beginPath()
       context.arc(0, 0, radius, 0, Math.PI * 2)
       context.fill()
@@ -1806,8 +1807,8 @@ function drawSummonLayer(
     context.globalAlpha = 1
     context.strokeStyle = summon[0] === selectedId ? '#f6c85d' : 'rgba(255, 255, 255, 0.72)'
     context.lineWidth = summon[0] === selectedId ? 2.2 : 1
-    if (illusion) {
-      context.setLineDash([2, 1.5])
+    if (illusion || astralSpirit) {
+      context.setLineDash(astralSpirit ? [1, 2] : [2, 1.5])
       context.beginPath()
       context.arc(0, 0, radius, 0, Math.PI * 2)
       context.stroke()
@@ -1824,8 +1825,13 @@ function drawSummonLayer(
       context.stroke()
     }
     if (clone) context.strokeRect(-radius + 1.8, -radius + 1.8, (radius - 1.8) * 2, (radius - 1.8) * 2)
+    if (astralSpirit) {
+      context.beginPath()
+      context.arc(0, 0, radius * 0.42, 0, Math.PI * 2)
+      context.stroke()
+    }
     if (summon[0] === selectedId) {
-      if (illusion) {
+      if (illusion || astralSpirit) {
         context.beginPath()
         context.arc(0, 0, radius + 3, 0, Math.PI * 2)
         context.stroke()

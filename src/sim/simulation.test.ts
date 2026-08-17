@@ -2660,6 +2660,70 @@ let state: SimulationState = initialState
   assert.equal(resolveSimpleSkillEffects(baseStarbreakerState, baseStarbreakerCaster, baseStarbreakerSkill, 4, baseStarbreakerEnemy), true)
   assert.equal(isArcaneDebuffImmune(baseStarbreakerState, baseStarbreakerCaster), false, 'Starbreaker should require Shard for immunity')
 
+  const astralState = createInitialState('astral-spirit-return-runtime')
+  astralState.time = 600
+  const astralCaster = astralState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const astralEnemies = astralState.arcanes.filter((arcane) => arcane.team === 'dusk')
+  astralCaster.heroDefinitionId = 'h095_ancient_titan'
+  astralCaster.skillLevels = { W: 4 }
+  astralCaster.items = [shopCatalog.find((item) => item.id === 'i135_grand_spell_scepter')!.name]
+  astralCaster.pos = { x: 20, y: 20 }
+  astralCaster.stats.mana = 1000
+  astralCaster.stats.maxMana = Math.max(astralCaster.stats.maxMana, 1000)
+  astralEnemies.forEach((enemy, index) => {
+    enemy.pos = index < 2 ? { x: 23 + index * 2, y: 20 } : { x: 90, y: 90 }
+  })
+  astralState.creeps = spawnWave(astralState)
+  const astralEnemyCreeps = astralState.creeps.filter((creep) => creep.team === 'dusk')
+  astralEnemyCreeps.forEach((creep, index) => {
+    creep.pos = index < 2 ? { x: 22 + index * 2, y: 20 } : { x: 90, y: 90 }
+  })
+  const astralSkill = getArcaneRuntimeSkills(astralCaster).find((skill) => skill.sourceAbilityId === 1392)!
+  assert.deepEqual(astralSkill.values.scepterDebuffImmunityPerHero, [2])
+  const astralTargetId = astralEnemies[1].id
+  const astralCreepId = astralEnemyCreeps[0].id
+  const astralTargetHp = astralEnemies[1].stats.hp
+  const astralCreepHp = astralEnemyCreeps[0].hp
+  const astralBaseDamage = getEffectiveArcaneDamage(astralState, astralCaster)
+  const astralBaseMoveSpeed = getEffectiveArcaneMoveSpeed(astralState, astralCaster)
+  assert.equal(resolveSimpleSkillEffects(astralState, astralCaster, astralSkill, 4, astralEnemies[1]), true)
+  assert.equal(astralEnemies[1].stats.hp, astralTargetHp, 'Astral Spirit should deal damage while travelling, not immediately on cast')
+  const astralSpirit = astralState.summons.find((summon) => summon.variant === 'astral_spirit')!
+  assert.ok(astralSpirit?.untargetable && !astralSpirit.canAttack)
+  updateSummonedUnits(astralState, 0.25)
+  assert.equal(astralSpirit.astralSpiritState?.heroHits, 2)
+  assert.equal(astralSpirit.astralSpiritState?.creepHits, 2)
+  assert.ok(astralState.arcanes.find((arcane) => arcane.id === astralTargetId)!.stats.hp < astralTargetHp)
+  assert.ok(astralState.creeps.find((creep) => creep.id === astralCreepId)!.hp < astralCreepHp)
+  const astralTargetHpAfterOutbound = astralState.arcanes.find((arcane) => arcane.id === astralTargetId)!.stats.hp
+  astralState.time += 2.3
+  updateSummonedUnits(astralState, 0.1)
+  updateSummonedUnits(astralState, 0.25)
+  assert.equal(astralSpirit.expiresAt, astralState.time, 'the spirit should expire after rejoining its owner')
+  assert.equal(astralState.arcanes.find((arcane) => arcane.id === astralTargetId)!.stats.hp, astralTargetHpAfterOutbound, 'return travel should not damage the same unit twice')
+  assert.ok(Math.abs(getEffectiveArcaneDamage(astralState, astralCaster) - astralBaseDamage - 190) < 0.0001)
+  assert.ok(Math.abs(getEffectiveArcaneMoveSpeed(astralState, astralCaster) / astralBaseMoveSpeed - 1.17) < 0.0001)
+  assert.equal(isArcaneDebuffImmune(astralState, astralCaster), true)
+  assert.ok(getEffectiveArcaneMagicResistance(astralState, astralCaster) >= 50)
+  const astralImmunity = astralState.timedEffects.find((effect) => effect.targetId === astralCaster.id && effect.kind === 'debuff_immunity')!
+  assert.ok(Math.abs(astralImmunity.expiresAt - astralState.time - 4) < 0.0001, 'Scepter should grant two seconds per hero hit')
+
+  const baseAstralState = createInitialState('astral-spirit-base-no-immunity-runtime')
+  baseAstralState.time = 600
+  const baseAstralCaster = baseAstralState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const baseAstralEnemy = baseAstralState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  baseAstralCaster.heroDefinitionId = 'h095_ancient_titan'
+  baseAstralCaster.skillLevels = { W: 4 }
+  baseAstralCaster.pos = { x: 20, y: 20 }
+  baseAstralEnemy.pos = { x: 24, y: 20 }
+  const baseAstralSkill = getArcaneRuntimeSkills(baseAstralCaster).find((skill) => skill.sourceAbilityId === 1392)!
+  assert.equal(resolveSimpleSkillEffects(baseAstralState, baseAstralCaster, baseAstralSkill, 4, baseAstralEnemy), true)
+  updateSummonedUnits(baseAstralState, 0.25)
+  baseAstralState.time += 2.3
+  updateSummonedUnits(baseAstralState, 0.1)
+  updateSummonedUnits(baseAstralState, 0.25)
+  assert.equal(isArcaneDebuffImmune(baseAstralState, baseAstralCaster), false, 'Astral Spirit should require Scepter for return immunity')
+
   const fowlState = createInitialState('fowl-play-lethal-prevention-runtime')
   fowlState.time = 600
   let fowlTarget = fowlState.arcanes.find((arcane) => arcane.team === 'dawn')!

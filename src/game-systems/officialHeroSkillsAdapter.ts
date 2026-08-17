@@ -445,6 +445,9 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
     assignUpgradeAlias(values, skill, 'scepterDebuffImmunityResist', ['debuff_immune_resist'], 'scepter')
     assignUpgradeAlias(values, skill, 'scepterNearbyHotBoostPct', ['nearby_hot_boost'], 'scepter')
   }
+  if (skill.sourceInternalName === 'elder_titan_ancestral_spirit') {
+    assignUpgradeAlias(values, skill, 'scepterDebuffImmunityPerHero', ['scepter_magic_immune_per_hero'], 'scepter')
+  }
   if (skill.sourceInternalName === 'dawnbreaker_fire_wreath') {
     assignUpgradeAlias(values, skill, 'shardImmunityResist', ['immunity_resist'], 'shard')
     assignUpgradeAlias(values, skill, 'shardMovementPenaltyPct', ['shard_movement_penalty'], 'shard')
