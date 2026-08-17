@@ -45,6 +45,7 @@ import {
   getStatBonusModifiers,
   getStructureLabel,
   getStructureMapLabel,
+  getSummonVisualFamily,
   getTeamNetWorth,
   hasBackdoorProtection,
   isStructureBackdoorProtectedForTeam,
@@ -90,6 +91,7 @@ import {
   type Structure,
   type StructureKind,
   type SummonedUnit,
+  type SummonVisualFamily,
   type TeamId,
   type TeamPlan,
   type TimedEffect,
@@ -1764,6 +1766,71 @@ function drawCreepLayer(
   }
 }
 
+function traceSummonShape(context: CanvasRenderingContext2D, family: SummonVisualFamily, radius: number) {
+  context.beginPath()
+  if (family === 'illusion' || family === 'strong_illusion' || family === 'astral_spirit') {
+    context.arc(0, 0, radius, 0, Math.PI * 2)
+    return
+  }
+  if (family === 'clone') {
+    for (let index = 0; index < 6; index += 1) {
+      const angle = -Math.PI / 2 + index * Math.PI / 3
+      const x = Math.cos(angle) * radius
+      const y = Math.sin(angle) * radius
+      if (index === 0) context.moveTo(x, y)
+      else context.lineTo(x, y)
+    }
+    context.closePath()
+    return
+  }
+  if (family === 'ward' || family === 'healing_ward') {
+    context.rect(-radius, -radius, radius * 2, radius * 2)
+    return
+  }
+  context.moveTo(0, -radius)
+  context.lineTo(radius, 0)
+  context.lineTo(0, radius)
+  context.lineTo(-radius, 0)
+  context.closePath()
+}
+
+function getSummonIdentityAlpha(family: SummonVisualFamily) {
+  if (family === 'illusion') return 0.4
+  if (family === 'strong_illusion') return 0.64
+  if (family === 'astral_spirit') return 0.58
+  if (family === 'clone') return 0.92
+  return 0.84
+}
+
+function drawSummonIdentityGlyph(context: CanvasRenderingContext2D, family: SummonVisualFamily, radius: number) {
+  if (family === 'illusion') return
+  context.beginPath()
+  if (family === 'strong_illusion') {
+    context.arc(0, 0, radius * 0.58, 0, Math.PI * 2)
+  } else if (family === 'clone') {
+    traceSummonShape(context, family, radius * 0.58)
+  } else if (family === 'healing_ward') {
+    context.moveTo(-radius * 0.55, 0)
+    context.lineTo(radius * 0.55, 0)
+    context.moveTo(0, -radius * 0.55)
+    context.lineTo(0, radius * 0.55)
+  } else if (family === 'ward') {
+    context.moveTo(0, -radius * 0.62)
+    context.lineTo(0, radius * 0.62)
+    context.moveTo(-radius * 0.42, radius * 0.25)
+    context.lineTo(0, radius * 0.62)
+    context.lineTo(radius * 0.42, radius * 0.25)
+  } else if (family === 'controlled') {
+    context.moveTo(-radius * 0.35, 0)
+    context.lineTo(radius * 0.35, 0)
+    context.moveTo(0, -radius * 0.35)
+    context.lineTo(0, radius * 0.35)
+  } else if (family === 'astral_spirit') {
+    context.arc(0, 0, radius * 0.42, 0, Math.PI * 2)
+  }
+  context.stroke()
+}
+
 function drawSummonLayer(
   context: CanvasRenderingContext2D,
   viewport: CanvasViewport,
@@ -1779,65 +1846,50 @@ function drawSummonLayer(
     const point = toCanvasPoint(visual, viewport)
     const radius = 4.6
     const hpRatio = clampNumber(summon[7] / Math.max(1, summon[8]), 0, 1)
-    const archetype = summon[19]
-    const ward = archetype === 'ward' || archetype === 'healing_ward'
-    const illusion = archetype === 'illusion'
-    const clone = archetype === 'clone'
-    const astralSpirit = summon[26] === 'astral_spirit'
+    const family = getSummonVisualFamily(summon[19], summon[27], summon[26])
+    const teamColor = teamInfo[summon[4]].primary
+    const selected = summon[0] === selectedId
     context.save()
     context.translate(point.x, point.y)
-    if (!ward && !illusion && !astralSpirit) context.rotate(Math.PI / 4)
+
     context.fillStyle = 'rgba(4, 8, 12, 0.82)'
-    if (illusion || astralSpirit) {
-      context.beginPath()
-      context.arc(0, 0, radius + 1.5, 0, Math.PI * 2)
-      context.fill()
-    } else {
-      context.fillRect(-radius - 1.5, -radius - 1.5, (radius + 1.5) * 2, (radius + 1.5) * 2)
-    }
-    context.fillStyle = astralSpirit ? '#9fe7ff' : teamInfo[summon[4]].primary
-    context.globalAlpha = astralSpirit ? 0.58 : 0.42 + hpRatio * 0.5
-    if (illusion || astralSpirit) {
-      context.beginPath()
-      context.arc(0, 0, radius, 0, Math.PI * 2)
-      context.fill()
-    } else {
-      context.fillRect(-radius, -radius, radius * 2, radius * 2)
-    }
+    traceSummonShape(context, family, radius + 1.4)
+    context.fill()
+    context.fillStyle = family === 'astral_spirit' ? '#9fe7ff' : teamColor
+    context.globalAlpha = getSummonIdentityAlpha(family)
+    traceSummonShape(context, family, radius)
+    context.fill()
     context.globalAlpha = 1
-    context.strokeStyle = summon[0] === selectedId ? '#f6c85d' : 'rgba(255, 255, 255, 0.72)'
-    context.lineWidth = summon[0] === selectedId ? 2.2 : 1
-    if (illusion || astralSpirit) {
-      context.setLineDash(astralSpirit ? [1, 2] : [2, 1.5])
+
+    context.strokeStyle = 'rgba(255, 255, 255, 0.78)'
+    context.lineWidth = family === 'strong_illusion' || family === 'clone' ? 1.25 : 1
+    if (family === 'illusion') context.setLineDash([2, 1.7])
+    if (family === 'strong_illusion') context.setLineDash([4, 1.4])
+    if (family === 'astral_spirit') context.setLineDash([1, 2])
+    traceSummonShape(context, family, radius)
+    context.stroke()
+    context.setLineDash([])
+    drawSummonIdentityGlyph(context, family, radius)
+
+    context.lineWidth = 2
+    context.strokeStyle = 'rgba(0, 0, 0, 0.72)'
+    context.beginPath()
+    context.arc(0, 0, radius + 2, 0, Math.PI * 2)
+    context.stroke()
+    if (hpRatio > 0) {
+      context.strokeStyle = teamColor
       context.beginPath()
-      context.arc(0, 0, radius, 0, Math.PI * 2)
+      context.arc(0, 0, radius + 2, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * hpRatio)
+      context.stroke()
+    }
+    if (selected) {
+      context.lineWidth = 1.5
+      context.strokeStyle = '#f6c85d'
+      context.setLineDash([2.4, 1.8])
+      context.beginPath()
+      context.arc(0, 0, radius + 4.5, 0, Math.PI * 2)
       context.stroke()
       context.setLineDash([])
-    } else {
-      context.strokeRect(-radius, -radius, radius * 2, radius * 2)
-    }
-    if (archetype === 'healing_ward') {
-      context.beginPath()
-      context.moveTo(-2.5, 0)
-      context.lineTo(2.5, 0)
-      context.moveTo(0, -2.5)
-      context.lineTo(0, 2.5)
-      context.stroke()
-    }
-    if (clone) context.strokeRect(-radius + 1.8, -radius + 1.8, (radius - 1.8) * 2, (radius - 1.8) * 2)
-    if (astralSpirit) {
-      context.beginPath()
-      context.arc(0, 0, radius * 0.42, 0, Math.PI * 2)
-      context.stroke()
-    }
-    if (summon[0] === selectedId) {
-      if (illusion || astralSpirit) {
-        context.beginPath()
-        context.arc(0, 0, radius + 3, 0, Math.PI * 2)
-        context.stroke()
-      } else {
-        context.strokeRect(-radius - 3, -radius - 3, (radius + 3) * 2, (radius + 3) * 2)
-      }
     }
     context.restore()
   }
@@ -2403,6 +2455,16 @@ function MapNode({
   )
 }
 
+function getSummonVisualFamilyLabel(family: SummonVisualFamily) {
+  if (family === 'illusion') return 'Ilusao comum'
+  if (family === 'strong_illusion') return 'Ilusao forte'
+  if (family === 'clone') return 'Clone heroico'
+  if (family === 'ward') return 'Ward ofensiva'
+  if (family === 'healing_ward') return 'Ward de cura'
+  if (family === 'astral_spirit') return 'Espirito astral'
+  return 'Criatura controlada'
+}
+
 function Inspector({ entity, state }: { entity: Arcane | Creep | SummonedUnit | Tower | Structure | Base | Camp | Boss | MapRune | undefined; state: SimulationState }) {
   if (import.meta.env.DEV) playbackUiStats.inspectorRenders += 1
   if (!entity) return <div className="detail-empty">Selecione um Arcane, torre, base, creep ou campo neutro.</div>
@@ -2651,23 +2713,27 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | SummonedUnit | 
 
   if ('ownerId' in entity) {
     const owner = state.arcanes.find((arcane) => arcane.id === entity.ownerId)
-    const archetypeLabels = {
-      unit: 'Unidade invocada',
-      ward: 'Ward',
-      healing_ward: 'Ward de cura',
-      illusion: 'Ilusao',
-      clone: 'Clone',
-    }
+    const sourceSkill = owner && getArcaneRuntimeSkills(owner).find((skill) => skill.id === entity.sourceSkillId)
+    const family = getSummonVisualFamily(entity.archetype, entity.unitSeedId, entity.variant)
+    const familyLabel = getSummonVisualFamilyLabel(family)
+    const sourceLabel = sourceSkill ? `${sourceSkill.key} ${getSkillShortName(sourceSkill)}` : entity.sourceSkillId
+    const remainingDuration = Math.max(0, entity.expiresAt - state.time)
+    const durationLabel = remainingDuration >= 3600 ? 'Persistente' : `${Math.ceil(remainingDuration)}s`
     return (
       <div className="detail-panel unit-detail">
-        <div className="detail-icon"><Swords size={21} /></div>
+        <div className={`detail-icon summon-detail-icon ${family}`}><Swords size={21} /></div>
         <div className="detail-title">
           <strong>{entity.name}</strong>
-          <span>{archetypeLabels[entity.archetype]} / {teamInfo[entity.team].name} / {owner?.player ?? 'dono ausente'}</span>
+          <span>{familyLabel} / {teamInfo[entity.team].name}</span>
+          <em>{sourceLabel}</em>
         </div>
         <MetricGroup
-          title="Combate"
+          title="Unidade"
           items={[
+            ['Tipo', familyLabel],
+            ['Dono', owner?.player ?? 'Ausente'],
+            ['Origem', sourceLabel],
+            ['Estado', entity.untargetable ? 'Intangivel' : 'Alvejavel'],
             ['Vida', `${Math.round(entity.hp)} / ${entity.maxHp}`],
             ['Dano', `${entity.damage}`],
             ['Armadura', `${entity.armor.toFixed(1)}`],
@@ -2679,7 +2745,7 @@ function Inspector({ entity, state }: { entity: Arcane | Creep | SummonedUnit | 
             ['Dano recebido', `${Math.round(entity.damageTakenMultiplier * 100)}%`],
             ...(entity.buildingDamageMultiplier < 1 ? [['Dano em estruturas', `${Math.round(entity.buildingDamageMultiplier * 100)}%`] as [string, string]] : []),
             ...(entity.healingAuraPct > 0 ? [['Aura de cura', `${(entity.healingAuraPct * 100).toFixed(1)}%/s`] as [string, string]] : []),
-            ['Duracao', `${Math.max(0, Math.ceil(entity.expiresAt - state.time))}s`],
+            ['Duracao', durationLabel],
             ['Bounty', `${entity.goldReward} ouro / ${entity.xpReward} XP`],
           ]}
         />

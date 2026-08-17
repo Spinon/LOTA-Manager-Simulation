@@ -681,7 +681,7 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 
 ---
 
-### [ ] T16.1 - Linguagem visual de ilusões, clones e criaturas controladas
+### [x] T16.1 - Linguagem visual de ilusões, clones e criaturas controladas
 
 **Objetivo**: tornar cada família de unidade invocada reconhecível imediatamente no minimapa sem depender apenas de cor, mantendo a leitura da equipe, seleção e HP.
 
@@ -696,6 +696,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Usar animação sutil somente quando ela acrescentar leitura e respeitar a carga de renderização em 1x e 16x. Nenhuma família deve depender exclusivamente de mudança de cor, favorecendo acessibilidade e leitura em teamfights.
 
 **Critérios**: ilusões, clones, wards e criaturas são distinguíveis em movimento e paradas, nos dois times e sob seleção; screenshots desktop/mobile, smoke visual e benchmark não mostram sobreposição nem regressão perceptível de FPS.
+
+**Entrega (2026-08-17)**:
+- Uma classificação única derivada de `archetype`, `unitSeedId` e `variant` separa ilusão comum, ilusão forte, clone heroico, ward ofensiva, ward de cura, criatura controlada e espírito astral. Testes travam as sete famílias sem adicionar campos ao replay.
+- O corpo de cada família usa forma e contorno próprios: círculos tracejados simples/duplos para ilusões, hexágono duplo para clone, quadrados com glifos para wards, losango sólido para criaturas e círculo pontilhado com núcleo para Astral Spirit. Cor continua representando a equipe, mas não é o único identificador.
+- Opacidade de identidade agora é fixa por família. HP deixou de alterar transparência e passou para um aro independente, iniciado em 12 horas e consumido no sentido horário; seleção usa somente uma aura externa e não aumenta o token.
+- O Inspector identifica tipo, equipe, dono, skill de origem, targetability e duração restante. A assinatura visual do ícone repete a geometria do minimapa, mantendo leitura consistente entre arena e painel.
+- Smoke em Edge headless passou sem erros de console: desktop 1440x1000 com canvas 848x848 e 102 FPS aos 10:25; mobile 390x844 com canvas 360x186, 116 FPS no frame inicial e nenhum overflow horizontal.
+- Suíte completa, lint e build verdes. Benchmark de 5 minutos em 158,7x wall / 116,4x CPU, com digest `51a125c1f69f4a2a` preservado.
+- Próxima etapa: T17, começando pela matriz automática item x efeitos/tags x suporte runtime antes de alterar comportamento de compra ou combate.
 
 ---
 

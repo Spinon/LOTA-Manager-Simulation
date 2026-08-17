@@ -67,6 +67,7 @@ import {
   getSummonAuraMultiplier,
   getSummonInheritancePolicy,
   getSummonInheritedItemEffects,
+  getSummonVisualFamily,
   getTeamMatchOutcome,
   getTempestDoubleAccuracyPct,
   getTempestDoubleAllowedActiveItems,
@@ -2351,6 +2352,13 @@ let state: SimulationState = initialState
   assert.equal(getSummonInheritancePolicy(inheritedClone).copiesHeroPassives, true)
   assert.equal(getSummonInheritancePolicy(inheritedClone).itemPassives, 'full')
   assert.equal(getSummonInheritancePolicy(inheritedClone).copiesItemActives, true)
+  assert.equal(getSummonVisualFamily('illusion', 'summon_basic_illusion'), 'illusion')
+  assert.equal(getSummonVisualFamily('illusion', 'summon_strong_illusion'), 'strong_illusion')
+  assert.equal(getSummonVisualFamily('clone', 'summon_tempest_clone'), 'clone')
+  assert.equal(getSummonVisualFamily('ward', 'summon_serpent_ward'), 'ward')
+  assert.equal(getSummonVisualFamily('healing_ward', 'summon_healing_banner'), 'healing_ward')
+  assert.equal(getSummonVisualFamily('unit', 'summon_spirit_bear'), 'controlled')
+  assert.equal(getSummonVisualFamily('unit', undefined, 'astral_spirit'), 'astral_spirit')
   const cloneItemEffects = getSummonInheritedItemEffects(inheritedClone)
   assert.equal(cloneItemEffects.some((effect) => effect.effectId === 'chain_lightning_proc'), true, 'clones should inherit eligible attack procs')
   assert.equal(cloneItemEffects.some((effect) => effect.kind === 'active'), false, 'clones should not copy item actives in the current restriction tier')

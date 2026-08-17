@@ -371,6 +371,7 @@ export type SummonInheritancePolicy = {
   copiesTemporaryBuffs: boolean
   receivesTeamAuras: boolean
 }
+export type SummonVisualFamily = 'illusion' | 'strong_illusion' | 'clone' | 'ward' | 'healing_ward' | 'controlled' | 'astral_spirit'
 export type SummonedUnit = {
   id: string
   ownerId: string
@@ -7597,6 +7598,21 @@ export function getSummonInheritancePolicy(
   return summon.unitSeedId === 'summon_strong_illusion'
     ? summonInheritancePolicies.strong_illusion
     : summonInheritancePolicies.illusion
+}
+
+export function getSummonVisualFamily(
+  archetype: SkillSummonArchetype,
+  unitSeedId?: string,
+  variant?: SummonVariant,
+): SummonVisualFamily {
+  if (variant === 'astral_spirit') return 'astral_spirit'
+  if (archetype === 'clone') return 'clone'
+  if (archetype === 'healing_ward') return 'healing_ward'
+  if (archetype === 'ward') return 'ward'
+  if (archetype === 'illusion') {
+    return unitSeedId === 'summon_strong_illusion' ? 'strong_illusion' : 'illusion'
+  }
+  return 'controlled'
 }
 
 export function getIllusionInheritedAttackDamage(arcane: Arcane) {
