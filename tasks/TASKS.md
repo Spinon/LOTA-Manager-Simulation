@@ -592,6 +592,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Testes headless cobrem import, herança, mitigação, dano estrutural, bounty do Tempest Double e replay. Auditoria: 6 completas, 634 parciais, 12 aproximações e 82 ausentes. Suíte completa, lint e build verdes; benchmark de 5 minutos: mediana 309,9x wall / 230,5x CPU, digest `51a125c1f69f4a2a` preservado.
 - Próxima rodada da T16: modelar ilusões que copiam inimigos ou nascem de gatilhos passivos/diferidos, como Reflection, Disruption, Dark Portrait, Haunt e Juxtapose; depois revisar restrições de skills e itens por família de clone.
 
+**Progresso de ilusões por cópia e gatilho (2026-08-17)**:
+- Reflection, Disruption, Dark Portrait e Haunt agora copiam o snapshot efetivo do Arcane alvo, incluindo vida, dano, armadura, resistência mágica, alcance, visão, movimento e intervalo de ataque, em vez de herdarem o caster.
+- Reflection cria uma ilusão para cada inimigo na área oficial, mantém cada cópia vinculada à sua fonte e é invulnerável/não adquirível como alvo. Haunt cria uma cópia vinculada para cada Arcane inimigo vivo, sem depender da visão do caster, e encerra a ilusão quando o alvo morre.
+- Disruption materializa duas cópias somente após os 2,75s oficiais e preserva duração, dano base adicional e multiplicadores por nível. O banimento do alvo durante esse intervalo ainda será tratado junto à revisão de estados especiais; a geração diferida já não aparece nem fornece visão antes da ativação.
+- Dark Portrait usa 125% do dano do alvo, 275% de dano recebido, 30% de movimento adicional e duração de 25s. O desbloqueio permanece condicionado ao Scepter pelo runtime existente.
+- Juxtapose passou a executar o proc passivo em ataques do herói, o proc reduzido de 9% em ataques das próprias ilusões, duração secundária de 4s e limite oficial de 6/8/10 cópias. Break impede novos procs do herói.
+- Cópia, alvo vinculado, expiração conjunta e intangibilidade atravessam replay normal/comprimido. Testes cobrem os valores importados e as cinco famílias; auditoria: 6 completas, 635 parciais, 12 aproximações e 81 ausentes.
+- Próxima rodada da T16: revisar por família quais skills, passivas de item, auras e procs clones/ilusões podem copiar; depois modelar o banimento de Disruption e subskills de controle como Reality sem poluir o replay.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

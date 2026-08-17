@@ -55,6 +55,12 @@ type SummonMode = 'cast' | 'channel' | 'target_death' | 'on_attack' | 'on_death'
 type SummonImportProfile = {
   archetype: SummonArchetype
   mode: SummonMode
+  count?: number
+  copySource?: 'caster' | 'target'
+  targetScope?: 'default' | 'primary' | 'affected_enemies' | 'all_enemies'
+  locksTarget?: boolean
+  expiresWithTarget?: boolean
+  untargetable?: boolean
 }
 
 const summonImportProfiles: Record<string, SummonImportProfile> = {
@@ -82,7 +88,22 @@ const summonImportProfiles: Record<string, SummonImportProfile> = {
   naga_siren_mirror_image: { archetype: 'illusion', mode: 'cast' },
   phantom_lancer_spirit_lance: { archetype: 'illusion', mode: 'cast' },
   phantom_lancer_doppelwalk: { archetype: 'illusion', mode: 'cast' },
+  phantom_lancer_juxtapose: { archetype: 'illusion', mode: 'on_attack', count: 1 },
   terrorblade_conjure_image: { archetype: 'illusion', mode: 'cast' },
+  terrorblade_reflection: {
+    archetype: 'illusion', mode: 'cast', count: 1, copySource: 'target',
+    targetScope: 'affected_enemies', locksTarget: true, expiresWithTarget: true, untargetable: true,
+  },
+  spectre_haunt: {
+    archetype: 'illusion', mode: 'cast', count: 1, copySource: 'target',
+    targetScope: 'all_enemies', locksTarget: true, expiresWithTarget: true,
+  },
+  shadow_demon_disruption: {
+    archetype: 'illusion', mode: 'cast', count: 2, copySource: 'target', targetScope: 'primary',
+  },
+  grimstroke_dark_portrait: {
+    archetype: 'illusion', mode: 'cast', count: 1, copySource: 'target', targetScope: 'primary',
+  },
   visage_summon_familiars: { archetype: 'unit', mode: 'cast' },
   arc_warden_tempest_double: { archetype: 'clone', mode: 'cast' },
   ringmaster_funhouse_mirror: { archetype: 'illusion', mode: 'cast' },
@@ -108,7 +129,12 @@ const summonUnitSeedIds: Record<string, string> = {
   naga_siren_mirror_image: 'summon_basic_illusion',
   phantom_lancer_spirit_lance: 'summon_basic_illusion',
   phantom_lancer_doppelwalk: 'summon_basic_illusion',
+  phantom_lancer_juxtapose: 'summon_basic_illusion',
   terrorblade_conjure_image: 'summon_basic_illusion',
+  terrorblade_reflection: 'summon_basic_illusion',
+  spectre_haunt: 'summon_basic_illusion',
+  shadow_demon_disruption: 'summon_basic_illusion',
+  grimstroke_dark_portrait: 'summon_strong_illusion',
   visage_summon_familiars: 'summon_stone_familiar',
   arc_warden_tempest_double: 'summon_tempest_clone',
   ringmaster_funhouse_mirror: 'summon_basic_illusion',
@@ -252,11 +278,16 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
   assignControlDurationAlias(values, skill, 'leashDuration', 'leash')
   assignAlias(values, skill, 'heal', ['heal', 'heal_amount', 'health_restore'])
   assignAlias(values, skill, 'barrier', ['barrier', 'shield', 'damage_absorb'])
-  assignAlias(values, skill, 'slowPct', ['slow', 'movespeed_slow', 'movement_slow', 'enemy_slow'], true)
+  assignAlias(values, skill, 'slowPct', ['slow', 'movespeed_slow', 'movement_slow', 'enemy_slow', 'move_slow'], true)
   const summonProfile = getSummonImportProfile(skill)
   if (summonProfile) {
     values.summonArchetype = summonProfile.archetype
     values.summonMode = summonProfile.mode
+    if (summonProfile.copySource) values.summonCopySource = summonProfile.copySource
+    if (summonProfile.targetScope) values.summonTargetScope = summonProfile.targetScope
+    if (summonProfile.locksTarget) values.summonLocksTarget = true
+    if (summonProfile.expiresWithTarget) values.summonExpiresWithTarget = true
+    if (summonProfile.untargetable) values.summonUntargetable = true
     const summonUnitSeedId = summonUnitSeedIds[skill.sourceInternalName.toLowerCase()]
     if (summonUnitSeedId) values.summonUnitSeedId = summonUnitSeedId
     assignAlias(values, skill, 'summons', [
@@ -265,7 +296,8 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
       'extra_spirit_count_exort', 'extra_spirit_count_quas', 'shard_skeleton_count',
       'spawn_zombie_on_attack', 'illusion_2_amount',
     ])
-    if (!hasPositiveNumber(Array.isArray(values.summons) ? values.summons : [])) values.summons = [1]
+    if (summonProfile.count !== undefined) values.summons = [summonProfile.count]
+    else if (!hasPositiveNumber(Array.isArray(values.summons) ? values.summons : [])) values.summons = [1]
     assignAlias(values, skill, 'summonDuration', [
       'summon_duration', 'golem_duration', 'skeleton_duration', 'treant_duration', 'spiderling_duration',
       'spirit_duration', 'wolf_duration', 'illusion_duration', 'minor_imp_duration', 'zombie_duration',
@@ -310,13 +342,37 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
     ])
     assignAlias(values, skill, 'summonOutgoingDamagePct', [
       'outgoing_damage_tooltip', 'illusion_outgoing_tooltip', 'tooltip_illusion_damage',
-      'tooltip_damage_outgoing_melee', 'tooltip_damage_outgoing_ranged',
+      'tooltip_damage_outgoing_melee', 'tooltip_damage_outgoing_ranged', 'tooltip_outgoing',
+      'images_do_damage_percent_tooltip',
     ])
     assignAlias(values, skill, 'summonIncomingDamagePct', [
       'incoming_damage_tooltip', 'tooltip_incoming_damage_total_pct', 'tooltip_damage_incoming_total_pct',
       'tooltip_illusion_total_damage_in_pct', 'illusion_incoming_damage_total_tooltip',
       'tooltip_total_illusion_incoming_damage', 'tooltip_illusion_total_damage_incoming',
+      'images_take_damage_percent_tooltip', 'tooltip_total_illusion_damage_in_pct',
     ])
+    assignAlias(values, skill, 'summonFlatDamage', ['illusion_flat_damage'])
+    assignAlias(values, skill, 'summonMoveSpeedPct', ['images_movespeed_bonus'])
+    assignAlias(values, skill, 'summonMaxCount', ['max_illusions'])
+    assignAlias(values, skill, 'summonProcChancePct', ['proc_chance_pct'])
+    assignAlias(values, skill, 'summonSecondaryProcChancePct', ['illusion_proc_chance_pct'])
+    assignAlias(values, skill, 'summonSecondaryDuration', ['illusion_from_illusion_duration'])
+    if (skill.sourceInternalName === 'shadow_demon_disruption') {
+      assignAlias(values, skill, 'summonDelay', ['disruption_duration'])
+    }
+    if (skill.sourceInternalName === 'terrorblade_reflection') {
+      assignAlias(values, skill, 'radius', ['range'])
+    }
+    if ([
+      'phantom_lancer_juxtapose',
+      'spectre_haunt',
+      'shadow_demon_disruption',
+      'terrorblade_reflection',
+      'grimstroke_dark_portrait',
+    ].includes(skill.sourceInternalName)) {
+      delete values.damage
+    }
+    if (skill.sourceInternalName === 'spectre_haunt') delete values.fearDuration
     if (skill.sourceInternalName === 'phantom_lancer_doppelwalk') {
       const outgoingReduction = pickSpecial(skill, ['illusion_2_damage_out_pct'])
       const incomingIncrease = pickSpecial(skill, ['illusion_2_damage_in_pct'])

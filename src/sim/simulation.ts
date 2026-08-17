@@ -398,6 +398,10 @@ export type SummonedUnit = {
   cloakLayers?: number
   cloakNextRecoveryAt?: number
   targetId?: string
+  copiedArcaneId?: string
+  lockedTargetId?: string
+  expiresWithTarget?: boolean
+  untargetable?: boolean
   lastHitBy?: CombatSource
 }
 export type Tower = {
@@ -2316,6 +2320,7 @@ type RenderSummonFrame = [
   SummonVariant | undefined, string | undefined, number | undefined, number | undefined, number | undefined,
   number | undefined, number | undefined, number | undefined,
   number, number, number,
+  string | undefined, string | undefined, boolean | undefined, boolean | undefined,
 ]
 type RenderAttackEffectFrame = [AttackEffect['kind'], EntityKind, TeamId, number, number, number, number, number, number, AttackEffect['action'], string]
 type RenderMarkerFrame = [TeamId, number, number, number, number]
@@ -2456,7 +2461,7 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
         renderNumber(creep.range),
       ]
     }),
-    summons: state.summons.map((summon) => [
+    summons: state.summons.filter((summon) => isSummonActive(state, summon)).map((summon) => [
       summon.id, summon.ownerId, summon.sourceSkillId, summon.name, summon.team,
       renderNumber(summon.pos.x), renderNumber(summon.pos.y), renderNumber(summon.hp),
       renderNumber(summon.maxHp), renderNumber(summon.damage), renderNumber(summon.range),
@@ -2469,6 +2474,7 @@ export function createMatchRenderFrame(state: SimulationState, includeDetails = 
       summon.unitSeedId, summon.nextAbilityAt, summon.recallStartedAt, summon.abilityCounter,
       summon.sharedBuffUntil, summon.cloakLayers, summon.cloakNextRecoveryAt,
       renderNumber(summon.armor), renderNumber(summon.magicResistance), renderNumber(summon.buildingDamageMultiplier),
+      summon.copiedArcaneId, summon.lockedTargetId, summon.expiresWithTarget, summon.untargetable,
     ]),
     towerHp: state.towers.map((tower) => renderNumber(tower.hp)),
     structureHp: state.structures.map((structure) => renderNumber(structure.hp)),
@@ -2620,6 +2626,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       nextAbilityAt: summon[28], recallStartedAt: summon[29], abilityCounter: summon[30],
       sharedBuffUntil: summon[31], cloakLayers: summon[32], cloakNextRecoveryAt: summon[33],
       armor: summon[34] ?? 0, magicResistance: summon[35] ?? 0, buildingDamageMultiplier: summon[36] ?? 1,
+      copiedArcaneId: summon[37], lockedTargetId: summon[38], expiresWithTarget: summon[39], untargetable: summon[40],
     })),
     towers: staticData.towers.map((tower, index): Tower => ({ ...tower, pos: tower.pos, hp: frame.towerHp[index] ?? 0, lastAttack: 0 })),
     structures: staticData.structures.map((structure, index): Structure => ({ ...structure, pos: structure.pos, hp: frame.structureHp[index] ?? 0, lastAttack: 0 })),
@@ -8416,7 +8423,7 @@ export function getRouteCreepTarget(
   const enemyCreep = nearestRouteEnemyCreep(creep, nearbyCreeps, unitRange, mode)
   if (enemyCreep) return enemyCreep
   const enemySummon = selectTarget(state.summons.filter((summon) => (
-    summon.team !== creep.team && summon.hp > 0 && summon.expiresAt > state.time &&
+    summon.team !== creep.team && isSummonTargetable(state, summon) &&
     isNearRoute(summon.pos, lanePath, 12)
   )), unitRange)
   if (enemySummon) return enemySummon
@@ -9158,7 +9165,7 @@ export function resolveSimpleSkillEffects(
     if (alliedTargets.length === 0) return false
     alliedTargets.forEach((ally) => applySimplePositiveSkill(state, arcane, skill, level, ally))
     applySimpleSkillMobility(state, arcane, target, skill, profile)
-    applySimpleSkillSummonPressure(state, arcane, skill, profile, target.pos)
+    applySimpleSkillCastSummons(state, arcane, skill, profile, target, affectedTargets)
     addSimpleSkillEffect(state, arcane, target)
     if (commitCast) {
       finishSimpleSkillCast(state, arcane, skill, manaCost, target)
@@ -9213,7 +9220,7 @@ export function resolveSimpleSkillEffects(
   })
 
   applySimpleSkillMobility(state, arcane, target, skill, profile)
-  applySimpleSkillSummonPressure(state, arcane, skill, profile, target.pos)
+  applySimpleSkillCastSummons(state, arcane, skill, profile, target, affectedTargets)
 
   if (isBoss(target)) {
     state.boss = {
@@ -9554,24 +9561,41 @@ export function applySimpleSkillSummonPressure(
   center: Point = caster.pos,
   triggerMode?: SkillSummonMode,
   countOverride?: number,
+  options: {
+    statSource?: Arcane
+    initialTargetId?: string
+    lockTarget?: boolean
+    expiresWithTarget?: boolean
+    untargetable?: boolean
+    delay?: number
+    durationOverride?: number
+  } = {},
 ) {
   const requestedCount = countOverride ?? profile.summonCount
   const supportsTrigger = triggerMode
     ? profile.summonMode === triggerMode
     : profile.summonMode === 'cast' || profile.summonMode === 'channel'
   if (requestedCount <= 0 || !supportsTrigger) return []
-  const duration = Math.max(4, Math.min(7200, profile.summonDuration || profile.duration))
+  const duration = Math.max(0.25, Math.min(7200, options.durationOverride ?? (profile.summonDuration || profile.duration)))
   if (duration >= 3600) {
     state.summons = state.summons.filter((summon) => (
       summon.ownerId !== caster.id || summon.sourceSkillId !== skill.id
     ))
   }
   const ownerSummons = state.summons.filter((summon) => summon.ownerId === caster.id && summon.hp > 0)
+  const skillSummons = ownerSummons.filter((summon) => summon.sourceSkillId === skill.id)
   const ownerLimit = profile.summonArchetype === 'ward' ? 24 : 12
   const castLimit = profile.summonArchetype === 'ward' ? 12 : 10
-  const count = Math.min(castLimit, requestedCount, Math.max(0, ownerLimit - ownerSummons.length))
+  const skillLimit = profile.summonMaxCount > 0 ? profile.summonMaxCount : ownerLimit
+  const count = Math.min(
+    castLimit,
+    requestedCount,
+    Math.max(0, ownerLimit - ownerSummons.length),
+    Math.max(0, skillLimit - skillSummons.length),
+  )
   if (count <= 0) return []
-  const levelScale = 1 + Math.max(0, caster.stats.level - 1) * 0.035
+  const statSource = options.statSource ?? caster
+  const levelScale = 1 + Math.max(0, statSource.stats.level - 1) * 0.035
   const swarmScale = 1 / Math.sqrt(Math.max(1, count))
   const archetype = profile.summonArchetype
   const illusion = archetype === 'illusion'
@@ -9581,8 +9605,8 @@ export function applySimpleSkillSummonPressure(
   const healingWard = archetype === 'healing_ward'
   const unitSeed = profile.summonUnitSeedId ? getSummonUnitRuntimeSeed(profile.summonUnitSeedId) : undefined
   const importedHp = profile.summonHits > 0 ? profile.summonHits * 90 : profile.summonHp
-  const genericHp = (115 + caster.stats.maxHp * 0.16) * levelScale * (0.72 + swarmScale * 0.28)
-  const maxHp = Math.max(1, Math.round(heroLike ? caster.stats.maxHp : importedHp || unitSeed?.hp || genericHp))
+  const genericHp = (115 + statSource.stats.maxHp * 0.16) * levelScale * (0.72 + swarmScale * 0.28)
+  const maxHp = Math.max(1, Math.round(heroLike ? statSource.stats.maxHp : importedHp || unitSeed?.hp || genericHp))
   const unitRule = unitSeed?.abilities.find((ability) => ability.tags.includes('illusion') || ability.tags.includes('item_restriction'))
   const getUnitRuleNumber = (key: string) => {
     const value = unitRule?.values?.[key]
@@ -9595,9 +9619,11 @@ export function applySimpleSkillSummonPressure(
     ? profile.summonIncomingDamagePct / 100
     : getUnitRuleNumber('incomingDamagePct') ?? (illusion ? 2 : 1)
   const buildingDamageMultiplier = getUnitRuleNumber('buildingDamagePct') ?? (illusion ? 0.35 : 1)
-  const genericDamage = (12 + caster.stats.damage * 0.24) * levelScale * (0.7 + swarmScale * 0.3)
-  const ownerDamage = getEffectiveArcaneDamage(state, caster)
-  const baseDamage = heroLike ? ownerDamage * outgoingDamage : profile.summonDamage || unitSeed?.damage || genericDamage
+  const genericDamage = (12 + statSource.stats.damage * 0.24) * levelScale * (0.7 + swarmScale * 0.3)
+  const sourceDamage = getEffectiveArcaneDamage(state, statSource)
+  const baseDamage = heroLike
+    ? sourceDamage * outgoingDamage + profile.summonFlatDamage
+    : profile.summonDamage || unitSeed?.damage || genericDamage
   const damage = healingWard ? 0 : Math.max(0, Math.round(baseDamage))
   const seedRange = unitSeed?.range ?? 0
   const ranged = ward || profile.summonRange >= 300 || seedRange >= 300 || hasAnySimpleSkillTag(skill, ['spirit', 'archer', 'ranged'])
@@ -9605,6 +9631,7 @@ export function applySimpleSkillSummonPressure(
   const canAttack = damage > 0 && !healingWard && skill.id !== tombstoneSkillId
   const timestamp = Math.round(state.time * 1000)
   const sequence = state.summons.length
+  const activatesAt = state.time + Math.max(0, options.delay ?? profile.summonDelay)
   const familiarCloak = skill.sourceAbilityId === 5483
     ? getOwnerSkillProfileByAbility(state, caster.id, 5482)
     : undefined
@@ -9616,24 +9643,24 @@ export function applySimpleSkillSummonPressure(
       id: `${caster.id}-summon-${skill.id}-${timestamp}-${sequence}-${index}`,
       ownerId: caster.id,
       sourceSkillId: skill.id,
-      name: `${skill.name} ${index + 1}`,
+      name: profile.summonCopySource === 'target' ? `${skill.name}: ${statSource.player}` : `${skill.name} ${index + 1}`,
       archetype,
       team: caster.team,
       pos,
       hp: maxHp,
       maxHp,
       damage,
-      armor: heroLike ? getEffectiveArcaneArmor(state, caster) : unitSeed?.armor ?? 0,
-      magicResistance: heroLike ? caster.stats.magicResistance : unitSeed?.magicResistance ?? 0,
-      range: heroLike ? caster.stats.range : profile.summonRange > 0 ? profile.summonRange / 140 : seedRange > 0 ? seedRange / 140 : ranged ? 5.8 : 2.2,
-      visionRange: heroLike ? caster.visionRange : profile.summonVision > 0 ? profile.summonVision / 140 : unitSeed?.vision ? unitSeed.vision / 140 : ranged ? 8.5 : 7,
-      moveSpeed: canMove ? (heroLike ? getEffectiveArcaneMoveSpeed(state, caster) : profile.summonMoveSpeed > 0 ? profile.summonMoveSpeed / 45 : unitSeed?.movementSpeed ? unitSeed.movementSpeed / 45 : ranged ? 3.8 : 4.4) : 0,
-      attackInterval: heroLike ? getEffectiveArcaneAttackCooldown(state, caster) : profile.summonAttackInterval > 0 ? profile.summonAttackInterval : unitSeed?.attackInterval || (ranged ? 1.35 : 1.05),
-      lastAttack: state.time - 0.5,
-      spawnedAt: state.time,
-      expiresAt: state.time + duration,
-      goldReward: Math.max(0, Math.round(profile.summonGoldBounty || unitSeed?.goldBounty || (illusion ? 5 + caster.stats.level * 0.5 : 12 + caster.stats.level * 1.5) * swarmScale)),
-      xpReward: Math.max(0, Math.round(profile.summonXpBounty || unitSeed?.xpBounty || (illusion ? 5 + caster.stats.level : 18 + caster.stats.level * 2) * swarmScale)),
+      armor: heroLike ? getEffectiveArcaneArmor(state, statSource) : unitSeed?.armor ?? 0,
+      magicResistance: heroLike ? statSource.stats.magicResistance : unitSeed?.magicResistance ?? 0,
+      range: heroLike ? statSource.stats.range : profile.summonRange > 0 ? profile.summonRange / 140 : seedRange > 0 ? seedRange / 140 : ranged ? 5.8 : 2.2,
+      visionRange: heroLike ? statSource.visionRange : profile.summonVision > 0 ? profile.summonVision / 140 : unitSeed?.vision ? unitSeed.vision / 140 : ranged ? 8.5 : 7,
+      moveSpeed: canMove ? (heroLike ? getEffectiveArcaneMoveSpeed(state, statSource) * (1 + profile.summonMoveSpeedPct) : profile.summonMoveSpeed > 0 ? profile.summonMoveSpeed / 45 : unitSeed?.movementSpeed ? unitSeed.movementSpeed / 45 : ranged ? 3.8 : 4.4) : 0,
+      attackInterval: heroLike ? getEffectiveArcaneAttackCooldown(state, statSource) : profile.summonAttackInterval > 0 ? profile.summonAttackInterval : unitSeed?.attackInterval || (ranged ? 1.35 : 1.05),
+      lastAttack: activatesAt - 0.5,
+      spawnedAt: activatesAt,
+      expiresAt: activatesAt + duration,
+      goldReward: Math.max(0, Math.round(profile.summonGoldBounty || unitSeed?.goldBounty || (illusion ? 5 + statSource.stats.level * 0.5 : 12 + statSource.stats.level * 1.5) * swarmScale)),
+      xpReward: Math.max(0, Math.round(profile.summonXpBounty || unitSeed?.xpBounty || (illusion ? 5 + statSource.stats.level : 18 + statSource.stats.level * 2) * swarmScale)),
       canMove,
       canAttack,
       damageTakenMultiplier: incomingDamage,
@@ -9642,6 +9669,11 @@ export function applySimpleSkillSummonPressure(
       channelBound: profile.summonMode === 'channel',
       unitSeedId: unitSeed?.id,
       cloakLayers: familiarCloak?.profile.cloakMaxLayers,
+      targetId: options.initialTargetId,
+      copiedArcaneId: profile.summonCopySource === 'target' ? statSource.id : undefined,
+      lockedTargetId: options.lockTarget ? options.initialTargetId : undefined,
+      expiresWithTarget: options.expiresWithTarget,
+      untargetable: options.untargetable,
     }
   })
   state.summons = [...state.summons, ...spawned]
@@ -9649,10 +9681,46 @@ export function applySimpleSkillSummonPressure(
   return spawned
 }
 
+export function applySimpleSkillCastSummons(
+  state: SimulationState,
+  caster: Arcane,
+  skill: HeroSkillDefinition,
+  profile: ReturnType<typeof getSkillEffectProfile>,
+  primaryTarget: CombatTarget,
+  affectedTargets: CombatTarget[],
+) {
+  if (profile.summonTargetScope === 'default') {
+    return applySimpleSkillSummonPressure(state, caster, skill, profile, primaryTarget.pos)
+  }
+
+  const targetArcanes = profile.summonTargetScope === 'all_enemies'
+    ? state.arcanes.filter((candidate) => candidate.team !== caster.team && candidate.stats.hp > 0 && candidate.respawn <= state.time)
+    : profile.summonTargetScope === 'affected_enemies'
+      ? affectedTargets.filter((candidate): candidate is Arcane => 'player' in candidate && candidate.team !== caster.team)
+      : 'player' in primaryTarget ? [primaryTarget] : []
+
+  return targetArcanes.flatMap((copiedTarget) => applySimpleSkillSummonPressure(
+    state,
+    caster,
+    skill,
+    profile,
+    copiedTarget.pos,
+    undefined,
+    profile.summonCount,
+    {
+      statSource: profile.summonCopySource === 'target' ? copiedTarget : caster,
+      initialTargetId: copiedTarget.team === caster.team ? undefined : copiedTarget.id,
+      lockTarget: profile.summonLocksTarget,
+      expiresWithTarget: profile.summonExpiresWithTarget,
+      untargetable: profile.summonUntargetable,
+      delay: profile.summonDelay,
+    },
+  ))
+}
+
 const eldritchSummoningSkillId = 'h029_soul_warlock_innate_1_1274'
 const reincarnationSummonSkillId = 'h034_skeleton_monarch_standard_4_5089'
 const soulWarlockHeroId = 'h029_soul_warlock'
-const decayZombieHeroId = 'h077_decay_zombie'
 const fleshGolemSkillId = 'h077_decay_zombie_standard_4_5447'
 const spawnSpiderlingsSkillId = 'h053_brood_matriarch_standard_4_5279'
 const tombstoneSkillId = 'h077_decay_zombie_standard_3_5444'
@@ -9663,6 +9731,7 @@ const spiritLinkAbilityId = 7309
 const savageRoarAbilityId = 5414
 const graveChillAbilityId = 5480
 const gravekeepersCloakAbilityId = 5482
+const juxtaposeAbilityId = 5067
 
 function getOwnerSkillProfileByAbility(state: SimulationState, ownerId: string, sourceAbilityId: number) {
   const caster = state.arcanes.find((arcane) => arcane.id === ownerId)
@@ -9900,19 +9969,28 @@ export function resolveConditionalSummonDeathTriggers(
 }
 
 export function triggerOnAttackSummons(state: SimulationState, caster: Arcane, target: CombatTarget) {
-  if (caster.heroDefinitionId !== decayZombieHeroId) return
   for (const skill of getArcaneRuntimeSkills(caster)) {
-    if (skill.id !== fleshGolemSkillId) continue
     const level = getSimpleSkillLevel(caster, skill)
     if (level <= 0) continue
     const profile = getSkillEffectProfile(skill, level)
     if (profile.summonMode !== 'on_attack' || profile.summonCount <= 0) continue
-    const sourceId = `${caster.id}-${skill.id}`
-    const active = state.timedEffects.some((effect) => (
-      effect.targetId === caster.id && effect.sourceId === sourceId && effect.kind === 'buff' && effect.expiresAt > state.time
-    ))
-    if (!active) continue
-    applySimpleSkillSummonPressure(state, caster, skill, profile, target.pos, 'on_attack')
+    if (skill.id === fleshGolemSkillId) {
+      const sourceId = `${caster.id}-${skill.id}`
+      const active = state.timedEffects.some((effect) => (
+        effect.targetId === caster.id && effect.sourceId === sourceId && effect.kind === 'buff' && effect.expiresAt > state.time
+      ))
+      if (!active) continue
+    } else {
+      if (hasTimedEffect(state, caster.id, 'break')) continue
+      if (profile.summonProcChancePct <= 0 || !rollChance(
+        state,
+        profile.summonProcChancePct,
+        `hero-summon-proc:${caster.id}:${skill.id}:${target.id}:${caster.lastAttack}`,
+      )) continue
+    }
+    applySimpleSkillSummonPressure(state, caster, skill, profile, target.pos, 'on_attack', undefined, {
+      initialTargetId: 'team' in target && target.team === caster.team ? undefined : target.id,
+    })
   }
 }
 
@@ -10172,7 +10250,7 @@ function applySpiritLinkOwnerLifestealToBear(
 
 export function updateSummonedUnits(state: SimulationState, delta: number) {
   for (const summon of state.summons) {
-    if (summon.hp <= 0 || summon.expiresAt <= state.time) continue
+    if (!isSummonActive(state, summon)) continue
     if (summon.channelBound) {
       const owner = state.arcanes.find((arcane) => arcane.id === summon.ownerId)
       if (owner?.channeling?.skillId !== summon.sourceSkillId) {
@@ -10189,11 +10267,15 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
     if (summon.sourceSkillId === summonFamiliarsSkillId && updateFamiliarRecall(state, summon)) continue
     if (summon.healingAuraPct > 0) applySummonHealingAura(state, summon, delta)
     if (tryUseSummonActiveAbility(state, summon)) continue
+    const lockedTarget = summon.lockedTargetId ? getCombatTargetById(state, summon.lockedTargetId) : undefined
+    if (summon.lockedTargetId && (!lockedTarget || !isLockedSummonTargetValid(summon, lockedTarget))) {
+      if (summon.expiresWithTarget) summon.expiresAt = state.time
+      summon.targetId = undefined
+      continue
+    }
     const retained = summon.canAttack && summon.targetId ? getCombatTargetById(state, summon.targetId) : undefined
     const target = summon.canAttack
-      ? retained && isSummonTargetValid(state, summon, retained)
-        ? retained
-        : getSummonTarget(state, summon)
+      ? lockedTarget ?? (retained && isSummonTargetValid(state, summon, retained) ? retained : getSummonTarget(state, summon))
       : undefined
     summon.targetId = target?.id
     if (target) {
@@ -10211,6 +10293,20 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
       summon.pos = moveToward(summon.pos, followPoint, getEffectiveSummonMoveSpeed(state, summon) * delta)
     }
   }
+}
+
+export function isSummonActive(state: SimulationState, summon: SummonedUnit) {
+  return summon.hp > 0 && summon.spawnedAt <= state.time && summon.expiresAt > state.time
+}
+
+export function isSummonTargetable(state: SimulationState, summon: SummonedUnit) {
+  return isSummonActive(state, summon) && !summon.untargetable
+}
+
+function isLockedSummonTargetValid(summon: SummonedUnit, target: CombatTarget) {
+  if ('team' in target && target.team === summon.team) return false
+  if ('player' in target) return target.stats.hp > 0
+  return target.hp > 0
 }
 
 function applySummonHealingAura(state: SimulationState, summon: SummonedUnit, delta: number) {
@@ -10235,7 +10331,7 @@ export function getSummonTarget(state: SimulationState, summon: SummonedUnit): C
   const unitCandidates: CombatTarget[] = [
     ...enemyArcanes,
     ...state.creeps.filter((creep) => creep.team !== summon.team && creep.hp > 0),
-    ...state.summons.filter((other) => other.team !== summon.team && other.hp > 0 && other.expiresAt > state.time),
+    ...state.summons.filter((other) => other.team !== summon.team && isSummonTargetable(state, other)),
   ]
   const units = summon.sourceSkillId === spiritBearSkillId
     ? unitCandidates.filter((target) => isWithinSpiritBearLeash(state, summon, target.pos))
@@ -10255,6 +10351,7 @@ export function getSummonTarget(state: SimulationState, summon: SummonedUnit): C
 }
 
 export function isSummonTargetValid(state: SimulationState, summon: SummonedUnit, target: CombatTarget) {
+  if (summon.lockedTargetId === target.id) return isLockedSummonTargetValid(summon, target)
   if ('team' in target && target.team === summon.team) return false
   if ('player' in target && (target.stats.hp <= 0 || target.respawn > state.time || !isPointVisibleToTeam(state, summon.team, target.pos))) return false
   if (!('player' in target) && target.hp <= 0) return false
@@ -10437,6 +10534,32 @@ function applyEidolonSplit(state: SimulationState, summon: SummonedUnit) {
 }
 
 export function applySummonAttackSpecials(state: SimulationState, summon: SummonedUnit, target: CombatTarget) {
+  const juxtaposeSource = getSummonOwnerSkillProfile(state, summon)
+  if (juxtaposeSource?.skill.sourceAbilityId === juxtaposeAbilityId) {
+    if (
+      juxtaposeSource.profile.summonSecondaryProcChancePct > 0 &&
+      rollChance(
+        state,
+        juxtaposeSource.profile.summonSecondaryProcChancePct,
+        `summon-illusion-proc:${summon.id}:${target.id}:${summon.lastAttack}`,
+      )
+    ) {
+      applySimpleSkillSummonPressure(
+        state,
+        juxtaposeSource.caster,
+        juxtaposeSource.skill,
+        juxtaposeSource.profile,
+        target.pos,
+        'on_attack',
+        1,
+        {
+          initialTargetId: 'team' in target && target.team === summon.team ? undefined : target.id,
+          durationOverride: juxtaposeSource.profile.summonSecondaryDuration || juxtaposeSource.profile.summonDuration,
+        },
+      )
+    }
+  }
+
   const entanglingClaws = summon.unitSeedId === 'summon_spirit_bear'
     ? getSummonUnitAbility(summon, 'entangling_claws')
     : undefined
@@ -11361,7 +11484,7 @@ export function getRetainedArcaneCombatTarget(state: SimulationState, arcane: Ar
     if (isLaningControlMicroDecision(arcane.microDecision) && target.lane === arcane.lane) return undefined
     return { target, intent }
   }
-  if ('ownerId' in target && target.team !== arcane.team && target.expiresAt > state.time) {
+  if ('ownerId' in target && target.team !== arcane.team && isSummonTargetable(state, target)) {
     return { target, intent }
   }
   return undefined
@@ -11430,7 +11553,7 @@ export function resolveCombat(
 
   for (const summon of next.summons) {
     if (actorFilter && !actorFilter.has(summon.id)) continue
-    if (pregame || !summon.canAttack || summon.hp <= 0 || summon.expiresAt <= next.time) continue
+    if (pregame || !summon.canAttack || !isSummonActive(next, summon)) continue
     if (next.time < summon.lastAttack + getEffectiveSummonAttackInterval(next, summon)) continue
     const target = summon.targetId ? getCombatTargetById(next, summon.targetId) : undefined
     if (!target || !isSummonTargetValid(next, summon, target)) continue
@@ -11473,7 +11596,7 @@ export function resolveCombat(
       : undefined
     const target = aggroTarget
       ?? nearestCreepAtIndices(tower.pos, next.creeps, enemyCreepIndicesByTeam[tower.team], tower.range, next.time)
-      ?? nearest(tower.pos, next.summons.filter((summon) => summon.team !== tower.team && summon.hp > 0), tower.range)
+      ?? nearest(tower.pos, next.summons.filter((summon) => summon.team !== tower.team && isSummonTargetable(next, summon)), tower.range)
       ?? nearestAliveEnemyArcane(tower.pos, next.arcanes, tower.team, next.time, tower.range)
     if (target) {
       tower.lastAttack = next.time
@@ -11510,7 +11633,7 @@ export function resolveCombat(
       : undefined
     const target = aggroTarget
       ?? nearestCreepAtIndices(structure.pos, next.creeps, enemyCreepIndicesByTeam[structure.team], structure.range, next.time)
-      ?? nearest(structure.pos, next.summons.filter((summon) => summon.team !== structure.team && summon.hp > 0), structure.range)
+      ?? nearest(structure.pos, next.summons.filter((summon) => summon.team !== structure.team && isSummonTargetable(next, summon)), structure.range)
       ?? nearestAliveEnemyArcane(structure.pos, next.arcanes, structure.team, next.time, structure.range)
     if (target) {
       structure.lastAttack = next.time
@@ -11722,7 +11845,7 @@ export function resolveCombat(
           ? nearestReachableByArcane(arcane, next.camps.filter((camp) => camp.hp > 0))
           : undefined
       const enemySummonTarget = nearestReachableByArcane(arcane, next.summons.filter((summon) => (
-        summon.team !== arcane.team && summon.hp > 0 && summon.expiresAt > next.time
+        summon.team !== arcane.team && isSummonTargetable(next, summon)
       )))
       target = enemyArcaneTarget ?? campTarget ?? enemySummonTarget ?? nearestReachableByArcane(arcane, [
         ...fallbackEnemyCreeps,
@@ -11920,7 +12043,7 @@ export function getItemSplashTargets(state: SimulationState, arcane: Arcane, pri
   const candidates: CombatTarget[] = [
     ...state.arcanes.filter((target) => target.team !== arcane.team && target.id !== primaryTarget.id && target.stats.hp > 0 && target.respawn <= state.time),
     ...state.creeps.filter((target) => target.team !== arcane.team && target.id !== primaryTarget.id && target.hp > 0),
-    ...state.summons.filter((target) => target.team !== arcane.team && target.id !== primaryTarget.id && target.hp > 0),
+    ...state.summons.filter((target) => target.team !== arcane.team && target.id !== primaryTarget.id && isSummonTargetable(state, target)),
     ...state.camps.filter((target) => target.id !== primaryTarget.id && target.hp > 0),
   ]
   return candidates
@@ -12886,6 +13009,7 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   const targetBase = targetBaseIndex === undefined ? undefined : state.bases[targetBaseIndex]
   const targetCamp = targetCampIndex === undefined ? undefined : state.camps[targetCampIndex]
   const targetBoss = state.boss.id === id ? state.boss : undefined
+  if (targetSummon && !isSummonTargetable(state, targetSummon)) return
   const sourceArcaneIndex = getSourceArcaneIndex(indexes, source.id)
   const sourceArcane = sourceArcaneIndex < 0 ? undefined : state.arcanes[sourceArcaneIndex]
   const damageType = source.damageType ?? 'physical'
@@ -13715,7 +13839,7 @@ export function getTeamVisionProviders(state: SimulationState) {
       .filter((creep) => creep.team === team && creep.hp > 0)
       .map((creep) => ({ pos: creep.pos, range: getCreepVisionRange(creep) })),
     ...state.summons
-      .filter((summon) => summon.team === team && summon.hp > 0 && summon.expiresAt > state.time)
+      .filter((summon) => summon.team === team && isSummonActive(state, summon))
       .map((summon) => ({ pos: summon.pos, range: summon.visionRange })),
     ...state.towers
       .filter((tower) => tower.team === team && tower.hp > 0)

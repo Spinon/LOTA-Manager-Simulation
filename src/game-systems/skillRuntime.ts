@@ -3,6 +3,8 @@ import type { HeroSkillDefinition } from './heroAttributes.ts'
 export type SkillUsageSituation = keyof NonNullable<HeroSkillDefinition['aiUsage']>
 export type SkillSummonArchetype = 'unit' | 'ward' | 'healing_ward' | 'illusion' | 'clone'
 export type SkillSummonMode = 'cast' | 'channel' | 'target_death' | 'on_attack' | 'on_death'
+export type SkillSummonCopySource = 'caster' | 'target'
+export type SkillSummonTargetScope = 'default' | 'primary' | 'affected_enemies' | 'all_enemies'
 
 export type SkillEffectProfile = {
   damage: number
@@ -39,6 +41,11 @@ export type SkillEffectProfile = {
   summonTriggerDuration: number
   summonArchetype: SkillSummonArchetype
   summonMode: SkillSummonMode
+  summonCopySource: SkillSummonCopySource
+  summonTargetScope: SkillSummonTargetScope
+  summonLocksTarget: boolean
+  summonExpiresWithTarget: boolean
+  summonUntargetable: boolean
   summonUnitSeedId: string
   summonHp: number
   summonHits: number
@@ -51,6 +58,13 @@ export type SkillEffectProfile = {
   summonXpBounty: number
   summonOutgoingDamagePct: number
   summonIncomingDamagePct: number
+  summonFlatDamage: number
+  summonMoveSpeedPct: number
+  summonDelay: number
+  summonMaxCount: number
+  summonProcChancePct: number
+  summonSecondaryProcChancePct: number
+  summonSecondaryDuration: number
   summonHealPct: number
   summonEffectRadius: number
   summonTriggerRadius: number
@@ -88,6 +102,11 @@ export function getSkillValue(skill: HeroSkillDefinition, key: string, level: nu
 export function getSkillStringValue<T extends string>(skill: HeroSkillDefinition, key: string, fallback: T): T {
   const value = skill.values[key]
   return typeof value === 'string' ? value as T : fallback
+}
+
+export function getSkillBooleanValue(skill: HeroSkillDefinition, key: string, fallback = false) {
+  const value = skill.values[key]
+  return typeof value === 'boolean' ? value : fallback
 }
 
 export function hasSkillTag(skill: HeroSkillDefinition, tags: string[]) {
@@ -156,6 +175,11 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
     summonTriggerDuration: Math.max(0, getSkillValue(skill, 'summonTriggerDuration', level, duration)),
     summonArchetype: getSkillStringValue(skill, 'summonArchetype', 'unit' as SkillSummonArchetype),
     summonMode: getSkillStringValue(skill, 'summonMode', 'cast' as SkillSummonMode),
+    summonCopySource: getSkillStringValue(skill, 'summonCopySource', 'caster' as SkillSummonCopySource),
+    summonTargetScope: getSkillStringValue(skill, 'summonTargetScope', 'default' as SkillSummonTargetScope),
+    summonLocksTarget: getSkillBooleanValue(skill, 'summonLocksTarget'),
+    summonExpiresWithTarget: getSkillBooleanValue(skill, 'summonExpiresWithTarget'),
+    summonUntargetable: getSkillBooleanValue(skill, 'summonUntargetable'),
     summonUnitSeedId: getSkillStringValue(skill, 'summonUnitSeedId', ''),
     summonHp: Math.max(0, getSkillValue(skill, 'summonHp', level, 0)),
     summonHits: Math.max(0, getSkillValue(skill, 'summonHits', level, 0)),
@@ -168,6 +192,13 @@ export function getSkillEffectProfile(skill: HeroSkillDefinition, level: number)
     summonXpBounty: Math.max(0, getSkillValue(skill, 'summonXpBounty', level, 0)),
     summonOutgoingDamagePct: Math.max(0, getSkillValue(skill, 'summonOutgoingDamagePct', level, 0)),
     summonIncomingDamagePct: Math.max(0, getSkillValue(skill, 'summonIncomingDamagePct', level, 0)),
+    summonFlatDamage: Math.max(0, getSkillValue(skill, 'summonFlatDamage', level, 0)),
+    summonMoveSpeedPct: clampPercent(getSkillValue(skill, 'summonMoveSpeedPct', level, 0)),
+    summonDelay: Math.max(0, getSkillValue(skill, 'summonDelay', level, 0)),
+    summonMaxCount: Math.max(0, Math.round(getSkillValue(skill, 'summonMaxCount', level, 0))),
+    summonProcChancePct: Math.max(0, Math.min(100, getSkillValue(skill, 'summonProcChancePct', level, 0))),
+    summonSecondaryProcChancePct: Math.max(0, Math.min(100, getSkillValue(skill, 'summonSecondaryProcChancePct', level, 0))),
+    summonSecondaryDuration: Math.max(0, getSkillValue(skill, 'summonSecondaryDuration', level, 0)),
     summonHealPct: Math.max(0, getSkillValue(skill, 'summonHealPct', level, 0)),
     summonEffectRadius: Math.max(0, getSkillValue(skill, 'summonEffectRadius', level, 0)),
     summonTriggerRadius: Math.max(0, getSkillValue(skill, 'summonTriggerRadius', level, 0)),

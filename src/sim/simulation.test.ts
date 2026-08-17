@@ -4,6 +4,7 @@ import {
   addTimedEffect,
   applySimpleSkillDispel,
   applySimpleSkillDisplacement,
+  applySimpleSkillCastSummons,
   applySimpleSkillSummonPressure,
   applySummonAttackSpecials,
   applySimpleNegativeSkillEffects,
@@ -84,6 +85,8 @@ import {
   honorsCombatReservations,
   healArcaneDirectly,
   isPositiveSimpleSkill,
+  isSummonActive,
+  isSummonTargetable,
   isCreepRouteTargetValid,
   isUltimateSkill,
   isPointVisibleToTeam,
@@ -108,6 +111,7 @@ import {
   shopCatalog,
   tryCastSimpleSkill,
   tryCastRangedCreepSecureSkill,
+  triggerOnAttackSummons,
   tick,
   updateCreepMovement,
   updateCreepsForTick,
@@ -2051,6 +2055,120 @@ let state: SimulationState = initialState
   assert.equal(clone.attackInterval, 0.72)
   assert.equal(clone.goldReward, 70)
   assert.equal(clone.xpReward, 70)
+
+  const targetCopyState = createInitialState('target-copy-illusion-runtime')
+  targetCopyState.time = 600
+  const targetCopyCaster = targetCopyState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const copyTargets = targetCopyState.arcanes.filter((arcane) => arcane.team === 'dusk')
+  targetCopyCaster.heroDefinitionId = 'h101_demon_metamorph'
+  targetCopyCaster.pos = { x: 48, y: 50 }
+  copyTargets.forEach((target, index) => {
+    target.pos = index < 2 ? { x: 50 + index, y: 50 } : { x: 80 + index, y: 80 }
+  })
+  copyTargets[0].stats.maxHp = copyTargets[0].stats.hp = 2_750
+  copyTargets[0].stats.damage = copyTargets[0].stats.damageMin = copyTargets[0].stats.damageMax = 190
+  const reflectionSkill = getHeroDefinition(targetCopyCaster.heroDefinitionId).skills!
+    .find((candidate) => candidate.sourceAbilityId === 5619)!
+  const reflectionProfile = getSkillEffectProfile(reflectionSkill, 4)
+  const reflectionTargets = getSimpleSkillAffectedTargets(
+    targetCopyState,
+    targetCopyCaster,
+    reflectionSkill,
+    reflectionProfile,
+    copyTargets[0],
+  )
+  const reflections = applySimpleSkillCastSummons(
+    targetCopyState,
+    targetCopyCaster,
+    reflectionSkill,
+    reflectionProfile,
+    copyTargets[0],
+    reflectionTargets,
+  )
+  assert.equal(reflections.length, 2, 'Reflection should create one copy for every enemy in its official area')
+  assert.equal(reflections[0].copiedArcaneId, copyTargets[0].id)
+  assert.equal(reflections[0].lockedTargetId, copyTargets[0].id)
+  assert.equal(reflections[0].maxHp, copyTargets[0].stats.maxHp, 'target-copy illusions should inherit the copied enemy snapshot')
+  assert.equal(reflections[0].damage, Math.round(getEffectiveArcaneDamage(targetCopyState, copyTargets[0]) * 0.75))
+  assert.equal(isSummonTargetable(targetCopyState, reflections[0]), false, 'Reflection illusions should remain invulnerable and untargetable')
+  const reflectionHp = reflections[0].hp
+  damageEntity(targetCopyState, reflections[0].id, 999, { id: copyTargets[0].id, label: copyTargets[0].player, team: copyTargets[0].team })
+  assert.equal(reflections[0].hp, reflectionHp, 'untargetable Reflection illusions should ignore incoming damage')
+  const reflectionReplay = materializeMatchRenderFrame(
+    createMatchRenderFrame(targetCopyState),
+    createMatchStaticData(targetCopyState),
+  ).summons[0]
+  assert.equal(reflectionReplay.copiedArcaneId, copyTargets[0].id)
+  assert.equal(reflectionReplay.lockedTargetId, copyTargets[0].id)
+  assert.equal(reflectionReplay.untargetable, true)
+  copyTargets[0].stats.hp = 0
+  updateSummonedUnits(targetCopyState, 0.1)
+  assert.equal(reflections[0].expiresAt, targetCopyState.time, 'linked target-copy illusions should expire with their source target')
+
+  const disruptionState = createInitialState('delayed-target-copy-illusion-runtime')
+  disruptionState.time = 600
+  const disruptionCaster = disruptionState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const disruptionTarget = disruptionState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  disruptionCaster.heroDefinitionId = 'h071_shadow_demon'
+  disruptionTarget.stats.damage = disruptionTarget.stats.damageMin = disruptionTarget.stats.damageMax = 140
+  const disruptionSkill = getHeroDefinition(disruptionCaster.heroDefinitionId).skills!
+    .find((candidate) => candidate.sourceAbilityId === 5421)!
+  const disruptionProfile = getSkillEffectProfile(disruptionSkill, 4)
+  const disruptions = applySimpleSkillCastSummons(
+    disruptionState,
+    disruptionCaster,
+    disruptionSkill,
+    disruptionProfile,
+    disruptionTarget,
+    [disruptionTarget],
+  )
+  assert.equal(disruptions.length, 2)
+  assert.equal(disruptions[0].spawnedAt, 602.75, 'Disruption copies should activate after the official banish delay')
+  assert.equal(isSummonActive(disruptionState, disruptions[0]), false)
+  assert.equal(createMatchRenderFrame(disruptionState).summons.length, 0, 'delayed copies should stay outside the replay until activation')
+  assert.equal(disruptions[0].damage, Math.round(getEffectiveArcaneDamage(disruptionState, disruptionTarget) * 0.5 + 65))
+  disruptionState.time = 602.75
+  assert.equal(isSummonActive(disruptionState, disruptions[0]), true)
+  assert.equal(createMatchRenderFrame(disruptionState).summons.length, 2)
+
+  const hauntState = createInitialState('global-target-copy-illusion-runtime')
+  hauntState.time = 600
+  const hauntCaster = hauntState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const hauntTargets = hauntState.arcanes.filter((arcane) => arcane.team === 'dusk')
+  hauntCaster.heroDefinitionId = 'h059_specter_global'
+  const hauntSkill = getHeroDefinition(hauntCaster.heroDefinitionId).skills!
+    .find((candidate) => candidate.sourceAbilityId === 5337)!
+  const hauntProfile = getSkillEffectProfile(hauntSkill, 3)
+  const haunts = applySimpleSkillCastSummons(hauntState, hauntCaster, hauntSkill, hauntProfile, hauntTargets[0], [hauntTargets[0]])
+  assert.equal(haunts.length, hauntTargets.length, 'Haunt should create one linked illusion for every living enemy Arcane')
+  assert.deepEqual(new Set(haunts.map((summon) => summon.copiedArcaneId)), new Set(hauntTargets.map((target) => target.id)))
+
+  const juxtaposeState = createInitialState('juxtapose-proc-runtime')
+  juxtaposeState.time = 600
+  const lancer = juxtaposeState.arcanes.find((arcane) => arcane.team === 'dawn')!
+  const juxtaposeTarget = juxtaposeState.arcanes.find((arcane) => arcane.team === 'dusk')!
+  lancer.heroDefinitionId = 'h011_illusion_lancer'
+  lancer.skillLevels = { R: 3 }
+  for (let attempt = 0; attempt < 40 && juxtaposeState.summons.length === 0; attempt += 1) {
+    juxtaposeState.time += 0.1
+    lancer.lastAttack = juxtaposeState.time
+    triggerOnAttackSummons(juxtaposeState, lancer, juxtaposeTarget)
+  }
+  assert.equal(juxtaposeState.summons.length, 1, 'Juxtapose should create an illusion from successful owner attack procs')
+  const firstJuxtapose = juxtaposeState.summons[0]
+  for (let attempt = 0; attempt < 160 && juxtaposeState.summons.length === 1; attempt += 1) {
+    juxtaposeState.time += 0.1
+    firstJuxtapose.lastAttack = juxtaposeState.time
+    applySummonAttackSpecials(juxtaposeState, firstJuxtapose, juxtaposeTarget)
+  }
+  assert.ok(juxtaposeState.summons.length > 1, 'Juxtapose illusions should use their reduced secondary proc chance')
+  assert.equal(juxtaposeState.summons[1].expiresAt - juxtaposeState.summons[1].spawnedAt, 4)
+  for (let attempt = 0; attempt < 200; attempt += 1) {
+    juxtaposeState.time += 0.1
+    lancer.lastAttack = juxtaposeState.time
+    triggerOnAttackSummons(juxtaposeState, lancer, juxtaposeTarget)
+  }
+  assert.equal(juxtaposeState.summons.length, 10, 'Juxtapose should respect the official level-three illusion cap')
 
   skillState.summons = []
   const woundedAlly = skillState.arcanes.find((arcane) => arcane.team === liveCaster.team && arcane.id !== liveCaster.id)!
