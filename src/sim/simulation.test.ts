@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 
 import {
   addTimedEffect,
+  applyItemToggleUpkeep,
   applyRainBarrierCharge,
   applySimpleActiveItemIfNeeded,
   applySimpleSkillDispel,
@@ -20,6 +21,7 @@ import {
   canUseArcaneKinematicFastPath,
   createArcaneTravelPlanIfUseful,
   createInitialItemCharges,
+  createInitialItemToggleStates,
   createInitialState,
   creepTacticalActivationMargin,
   createMatchRenderFrame,
@@ -113,6 +115,7 @@ import {
   isArcaneMovementDisabled,
   isArcaneSilenced,
   isArcaneTargetable,
+  isItemToggleActive,
   isSummonActive,
   isSummonTargetable,
   isCreepRouteTargetValid,
@@ -134,6 +137,7 @@ import {
   queryCreepSpatialGrid,
   resolveDeaths,
   resolveCombat,
+  resolveArcaneItemAttackEffects,
   resolveIncomingArcaneDamage,
   resolveSummonItemAttackEffects,
   resolveSimpleSkillEffects,
@@ -154,6 +158,7 @@ import {
   updateArcaneMovement,
   updateArcaneKinematics,
   updateCombatAiFoundation,
+  updateItemToggleStates,
   updateBoss,
   updateSummonedUnits,
   type Arcane,
@@ -1083,6 +1088,71 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   applyRainBarrierCharge(rainBarrierState, target, 160, 'magical')
   assert.equal(target.items.includes(rainDrops.name), false, 'Raindrops should leave the normal inventory after its final charge')
   assert.equal(rainDrops.name in target.itemCharges, false)
+}
+
+{
+  const toggleState = createInitialState('persistent-item-toggle-test')
+  toggleState.time = 900
+  const arcane = toggleState.arcanes[0]
+  const enemy = toggleState.arcanes.find((candidate) => candidate.team !== arcane.team)!
+  const treads = shopCatalog.find((item) => item.id === 'i072_attribute_treads')!
+  arcane.items = [treads.name]
+  arcane.itemToggleStates = createInitialItemToggleStates(arcane.items, arcane.heroDefinitionId)
+  arcane.itemToggleStates[treads.name] = 'agility'
+  arcane.stats = buildArcaneStats(arcane.heroDefinitionId, 12, 5_000, arcane.stats.xp, 0.35, 0.8, arcane.items, 0, arcane.itemToggleStates)
+  const agilityMaxHp = arcane.stats.maxHp
+  const hpRatioBefore = arcane.stats.hp / arcane.stats.maxHp
+  const defensiveTreads = updateItemToggleStates(toggleState, arcane, 72, [])
+  assert.equal(defensiveTreads.itemToggleStates[treads.name], 'strength', 'Treads should switch to strength under health pressure')
+  assert.ok(defensiveTreads.stats.maxHp > agilityMaxHp)
+  assert.ok(Math.abs(defensiveTreads.stats.hp / defensiveTreads.stats.maxHp - hpRatioBefore) < 0.01, 'attribute toggles must not create healing')
+
+  toggleState.arcanes[0] = defensiveTreads
+  const toggleFrame = createMatchRenderFrame(toggleState)
+  const toggleReplay = materializeMatchRenderFrame(toggleFrame, createMatchStaticData(toggleState))
+  assert.equal(toggleReplay.arcanes[0].itemToggleStates[treads.name], 'strength', 'toggle state should survive compact replay materialization')
+
+  const armlet = shopCatalog.find((item) => item.id === 'i078_armlet_relic')!
+  const armletCarrier = toggleState.arcanes[0]
+  armletCarrier.items = [armlet.name]
+  armletCarrier.itemToggleStates = createInitialItemToggleStates(armletCarrier.items, armletCarrier.heroDefinitionId)
+  armletCarrier.stats = buildArcaneStats(armletCarrier.heroDefinitionId, 12, 5_000, armletCarrier.stats.xp, 1, 1, armletCarrier.items, 0, armletCarrier.itemToggleStates)
+  const armletOffDamage = armletCarrier.stats.damage
+  enemy.pos = { x: armletCarrier.pos.x + 2, y: armletCarrier.pos.y }
+  armletCarrier.microDecision = 'Atacando inimigo'
+  const armletOn = updateItemToggleStates(toggleState, armletCarrier, 35, [enemy])
+  assert.equal(isItemToggleActive(armletOn, 'i078_armlet_relic'), true)
+  assert.ok(armletOn.stats.damage > armletOffDamage, 'active Armlet should add its imported damage and strength')
+  const hpBeforeDrain = armletOn.stats.hp
+  const drainedArmlet = applyItemToggleUpkeep(armletOn, 1)
+  assert.equal(drainedArmlet.stats.hp, hpBeforeDrain - 45)
+  const criticalArmlet = {
+    ...drainedArmlet,
+    stats: { ...drainedArmlet.stats, hp: drainedArmlet.stats.maxHp * 0.2 },
+    microDecision: 'Farmando',
+    aiMode: 'farm_lane' as const,
+  }
+  const armletOff = updateItemToggleStates(toggleState, criticalArmlet, 20, [])
+  assert.equal(isItemToggleActive(armletOff, 'i078_armlet_relic'), false, 'Armlet should turn off before its upkeep becomes unsafe')
+
+  const brooch = shopCatalog.find((item) => item.id === 'i160_revenant_brooch_generic')!
+  const broochCarrier = toggleState.arcanes[0]
+  broochCarrier.items = [brooch.name]
+  broochCarrier.itemToggleStates = { [brooch.name]: true }
+  broochCarrier.stats = buildArcaneStats(broochCarrier.heroDefinitionId, 18, 8_000, broochCarrier.stats.xp, 1, 1, broochCarrier.items, 0, broochCarrier.itemToggleStates)
+  broochCarrier.stats.mana = 300
+  enemy.items = []
+  enemy.itemCharges = {}
+  enemy.itemToggleStates = {}
+  const broochAttack = resolveArcaneItemAttackEffects(toggleState, broochCarrier, enemy)
+  assert.equal(broochAttack.basicAttackDamageType, 'magical')
+  assert.equal(broochAttack.manaCostPerAttack, 75)
+  performArcaneBasicAttack(toggleState, broochCarrier, enemy)
+  assert.equal(broochCarrier.stats.mana, 225, 'Brooch should spend its mana cost exactly once per converted attack')
+  broochCarrier.itemToggleStates[brooch.name] = false
+  const physicalAttack = resolveArcaneItemAttackEffects(toggleState, broochCarrier, enemy)
+  assert.equal(physicalAttack.basicAttackDamageType, 'physical')
+  assert.equal(physicalAttack.manaCostPerAttack, 0)
 }
 
 {

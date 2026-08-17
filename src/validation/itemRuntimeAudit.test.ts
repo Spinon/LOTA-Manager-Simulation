@@ -41,6 +41,17 @@ assert.deepEqual(
   'no declared item charge should remain disconnected from runtime events',
 )
 
+const toggleItems = audit.rows.filter((row) => row.effectKinds.includes('toggle'))
+assert.deepEqual(
+  toggleItems
+    .filter((row) => row.families.some((family) => family.id === 'toggle' && family.status === 'complete'))
+    .map((row) => row.itemId)
+    .sort(),
+  ['i072_attribute_treads', 'i078_armlet_relic', 'i160_revenant_brooch_generic'],
+  'all imported toggle items should persist and resolve their selected state',
+)
+assert.equal(toggleItems.some((row) => row.families.some((family) => family.id === 'toggle' && family.status === 'missing')), false)
+
 const neutralItems = audit.rows.filter((row) => row.slot === 'neutral' || row.slot === 'neutral_enchantment')
 assert.ok(neutralItems.length > 0)
 assert.ok(neutralItems.every((row) => row.families.some((family) => family.id === 'acquisition' && family.status === 'missing')))

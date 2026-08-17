@@ -76,6 +76,7 @@ import {
   type DecisionStatus,
   type ExecutionFailureType,
   type HeroSkillDefinition,
+  type ItemToggleState,
   type LaneId,
   type MapRune,
   type MatchRenderFrame,
@@ -1090,10 +1091,12 @@ function TeamPanel({
                     const item = arcane.items[index]
                     const cooldown = item ? getCooldownRemaining(arcane.itemCooldowns, item, time) : 0
                     const charges = item ? arcane.itemCharges[item] : undefined
+                    const toggleState = item ? arcane.itemToggleStates[item] : undefined
                     return (
-                      <i key={index} title={getInventorySlotTitle(item, arcane.itemCooldowns, arcane.itemCharges, time)} className={getInventorySlotClassName(item, cooldown)}>
+                      <i key={index} title={getInventorySlotTitle(item, arcane.itemCooldowns, arcane.itemCharges, arcane.itemToggleStates, time)} className={getInventorySlotClassName(item, cooldown)}>
                         {getInventoryGlyph(item)}
                         {charges !== undefined && <b className="charge-badge">{charges}</b>}
+                        {toggleState !== undefined && <b className={`toggle-badge${toggleState === false ? ' off' : ''}`}>{formatItemToggleState(toggleState)}</b>}
                         {cooldown > 0 && <span className="cooldown-badge">{Math.ceil(cooldown)}</span>}
                       </i>
                     )
@@ -2893,13 +2896,14 @@ function ArcaneInventoryCard({ arcane, now }: { arcane: Arcane; now: number }) {
           items={arcane.items}
           cooldowns={arcane.itemCooldowns}
           charges={arcane.itemCharges}
+          toggles={arcane.itemToggleStates}
           now={now}
           selectedItem={activeItem}
           onItemSelect={setSelectedItem}
         />
         <TpSlot arcane={arcane} now={now} />
       </div>
-      <ItemDetail itemName={activeItem} cooldowns={arcane.itemCooldowns} charges={arcane.itemCharges} now={now} />
+      <ItemDetail itemName={activeItem} cooldowns={arcane.itemCooldowns} charges={arcane.itemCharges} toggles={arcane.itemToggleStates} now={now} />
       <span className="inventory-note">{getNextPurchaseLabel(arcane)}</span>
     </>
   )
@@ -2909,6 +2913,7 @@ function InventoryStrip({
   items,
   cooldowns = {},
   charges = {},
+  toggles = {},
   now = 0,
   selectedItem,
   onItemSelect,
@@ -2916,6 +2921,7 @@ function InventoryStrip({
   items: string[]
   cooldowns?: Record<string, number>
   charges?: Record<string, number>
+  toggles?: Record<string, ItemToggleState>
   now?: number
   selectedItem?: string
   onItemSelect?: (item: string) => void
@@ -2926,6 +2932,7 @@ function InventoryStrip({
         const item = items[index]
         const cooldown = item ? getCooldownRemaining(cooldowns, item, now) : 0
         const chargeCount = item ? charges[item] : undefined
+        const toggleState = item ? toggles[item] : undefined
         const className = [
           getInventorySlotClassName(item, cooldown),
           item && item === selectedItem ? 'selected' : '',
@@ -2943,12 +2950,13 @@ function InventoryStrip({
             key={index}
             type="button"
             className={className}
-            title={getInventorySlotTitle(item, cooldowns, charges, now)}
+            title={getInventorySlotTitle(item, cooldowns, charges, toggles, now)}
             aria-pressed={item === selectedItem}
             onClick={() => onItemSelect?.(item)}
           >
             {getInventoryGlyph(item)}
             {chargeCount !== undefined && <b className="charge-badge">{chargeCount}</b>}
+            {toggleState !== undefined && <b className={`toggle-badge${toggleState === false ? ' off' : ''}`}>{formatItemToggleState(toggleState)}</b>}
             {cooldown > 0 && <span className="cooldown-badge">{Math.ceil(cooldown)}</span>}
           </button>
         )
@@ -2957,7 +2965,7 @@ function InventoryStrip({
   )
 }
 
-function ItemDetail({ itemName, cooldowns, charges, now }: { itemName?: string; cooldowns: Record<string, number>; charges: Record<string, number>; now: number }) {
+function ItemDetail({ itemName, cooldowns, charges, toggles, now }: { itemName?: string; cooldowns: Record<string, number>; charges: Record<string, number>; toggles: Record<string, ItemToggleState>; now: number }) {
   if (!itemName) return <div className="item-detail empty">Clique em um item para ver detalhes.</div>
   const shopItem = shopCatalog.find((item) => item.name === itemName)
   const consumable = getConsumableByName(itemName)
@@ -2978,6 +2986,7 @@ function ItemDetail({ itemName, cooldowns, charges, now }: { itemName?: string; 
         <strong>{itemName}</strong>
         <span>{consumable ? `${consumable.cost}g / consumivel` : `${shopItem?.cost ?? 0}g`}</span>
         {charges[itemName] !== undefined && <em>{charges[itemName]} cargas</em>}
+        {toggles[itemName] !== undefined && <em>{formatItemToggleState(toggles[itemName])}</em>}
         {cooldown > 0 && <em>CD {cooldown.toFixed(1)}s</em>}
       </div>
       {shopItem && <ItemStatSummary item={shopItem} />}
@@ -3415,14 +3424,29 @@ function getInventorySlotClassName(item: string | undefined, cooldown: number) {
   return classes.join(' ')
 }
 
-function getInventorySlotTitle(item: string | undefined, cooldowns: Record<string, number>, charges: Record<string, number>, now: number) {
+function formatItemToggleState(state: ItemToggleState) {
+  if (state === true) return 'ON'
+  if (state === false) return 'OFF'
+  if (state === 'strength') return 'STR'
+  if (state === 'agility') return 'AGI'
+  return 'INT'
+}
+
+function getInventorySlotTitle(
+  item: string | undefined,
+  cooldowns: Record<string, number>,
+  charges: Record<string, number>,
+  toggles: Record<string, ItemToggleState>,
+  now: number,
+) {
   if (!item) return 'Slot vazio'
   const cooldown = getCooldownRemaining(cooldowns, item, now)
   const shopItem = shopCatalog.find((candidate) => candidate.name === item)
   const activeLine = shopItem?.active ? ` / cd ${shopItem.active.cooldown}s` : ''
   const chargesLine = charges[item] === undefined ? '' : ` / ${charges[item]} cargas`
+  const toggleLine = toggles[item] === undefined ? '' : ` / ${formatItemToggleState(toggles[item])}`
   const remainingLine = cooldown > 0 ? ` / pronto em ${cooldown.toFixed(1)}s` : ''
-  return `${item}${chargesLine}${activeLine}${remainingLine}`
+  return `${item}${chargesLine}${toggleLine}${activeLine}${remainingLine}`
 }
 
 function getCooldownRemaining(cooldowns: Record<string, number>, key: string, now: number) {

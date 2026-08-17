@@ -5,9 +5,9 @@
   "buyableCount": 112,
   "statusCounts": {
     "complete": 0,
-    "partial": 128,
+    "partial": 131,
     "approximate": 0,
-    "missing": 82
+    "missing": 79
   },
   "familyCounts": {
     "acquisition": {
@@ -96,7 +96,7 @@
     },
     "special_values": {
       "complete": 0,
-      "partial": 51,
+      "partial": 48,
       "approximate": 0,
       "missing": 0
     },
@@ -119,10 +119,10 @@
       "missing": 9
     },
     "toggle": {
-      "complete": 0,
+      "complete": 3,
       "partial": 0,
       "approximate": 0,
-      "missing": 3
+      "missing": 0
     }
   },
   "rows": [
@@ -5514,7 +5514,7 @@
       "shopTier": "base",
       "cost": 1400,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -5552,11 +5552,6 @@
           "evidence": "shop exclusion is implemented, while share/drop/sell/illusion rules remain source-specific"
         },
         {
-          "id": "special_values",
-          "status": "partial",
-          "evidence": "1 effect values are preserved but not consumed by a generic handler"
-        },
-        {
           "id": "stacking",
           "status": "partial",
           "evidence": "duplicate item names are blocked, but stack groups and stack modes are not enforced generically"
@@ -5568,8 +5563,8 @@
         },
         {
           "id": "toggle",
-          "status": "missing",
-          "evidence": "toggle_attribute has no toggle state or matching passive behavior"
+          "status": "complete",
+          "evidence": "toggle_attribute persists its selected mode through inventory, replay, AI decisions, and matching stat/combat/upkeep handlers"
         }
       ],
       "effectKinds": [
@@ -5598,10 +5593,8 @@
         "selectedAttribute"
       ],
       "unhandledStatKeys": [],
-      "unhandledEffectValueKeys": [
-        "attributeBonus"
-      ],
-      "fingerprint": "i072_attribute_treads|boots|inventory|base|1400|passive|toggle|attributes.selectedAttribute|mobility.movementSpeed|offense.attackSpeed|attackSpeed|attributeBonus|cooldown|movementSpeed|selectedAttribute|acquisition:complete|catalog:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:approximate|restrictions:partial|special_values:partial|stacking:partial|stats:complete|toggle:missing"
+      "unhandledEffectValueKeys": [],
+      "fingerprint": "i072_attribute_treads|boots|inventory|base|1400|passive|toggle|attributes.selectedAttribute|mobility.movementSpeed|offense.attackSpeed|attackSpeed|attributeBonus|cooldown|movementSpeed|selectedAttribute|acquisition:complete|catalog:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:approximate|restrictions:partial|stacking:partial|stats:complete|toggle:complete"
     },
     {
       "itemId": "i073_arcane_boots",
@@ -6083,7 +6076,7 @@
       "shopTier": "base",
       "cost": 2500,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -6121,11 +6114,6 @@
           "evidence": "shop exclusion is implemented, while share/drop/sell/illusion rules remain source-specific"
         },
         {
-          "id": "special_values",
-          "status": "partial",
-          "evidence": "2 effect values are preserved but not consumed by a generic handler"
-        },
-        {
           "id": "stacking",
           "status": "partial",
           "evidence": "duplicate item names are blocked, but stack groups and stack modes are not enforced generically"
@@ -6137,8 +6125,8 @@
         },
         {
           "id": "toggle",
-          "status": "missing",
-          "evidence": "unholy_strength_toggle has no toggle state or matching passive behavior"
+          "status": "complete",
+          "evidence": "unholy_strength_toggle persists its selected mode through inventory, replay, AI decisions, and matching stat/combat/upkeep handlers"
         }
       ],
       "effectKinds": [
@@ -6171,11 +6159,8 @@
       "unhandledStatKeys": [
         "resources.healthRegen"
       ],
-      "unhandledEffectValueKeys": [
-        "bonusStrength",
-        "healthDrainPerSecond"
-      ],
-      "fingerprint": "i078_armlet_relic|mid|inventory|base|2500|passive|toggle|defense.armor|offense.attackSpeed|offense.damage|resources.healthRegen|armor|attackSpeed|bonusDamage|bonusStrength|cooldown|damage|healthDrainPerSecond|healthRegen|acquisition:complete|catalog:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:approximate|restrictions:partial|special_values:partial|stacking:partial|stats:partial|toggle:missing"
+      "unhandledEffectValueKeys": [],
+      "fingerprint": "i078_armlet_relic|mid|inventory|base|2500|passive|toggle|defense.armor|offense.attackSpeed|offense.damage|resources.healthRegen|armor|attackSpeed|bonusDamage|bonusStrength|cooldown|damage|healthDrainPerSecond|healthRegen|acquisition:complete|catalog:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:approximate|restrictions:partial|stacking:partial|stats:partial|toggle:complete"
     },
     {
       "itemId": "i079_frenzy_mask",
@@ -14309,7 +14294,7 @@
       "shopTier": "base",
       "cost": 4900,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -14347,11 +14332,6 @@
           "evidence": "shop exclusion is implemented, while share/drop/sell/illusion rules remain source-specific"
         },
         {
-          "id": "special_values",
-          "status": "partial",
-          "evidence": "2 effect values are preserved but not consumed by a generic handler"
-        },
-        {
           "id": "stacking",
           "status": "partial",
           "evidence": "duplicate item names are blocked, but stack groups and stack modes are not enforced generically"
@@ -14363,8 +14343,8 @@
         },
         {
           "id": "toggle",
-          "status": "missing",
-          "evidence": "toggle_magic_attacks has no toggle state or matching passive behavior"
+          "status": "complete",
+          "evidence": "toggle_magic_attacks persists its selected mode through inventory, replay, AI decisions, and matching stat/combat/upkeep handlers"
         }
       ],
       "effectKinds": [
@@ -14394,11 +14374,8 @@
       "unhandledStatKeys": [
         "resources.manaRegen"
       ],
-      "unhandledEffectValueKeys": [
-        "canHitEthereal",
-        "manaCostPerAttack"
-      ],
-      "fingerprint": "i160_revenant_brooch_generic|late|inventory|base|4900|passive|toggle|offense.attackSpeed|offense.damage|resources.manaRegen|attackSpeed|canHitEthereal|cooldown|damage|manaCostPerAttack|manaRegen|acquisition:complete|catalog:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:complete|restrictions:partial|special_values:partial|stacking:partial|stats:partial|toggle:missing"
+      "unhandledEffectValueKeys": [],
+      "fingerprint": "i160_revenant_brooch_generic|late|inventory|base|4900|passive|toggle|offense.attackSpeed|offense.damage|resources.manaRegen|attackSpeed|canHitEthereal|cooldown|damage|manaCostPerAttack|manaRegen|acquisition:complete|catalog:complete|effect_rules:partial|passive:complete|purchase_ai:partial|recipes:complete|restrictions:partial|stacking:partial|stats:partial|toggle:complete"
     },
     {
       "itemId": "i161_consecrated_wraps_generic",

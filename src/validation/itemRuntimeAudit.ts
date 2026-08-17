@@ -80,12 +80,15 @@ const runtimeEffectValueKeys = new Set([
   'barrier',
   'baseDamage',
   'block',
+  'attributeBonus',
   'bonusDamage',
+  'bonusStrength',
   'bonusGold',
   'bonusXpPct',
   'chanceMeleePct',
   'chancePct',
   'chanceRangedPct',
+  'canHitEthereal',
   'charges',
   'cleavePct',
   'cooldown',
@@ -103,12 +106,14 @@ const runtimeEffectValueKeys = new Set([
   'enemyArmorReduction',
   'heal',
   'health',
+  'healthDrainPerSecond',
   'healthPerCharge',
   'lifestealPct',
   'magicBarrier',
   'mana',
   'manaPerCharge',
   'manaCost',
+  'manaCostPerAttack',
   'manaBurn',
   'maxHealthDpsPct',
   'maxCharges',
@@ -285,6 +290,7 @@ const explicitlyUnhandledMechanicTags = new Set([
 
 const shopItemIds = new Set(itemShopCatalog.map((item) => item.id))
 const consumableIds = new Set(consumableCatalog.map((item) => item.id))
+const persistentToggleItemIds = new Set(['i072_attribute_treads', 'i078_armlet_relic', 'i160_revenant_brooch_generic'])
 
 export function buildItemRuntimeAudit(): ItemRuntimeAudit {
   const rows = FULL_ITEM_SEEDS_V2.map(classifyItem)
@@ -487,13 +493,13 @@ function classifyEffect(item: FullItemSeed, effect: FullItemEffectSeed): ItemSup
       evidence: supported ? `${effect.id} updates nearby units through normalized aura modifiers` : `${effect.id} has no matching proximity handler`,
     })
   } else if (effect.kind === 'toggle') {
-    const passiveWhileOwned = hasTag(passiveRuntimeTags)
+    const supported = persistentToggleItemIds.has(item.id)
     families.push({
       id: 'toggle',
-      status: passiveWhileOwned ? 'approximate' : 'missing',
-      evidence: passiveWhileOwned
-        ? `${effect.id} is treated as always enabled; no persistent toggle choice exists`
-        : `${effect.id} has no toggle state or matching passive behavior`,
+      status: supported ? 'complete' : 'missing',
+      evidence: supported
+        ? `${effect.id} persists its selected mode through inventory, replay, AI decisions, and matching stat/combat/upkeep handlers`
+        : `${effect.id} has no persistent toggle state or matching runtime behavior`,
     })
   } else {
     families.push({

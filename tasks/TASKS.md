@@ -737,6 +737,15 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - O HUD compacto e o Inspector mostram a quantidade no próprio slot e no detalhe do item. Testes cobrem uso intermediário/final, ativo zerado e round-trip pelo replay.
 - Próxima rodada da T17: integrar consumíveis utilitários, aquisição de wards e toggles persistentes, começando pelos itens que hoje ainda não entram no catálogo de compra/uso.
 
+**Progresso dos toggles persistentes (2026-08-17)**:
+- `itemToggleStates` acompanha o inventário no spawn, compra/venda, clone de tick e replay compacto. Replays anteriores continuam válidos com estado vazio por padrão; o HUD mostra `STR/AGI/INT` ou `ON/OFF` no próprio slot.
+- Attribute Treads alterna o bônus importado entre força, agilidade e inteligência conforme vida, mana, atributo primário e perigo, preservando a proporção de recursos para impedir cura por troca repetida.
+- Armlet aplica +25 de força e +35 de dano enquanto ativa, drena 45 HP/s sem matar o portador e impede o fast path de viagem durante o upkeep. A IA liga em combate quando há margem de vida e desliga ao perder a janela segura.
+- Revenant Brooch converte o ataque básico inteiro em dano mágico, atinge alvos etéreos e gasta 75 de mana exatamente uma vez por ataque; a IA o reserva para combate com mana suficiente e alvos de armadura alta/etéreos.
+- Os três toggles importados estão completos nessa família. A matriz passou para 131 itens parciais e 79 com família ausente.
+- O caminho quente ignora contexto e upkeep quando não há toggle relevante; benchmark determinístico de 5 minutos em 155,1x wall / 125,2x CPU, digest `4a30d919e126418d`.
+- Próxima rodada da T17: entidade e estoque de wards, seguidos por Smoke, Dust, Recall e Tome no inventário normal.
+
 ---
 
 ### [ ] T18 - Paridade integral dos atributos importados

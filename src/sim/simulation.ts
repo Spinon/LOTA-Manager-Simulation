@@ -312,6 +312,7 @@ export type Arcane = {
   decision: string
   items: string[]
   itemCharges: Record<string, number>
+  itemToggleStates: Record<string, ItemToggleState>
   itemCooldowns: Record<string, number>
   skillStates: Record<string, RuntimeParentSkillState>
   tpScrolls: number
@@ -337,6 +338,8 @@ export type Arcane = {
   objectiveKills: number
   stats: Stats
 }
+
+export type ItemToggleState = boolean | 'strength' | 'agility' | 'intelligence'
 export type Creep = {
   id: string
   team: TeamId
@@ -1274,6 +1277,9 @@ export let shopCatalog: ShopItem[] = []
 export let consumableCatalog: ConsumableItem[] = []
 let shopItemById = new Map<string, ShopItem>()
 let shopItemByName = new Map<string, ShopItem>()
+let attributeTreadsItemName = ''
+let armletItemName = ''
+let revenantBroochItemName = ''
 let shopItemsByInventory = new WeakMap<string[], ShopItem[]>()
 let abilityUpgradeSlotsByInventory = new WeakMap<string[], Set<AbilityUpgradeSlot>>()
 let runtimeSkillsByArcane = new WeakMap<object, {
@@ -1304,6 +1310,9 @@ export async function loadGameData() {
   shopCatalog = itemModule.itemShopCatalog
   shopItemById = new Map(shopCatalog.map((item) => [item.id, item]))
   shopItemByName = new Map(shopCatalog.map((item) => [item.name, item]))
+  attributeTreadsItemName = shopItemById.get(attributeTreadsItemId)?.name ?? ''
+  armletItemName = shopItemById.get(armletItemId)?.name ?? ''
+  revenantBroochItemName = shopItemById.get(revenantBroochItemId)?.name ?? ''
   shopItemsByInventory = new WeakMap()
   abilityUpgradeSlotsByInventory = new WeakMap()
   runtimeSkillsByArcane = new WeakMap()
@@ -1316,7 +1325,7 @@ export async function loadGameData() {
   toRuntimeItemModifier = itemModule.toItemModifier
 }
 
-export const rosterSeed: Omit<Arcane, 'pos' | 'facing' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'nextCombatEvaluationAt' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCharges' | 'itemCooldowns' | 'skillStates' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'kills' | 'deaths' | 'assists' | 'damageDealt' | 'heroDamageDealt' | 'structureDamageDealt' | 'damageTaken' | 'healingDone' | 'healingReceived' | 'laneCreepKills' | 'denies' | 'neutralKills' | 'objectiveKills' | 'stats'>[] = [
+export const rosterSeed: Omit<Arcane, 'pos' | 'facing' | 'target' | 'pathIndex' | 'respawn' | 'lastAttack' | 'nextCombatEvaluationAt' | 'aggression' | 'visionRange' | 'shotcalling' | 'macroDecision' | 'microDecision' | 'aiMode' | 'aiReason' | 'aiExecutionChance' | 'aiExecutionDelay' | 'aiFailure' | 'decisionStatus' | 'decisionTempo' | 'nextDecisionAt' | 'lastDecisionAt' | 'forceDecision' | 'lastDecisionHpRatio' | 'lastDecisionManaRatio' | 'lastDecisionPos' | 'decision' | 'itemCharges' | 'itemToggleStates' | 'itemCooldowns' | 'skillStates' | 'tpScrolls' | 'tpCooldownUntil' | 'channeling' | 'skillLevels' | 'unspentSkillPoints' | 'statBonusLevels' | 'earnedGold' | 'kills' | 'deaths' | 'assists' | 'damageDealt' | 'heroDamageDealt' | 'structureDamageDealt' | 'damageTaken' | 'healingDone' | 'healingReceived' | 'laneCreepKills' | 'denies' | 'neutralKills' | 'objectiveKills' | 'stats'>[] = [
   { id: 'd-quasar', team: 'dawn', player: 'Quasar', name: 'Sword Tempest', heroDefinitionId: 'h007_sword_tempest', role: 'Safe Lane', lane: 'bot', portrait: 'ST', items: ['Blade', 'Boots'] },
   { id: 'd-aster', team: 'dawn', player: 'Aster', name: 'Storm Channeler', heroDefinitionId: 'h014_storm_channeler', role: 'Mid', lane: 'mid', portrait: 'SC', items: ['Wand'] },
   { id: 'd-bulwark', team: 'dawn', player: 'Bulwark', name: 'Tide Colossus', heroDefinitionId: 'h022_tide_colossus', role: 'Offlane', lane: 'top', portrait: 'TC', items: ['Shield'] },
@@ -1335,7 +1344,8 @@ export function createInitialState(seed = 'lota-default-seed', options: Simulati
     const spawn = teamInfo[arcane.team].base
     const pos = spreadPoint(spawn, index)
     const startingItems = getRecommendedStartingItemNamesForHero(arcane.heroDefinitionId, arcane.role)
-    const stats = buildArcaneStats(arcane.heroDefinitionId, 1, 600, 0, 1, 1, startingItems)
+    const itemToggleStates = createInitialItemToggleStates(startingItems, arcane.heroDefinitionId)
+    const stats = buildArcaneStats(arcane.heroDefinitionId, 1, 600, 0, 1, 1, startingItems, 0, itemToggleStates)
     const baseArcane = {
       ...arcane,
       pos,
@@ -1367,6 +1377,7 @@ export function createInitialState(seed = 'lota-default-seed', options: Simulati
       decision: 'Saindo da base',
       items: startingItems,
       itemCharges: createInitialItemCharges(startingItems),
+      itemToggleStates,
       itemCooldowns: {},
       skillStates: {},
       tpScrolls: 1,
@@ -1517,10 +1528,24 @@ export function getFallbackStartingItemNames(role: string) {
   return ['Regen Rations', 'Healing Salve']
 }
 
-export function buildArcaneStats(heroDefinitionId: string, level: number, gold: number, xp: number, hpRatio = 1, manaRatio = 1, itemNames: string[] = [], statBonusLevels = 0): Stats {
+const attributeTreadsItemId = 'i072_attribute_treads'
+const armletItemId = 'i078_armlet_relic'
+const revenantBroochItemId = 'i160_revenant_brooch_generic'
+
+export function buildArcaneStats(
+  heroDefinitionId: string,
+  level: number,
+  gold: number,
+  xp: number,
+  hpRatio = 1,
+  manaRatio = 1,
+  itemNames: string[] = [],
+  statBonusLevels = 0,
+  itemToggleStates: Record<string, ItemToggleState> = {},
+): Stats {
   const definition = getHeroDefinition(heroDefinitionId)
   const calculated = calculateHeroStats(definition, level, [
-    ...getItemStatModifiers(itemNames, definition),
+    ...getItemStatModifiers(itemNames, definition, itemToggleStates),
     ...getStatBonusModifiers(statBonusLevels),
   ])
   const maxHp = Math.round(calculated.resources.maxHealth)
@@ -1552,17 +1577,36 @@ export function buildArcaneStats(heroDefinitionId: string, level: number, gold: 
   }
 }
 
-export function getItemStatModifiers(itemNames: string[], hero?: HeroDefinition) {
+export function getItemStatModifiers(
+  itemNames: string[],
+  hero?: HeroDefinition,
+  itemToggleStates: Record<string, ItemToggleState> = {},
+) {
   return itemNames
     .map((name) => {
       const item = shopCatalog.find((candidate) => candidate.name === name)
       if (!item) return undefined
       const seed = getRuntimeItemSeedById(item.id)
       if (!seed || !hero) return item.modifier
-      return toRuntimeItemModifier(seed, {
-        primaryAttribute: hero.primaryAttribute,
+      const selectedTreadAttribute = item.id === attributeTreadsItemId
+        ? itemToggleStates[name]
+        : undefined
+      const modifier = toRuntimeItemModifier(seed, {
+        primaryAttribute: selectedTreadAttribute === 'strength' || selectedTreadAttribute === 'agility' || selectedTreadAttribute === 'intelligence'
+          ? selectedTreadAttribute
+          : hero.primaryAttribute,
         attackType: hero.attackType,
       })
+      if (item.id !== armletItemId || itemToggleStates[name] !== true) return modifier
+      return {
+        ...modifier,
+        flat: {
+          ...modifier.flat,
+          strength: (modifier.flat?.strength ?? 0) + 25,
+          damageMin: (modifier.flat?.damageMin ?? 0) + 35,
+          damageMax: (modifier.flat?.damageMax ?? 0) + 35,
+        },
+      }
     })
     .filter((modifier): modifier is StatModifier => modifier !== undefined)
 }
@@ -1582,7 +1626,10 @@ export function getStatBonusModifiers(statBonusLevels: number): StatModifier[] {
 }
 
 export function rebuildArcaneStatsAfterItemChange(arcane: Arcane, nextItems: string[], nextGold: number) {
-  const nextStats = buildArcaneStats(arcane.heroDefinitionId, arcane.stats.level, nextGold, arcane.stats.xp, 1, 1, nextItems, arcane.statBonusLevels)
+  const nextToggleStates = nextItems.reduce<Record<string, ItemToggleState>>((states, itemName) => (
+    withInitialItemToggleState(states, itemName, arcane.heroDefinitionId)
+  ), retainOwnedItemToggleStates(arcane.itemToggleStates, nextItems))
+  const nextStats = buildArcaneStats(arcane.heroDefinitionId, arcane.stats.level, nextGold, arcane.stats.xp, 1, 1, nextItems, arcane.statBonusLevels, nextToggleStates)
   const gainedMaxHp = Math.max(0, nextStats.maxHp - arcane.stats.maxHp)
   const gainedMaxMana = Math.max(0, nextStats.maxMana - arcane.stats.maxMana)
 
@@ -2102,6 +2149,12 @@ export function tick(
     frameContext,
     executionOptions.deferArcaneSafetyUntilDecision,
   ))
+  if (armletItemName && next.arcanes.some((arcane) => arcane.itemToggleStates[armletItemName] === true)) {
+    next.arcanes = next.arcanes.map((arcane) => applyItemToggleUpkeep(
+      arcane,
+      executionOptions.fineStepEntityIds?.has(arcane.id) ? fineStepDelta : delta,
+    ))
+  }
   frameContext.routeArcanesCache?.clear()
   if (next.time >= 0) next = collectRunes(next)
   if (passiveGold > 0) {
@@ -2338,6 +2391,7 @@ export function cloneSimulationStateForTick(state: SimulationState): SimulationS
       movementDestination: arcane.movementDestination ? { ...arcane.movementDestination } : undefined,
       lastDecisionPos: { ...arcane.lastDecisionPos },
       itemCharges: { ...arcane.itemCharges },
+      itemToggleStates: { ...arcane.itemToggleStates },
       itemCooldowns: { ...arcane.itemCooldowns },
       skillStates: Object.fromEntries(Object.entries(arcane.skillStates).map(([key, value]) => [key, {
         ...value,
@@ -2408,6 +2462,7 @@ type RenderArcaneDetailFrame = [
   number, number, number, number, number, number, number, number, RenderStatsFrame,
   Record<string, RuntimeParentSkillState>,
   Record<string, number>,
+  Record<string, ItemToggleState>,
 ]
 
 type RenderArcaneFrame = [
@@ -2530,6 +2585,7 @@ function createMatchRenderDetails(state: SimulationState): MatchRenderDetails {
         ...(value.positions ? { positions: value.positions.map((position) => ({ ...position })) } : {}),
       }])),
       { ...arcane.itemCharges },
+      { ...arcane.itemToggleStates },
     ]),
     creeps: state.creeps.map((creep) => [creep.id, renderNumber(creep.damage), renderNumber(creep.visionRange)]),
   }
@@ -2661,6 +2717,7 @@ export function materializeMatchRenderFrame(frame: MatchRenderFrame, staticData:
       decision: arcane[7],
       items: arcane[15],
       itemCharges: arcane[39] ?? {},
+      itemToggleStates: arcane[40] ?? {},
       itemCooldowns: arcane[16],
       skillStates: arcane[38] ?? {},
       tpScrolls: arcane[17],
@@ -6248,7 +6305,10 @@ export function updateArcaneMovement(
 
   const shouldShopAtBase = shouldDecide && atBase && (canBuyAtBase || !macroDecision.startsWith('Avancar'))
   const shoppedArcane = shouldShopAtBase ? buyAtBase(state, arcane) : arcane
-  const dispelResult = shouldDecide ? applyDispelItemIfNeeded(state, shoppedArcane) : { arcane: shoppedArcane, used: undefined }
+  const toggledArcane = decisionDue
+    ? updateItemToggleStates(state, shoppedArcane, decisionDangerScore ?? 0, decisionVisibleEnemies ?? [])
+    : shoppedArcane
+  const dispelResult = shouldDecide ? applyDispelItemIfNeeded(state, toggledArcane) : { arcane: toggledArcane, used: undefined }
   const activeItemResult = shouldDecide
     ? applySimpleActiveItemIfNeeded(state, dispelResult.arcane, decisionDangerScore, decisionVisibleEnemies, frameContext)
     : { arcane: dispelResult.arcane, used: undefined, interruptsDecision: false }
@@ -6568,11 +6628,14 @@ export function buyItemAtBase(arcane: Arcane): Arcane {
   const retainedCharges = purchase.soldItemName
     ? withoutItemCharges(arcane.itemCharges, purchase.soldItemName)
     : arcane.itemCharges
+  const retainedToggleStates = retainOwnedItemToggleStates(arcane.itemToggleStates, retainedItems)
+  const itemToggleStates = withInitialItemToggleState(retainedToggleStates, purchase.item.name, arcane.heroDefinitionId)
 
   return {
     ...arcane,
     items,
     itemCharges: withInitialItemCharges(retainedCharges, purchase.item.name),
+    itemToggleStates,
     stats: rebuildArcaneStatsAfterItemChange(arcane, items, arcane.stats.gold - purchase.netCost),
   }
 }
@@ -7137,7 +7200,7 @@ export function getActiveItemDamage(arcane: Arcane, item: ShopItem) {
   const primaryPct = getActiveItemNumber(values, 'damageFromPrimaryAttributePct') ?? 0
   if (primaryPct <= 0) return base
   const hero = getHeroDefinition(arcane.heroDefinitionId)
-  const calculated = calculateHeroStats(hero, arcane.stats.level, getItemStatModifiers(arcane.items, hero))
+  const calculated = calculateHeroStats(hero, arcane.stats.level, getItemStatModifiers(arcane.items, hero, arcane.itemToggleStates))
   const primary = getPrimaryAttributeValue(hero, calculated.attributes)
   return Math.round(base + primary * (primaryPct / 100))
 }
@@ -7206,6 +7269,156 @@ export function withoutItemCharges(charges: Record<string, number>, itemName: st
   const nextCharges = { ...charges }
   delete nextCharges[itemName]
   return nextCharges
+}
+
+function getDefaultTreadAttribute(heroDefinitionId: string): Exclude<ItemToggleState, boolean> {
+  const primary = getHeroDefinition(heroDefinitionId).primaryAttribute
+  return primary === 'universal' ? 'strength' : primary
+}
+
+export function createInitialItemToggleStates(items: string[], heroDefinitionId: string) {
+  return items.reduce<Record<string, ItemToggleState>>((states, itemName) => (
+    withInitialItemToggleState(states, itemName, heroDefinitionId)
+  ), {})
+}
+
+export function withInitialItemToggleState(
+  states: Record<string, ItemToggleState>,
+  itemName: string,
+  heroDefinitionId: string,
+) {
+  if (itemName in states) return states
+  const itemId = shopItemByName.get(itemName)?.id
+  const initialState = itemId === attributeTreadsItemId
+    ? getDefaultTreadAttribute(heroDefinitionId)
+    : itemId === armletItemId || itemId === revenantBroochItemId
+      ? false
+      : undefined
+  if (initialState === undefined) return states
+  return { ...states, [itemName]: initialState }
+}
+
+export function retainOwnedItemToggleStates(states: Record<string, ItemToggleState>, items: string[]) {
+  const owned = new Set(items)
+  return Object.fromEntries(Object.entries(states).filter(([itemName]) => owned.has(itemName))) as Record<string, ItemToggleState>
+}
+
+function getOwnedItemById(arcane: Pick<Arcane, 'items'>, itemId: string) {
+  return arcane.items
+    .map((itemName) => shopItemByName.get(itemName))
+    .find((item) => item?.id === itemId)
+}
+
+export function isItemToggleActive(arcane: Pick<Arcane, 'items' | 'itemToggleStates'>, itemId: string) {
+  const itemName = itemId === attributeTreadsItemId
+    ? attributeTreadsItemName
+    : itemId === armletItemId
+      ? armletItemName
+      : itemId === revenantBroochItemId
+        ? revenantBroochItemName
+        : getOwnedItemById(arcane, itemId)?.name
+  return Boolean(itemName && arcane.itemToggleStates[itemName] === true)
+}
+
+export function updateItemToggleStates(
+  state: SimulationState,
+  arcane: Arcane,
+  knownDanger = 0,
+  visibleEnemies: Arcane[] = [],
+) {
+  const treadsState = attributeTreadsItemName ? arcane.itemToggleStates[attributeTreadsItemName] : undefined
+  const armletState = armletItemName ? arcane.itemToggleStates[armletItemName] : undefined
+  const broochState = revenantBroochItemName ? arcane.itemToggleStates[revenantBroochItemName] : undefined
+  if (treadsState === undefined && armletState === undefined && broochState === undefined) return arcane
+
+  const nextToggleStates = { ...arcane.itemToggleStates }
+  const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
+  const manaRatio = arcane.stats.mana / Math.max(1, arcane.stats.maxMana)
+  const nearbyEnemies = armletState !== undefined || broochState !== undefined
+    ? visibleEnemies.filter((enemy) => distanceSquared(enemy.pos, arcane.pos) <= 14 * 14)
+    : []
+  const combatIntent = nearbyEnemies.length > 0 ||
+    arcane.aiMode === 'join_fight' ||
+    arcane.aiMode === 'finish_enemy' ||
+    arcane.microDecision.includes('Atacando') ||
+    arcane.microDecision.startsWith('Foco em')
+
+  if (treadsState !== undefined) {
+    const primary = getHeroDefinition(arcane.heroDefinitionId).primaryAttribute
+    const farmingAttribute = primary === 'universal'
+      ? arcane.role.includes('Support') ? 'intelligence' : 'agility'
+      : primary
+    nextToggleStates[attributeTreadsItemName] = hpRatio < 0.5 || knownDanger > 68
+      ? 'strength'
+      : manaRatio < 0.24
+        ? 'intelligence'
+        : farmingAttribute
+  }
+
+  if (armletState !== undefined) {
+    const currentlyActive = armletState === true
+    nextToggleStates[armletItemName] = currentlyActive
+      ? combatIntent && hpRatio > 0.32
+      : combatIntent && hpRatio > 0.58 && knownDanger < 76
+  }
+
+  if (broochState !== undefined) {
+    const brooch = shopItemByName.get(revenantBroochItemName)
+    const manaCost = getActiveItemNumber(
+      brooch?.effects.find((effect) => effect.kind === 'toggle')?.values ?? {},
+      'manaCostPerAttack',
+    ) ?? 75
+    const valuableMagicTarget = nearbyEnemies.some((enemy) => (
+      getEffectiveArcaneArmor(state, enemy) >= 12 || hasTimedEffect(state, enemy.id, 'ethereal')
+    ))
+    nextToggleStates[revenantBroochItemName] = combatIntent &&
+      arcane.stats.mana >= manaCost * 2 &&
+      (valuableMagicTarget || arcane.role === 'Mid')
+  }
+
+  const changed = Object.entries(nextToggleStates).some(([itemName, value]) => arcane.itemToggleStates[itemName] !== value)
+  if (!changed) return arcane
+  const hpRatioBefore = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
+  const manaRatioBefore = arcane.stats.mana / Math.max(1, arcane.stats.maxMana)
+  return {
+    ...arcane,
+    itemToggleStates: nextToggleStates,
+    stats: buildArcaneStats(
+      arcane.heroDefinitionId,
+      arcane.stats.level,
+      arcane.stats.gold,
+      arcane.stats.xp,
+      hpRatioBefore,
+      manaRatioBefore,
+      arcane.items,
+      arcane.statBonusLevels,
+      nextToggleStates,
+    ),
+  }
+}
+
+export function applyItemToggleUpkeep(arcane: Arcane, delta: number) {
+  if (!armletItemName || arcane.itemToggleStates[armletItemName] !== true || arcane.stats.hp <= 1 || delta <= 0) return arcane
+  const armlet = shopItemByName.get(armletItemName)
+  const drainPerSecond = getActiveItemNumber(
+    armlet?.effects.find((effect) => effect.kind === 'toggle')?.values ?? {},
+    'healthDrainPerSecond',
+  ) ?? 45
+  return {
+    ...arcane,
+    stats: {
+      ...arcane.stats,
+      hp: Math.max(1, arcane.stats.hp - drainPerSecond * delta),
+    },
+  }
+}
+
+function isRuntimeItemToggleEffectEnabled(arcane: Arcane, effect: RuntimeItemEffect) {
+  if (effect.kind !== 'toggle') return true
+  if (effect.effectId === 'toggle_attribute') return true
+  if (effect.effectId === 'unholy_strength_toggle') return Boolean(armletItemName && arcane.itemToggleStates[armletItemName] === true)
+  if (effect.effectId === 'toggle_magic_attacks') return Boolean(revenantBroochItemName && arcane.itemToggleStates[revenantBroochItemName] === true)
+  return false
 }
 
 export function getItemChargeCount(arcane: Pick<Arcane, 'itemCharges'>, itemName: string) {
@@ -7903,7 +8116,7 @@ export function getSummonVisualFamily(
 
 export function getIllusionInheritedAttackDamage(arcane: Arcane) {
   const hero = getHeroDefinition(arcane.heroDefinitionId)
-  const itemModifiers = getItemStatModifiers(arcane.items, hero).map((modifier): StatModifier => {
+  const itemModifiers = getItemStatModifiers(arcane.items, hero, arcane.itemToggleStates).map((modifier): StatModifier => {
     const flat = { ...modifier.flat }
     const percent = { ...modifier.percent }
     delete flat.damageMin
@@ -8779,7 +8992,7 @@ export function createArcaneTravelPlanIfUseful(
   frameContext?: TickFrameContext,
 ) {
   if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.candidates += 1
-  if (state.arcaneTravelMode !== 'planned' || speed <= 0.01 || arcane.channeling) return undefined
+  if (state.arcaneTravelMode !== 'planned' || speed <= 0.01 || arcane.channeling || isItemToggleActive(arcane, armletItemId)) return undefined
   if (atBase) {
     if (activeArcaneTravelDiagnostics) activeArcaneTravelDiagnostics.rejectedAtBase += 1
     return undefined
@@ -10514,6 +10727,7 @@ function getTempestDoubleStatSource(statSource: Arcane, inheritedItems: string[]
     1,
     items,
     statSource.statBonusLevels,
+    retainOwnedItemToggleStates(statSource.itemToggleStates, items),
   )
   const fullInventoryStats = buildStats(statSource.items)
   const inheritedInventoryStats = buildStats(inheritedItems)
@@ -13715,6 +13929,8 @@ export function resolveCombat(
 export type ItemAttackResolution = {
   physicalDamage: number
   magicDamage: number
+  basicAttackDamageType: 'physical' | 'magical'
+  manaCostPerAttack: number
   lifestealPct: number
   cleavePct: number
   multiTargetPct: number
@@ -13726,6 +13942,8 @@ export function resolveArcaneItemAttackEffects(state: SimulationState, arcane: A
   const passiveSkills = getArcanePassiveCombatModifiers(state, arcane)
   let physicalDamage = getEffectiveArcaneDamage(state, arcane)
   let magicDamage = 0
+  let basicAttackDamageType: ItemAttackResolution['basicAttackDamageType'] = 'physical'
+  let manaCostPerAttack = 0
   let lifestealPct = Math.max(
     getItemPassiveNumber(effects, ['lifesteal', 'lifesteal_amp'], 'lifestealPct') ?? 0,
     passiveSkills.lifestealPct * 100,
@@ -13735,6 +13953,13 @@ export function resolveArcaneItemAttackEffects(state: SimulationState, arcane: A
 
   for (const effect of effects) {
     const tags = effect.tags
+    if (hasAnyItemTag(tags, ['attack_magic_damage'])) {
+      const manaCost = getActiveItemNumber(effect.values, 'manaCostPerAttack') ?? 75
+      if (arcane.stats.mana >= manaCost) {
+        basicAttackDamageType = 'magical'
+        manaCostPerAttack = manaCost
+      }
+    }
     if (hasAnyItemTag(tags, ['critical', 'critical_scaling']) && rollChance(state, getItemEffectChance(effect, arcane), `${arcane.id}:${target.id}:${effect.effectId}:critical`)) {
       const multiplier = (getActiveItemNumber(effect.values, 'critMultiplier') ?? 160) / 100
       physicalDamage *= multiplier
@@ -13761,6 +13986,8 @@ export function resolveArcaneItemAttackEffects(state: SimulationState, arcane: A
   return {
     physicalDamage,
     magicDamage,
+    basicAttackDamageType,
+    manaCostPerAttack,
     lifestealPct,
     cleavePct,
     multiTargetPct,
@@ -13773,7 +14000,7 @@ export function applyPostAttackItemEffects(
   arcane: Arcane,
   target: CombatTarget,
   resolution: ItemAttackResolution,
-  dealtPhysicalDamage: number,
+  dealtBasicAttackDamage: number,
 ) {
   if (resolution.magicDamage > 0) {
     damageEntity(state, target.id, resolution.magicDamage, {
@@ -13788,18 +14015,18 @@ export function applyPostAttackItemEffects(
     applyItemAttackDebuffs(state, arcane, target, resolution.effects)
   }
 
-  if (resolution.lifestealPct > 0 && dealtPhysicalDamage > 0) {
-    arcane.stats.hp = Math.min(arcane.stats.maxHp, arcane.stats.hp + dealtPhysicalDamage * (resolution.lifestealPct / 100))
+  if (resolution.lifestealPct > 0 && dealtBasicAttackDamage > 0) {
+    arcane.stats.hp = Math.min(arcane.stats.maxHp, arcane.stats.hp + dealtBasicAttackDamage * (resolution.lifestealPct / 100))
   }
 
   if (resolution.cleavePct > 0 || resolution.multiTargetPct > 0) {
     const splashPct = Math.max(resolution.cleavePct, resolution.multiTargetPct)
     const splashTargets = getItemSplashTargets(state, arcane, target).slice(0, resolution.multiTargetPct > 0 ? 3 : 5)
-    splashTargets.forEach((splashTarget) => damageEntity(state, splashTarget.id, dealtPhysicalDamage * (splashPct / 100), {
+    splashTargets.forEach((splashTarget) => damageEntity(state, splashTarget.id, dealtBasicAttackDamage * (splashPct / 100), {
       id: `${arcane.id}-item-splash`,
       label: `${arcane.player}: ataque em area`,
       team: arcane.team,
-      damageType: 'physical',
+      damageType: resolution.basicAttackDamageType,
     }))
   }
 }
@@ -14115,6 +14342,7 @@ export function getArcaneItemEffects(arcane: Arcane, kinds?: string[]) {
   return getShopItemsForInventory(arcane.items)
     .flatMap((item) => item.effects)
     .filter((effect) => !kindSet || kindSet.has(effect.kind))
+    .filter((effect) => isRuntimeItemToggleEffectEnabled(arcane, effect))
 }
 
 export function getShopItemsForInventory(items: string[]) {
@@ -14150,7 +14378,7 @@ export function getItemProcDamage(arcane: Arcane, effect: RuntimeItemEffect) {
   const intPct = getActiveItemNumber(effect.values, 'damageFromIntPct') ?? 0
   if (intPct <= 0) return baseDamage
   const hero = getHeroDefinition(arcane.heroDefinitionId)
-  const calculated = calculateHeroStats(hero, arcane.stats.level, getItemStatModifiers(arcane.items, hero))
+  const calculated = calculateHeroStats(hero, arcane.stats.level, getItemStatModifiers(arcane.items, hero, arcane.itemToggleStates))
   return baseDamage + calculated.attributes.intelligence * (intPct / 100)
 }
 
@@ -14912,7 +15140,7 @@ export function resolveDeaths(state: SimulationState): SimulationState {
     const manaRatio = arcane.stats.maxMana > 0 ? arcane.stats.mana / arcane.stats.maxMana : 1
     const leveledArcane = {
       ...arcane,
-      stats: buildArcaneStats(arcane.heroDefinitionId, nextLevel, arcane.stats.gold, arcane.stats.xp, hpRatio, manaRatio, arcane.items, arcane.statBonusLevels),
+      stats: buildArcaneStats(arcane.heroDefinitionId, nextLevel, arcane.stats.gold, arcane.stats.xp, hpRatio, manaRatio, arcane.items, arcane.statBonusLevels, arcane.itemToggleStates),
     }
     const allocatedArcane = allocateArcaneSkillPoints(leveledArcane)
 
@@ -14929,6 +15157,7 @@ export function resolveDeaths(state: SimulationState): SimulationState {
         manaRatio,
         allocatedArcane.items,
         allocatedArcane.statBonusLevels,
+        allocatedArcane.itemToggleStates,
       ),
     }
   })
@@ -15704,17 +15933,20 @@ export function performArcaneBasicAttack(state: SimulationState, arcane: Arcane,
     to: target.pos,
     createdAt: state.time,
   })
-  const dealtPhysicalDamage = Math.round(itemAttack.physicalDamage * getAuraMultiplier(state, arcane.team))
-  damageEntity(state, target.id, dealtPhysicalDamage, {
+  const dealtBasicAttackDamage = Math.round(itemAttack.physicalDamage * getAuraMultiplier(state, arcane.team))
+  if (itemAttack.manaCostPerAttack > 0) {
+    arcane.stats.mana = Math.max(0, arcane.stats.mana - itemAttack.manaCostPerAttack)
+  }
+  damageEntity(state, target.id, dealtBasicAttackDamage, {
     id: arcane.id,
     label: arcane.player,
     team: arcane.team,
-    damageType: 'physical',
+    damageType: itemAttack.basicAttackDamageType,
     sourcePosition: arcane.pos,
     isBasicAttack: true,
   })
-  applyPostAttackItemEffects(state, arcane, target, itemAttack, dealtPhysicalDamage)
-  applySpiritLinkOwnerLifestealToBear(state, arcane, target, dealtPhysicalDamage)
+  applyPostAttackItemEffects(state, arcane, target, itemAttack, dealtBasicAttackDamage)
+  applySpiritLinkOwnerLifestealToBear(state, arcane, target, dealtBasicAttackDamage)
   triggerOnAttackSummons(state, arcane, target)
 }
 

@@ -679,6 +679,32 @@
   pointer-events: none;
 }
 
+.toggle-badge {
+  position: absolute;
+  left: 1px;
+  bottom: 1px;
+  z-index: 2;
+  min-width: 17px;
+  height: 11px;
+  padding: 0 2px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(114, 211, 255, 0.68);
+  border-radius: 3px;
+  color: #061116;
+  background: #72d3ff;
+  font-size: 0.42rem;
+  font-weight: 950;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.toggle-badge.off {
+  border-color: rgba(179, 191, 198, 0.5);
+  color: #d4dde1;
+  background: rgba(31, 42, 47, 0.94);
+}
+
 .skill-level-badge {
   position: absolute;
   right: 2px;
