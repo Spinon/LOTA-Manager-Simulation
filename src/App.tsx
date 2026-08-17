@@ -2089,6 +2089,8 @@ function getEffectGlyph(kind: TimedEffect['kind']) {
   if (kind === 'dot') return 'D'
   if (kind === 'barrier') return 'B'
   if (kind === 'buff') return '+'
+  if (kind === 'smoke') return 'M'
+  if (kind === 'invisibility') return 'I'
   if (kind === 'invulnerable') return 'I'
   if (kind === 'damage_immunity') return '0'
   if (kind === 'debuff_immunity') return 'U'
@@ -2101,6 +2103,8 @@ function getEffectGlyph(kind: TimedEffect['kind']) {
 function getEffectCanvasColor(kind: TimedEffect['kind']) {
   if (kind === 'dot' || kind === 'silence') return '#ff5b6e'
   if (kind === 'barrier' || kind === 'buff' || kind === 'hot') return '#d7f171'
+  if (kind === 'smoke') return '#b8c0c8'
+  if (kind === 'invisibility') return '#76d9ff'
   if (kind === 'invulnerable') return '#fff3ba'
   if (kind === 'damage_immunity') return '#8cf2d1'
   if (kind === 'debuff_immunity') return '#6de8c5'
@@ -3288,6 +3292,8 @@ function getEffectKindLabel(kind: TimedEffect['kind']) {
     break: 'Break',
     mute: 'Mute',
     buff: 'Buff',
+    smoke: 'Smoke',
+    invisibility: 'Invisible',
     barrier: 'Barrier',
     dot: 'DoT',
     hot: 'HoT',

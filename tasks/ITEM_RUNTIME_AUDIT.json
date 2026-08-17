@@ -5,9 +5,9 @@
   "buyableCount": 114,
   "statusCounts": {
     "complete": 0,
-    "partial": 133,
+    "partial": 135,
     "approximate": 0,
-    "missing": 77
+    "missing": 75
   },
   "familyCounts": {
     "acquisition": {
@@ -41,10 +41,10 @@
       "missing": 0
     },
     "consumable": {
-      "complete": 4,
+      "complete": 6,
       "partial": 3,
       "approximate": 0,
-      "missing": 4
+      "missing": 2
     },
     "cooldown": {
       "complete": 59,
@@ -96,7 +96,7 @@
     },
     "special_values": {
       "complete": 0,
-      "partial": 47,
+      "partial": 46,
       "approximate": 0,
       "missing": 0
     },
@@ -113,9 +113,9 @@
       "missing": 0
     },
     "targeting": {
-      "complete": 2,
+      "complete": 4,
       "partial": 0,
-      "approximate": 61,
+      "approximate": 59,
       "missing": 7
     },
     "toggle": {
@@ -555,7 +555,7 @@
       "shopTier": "base",
       "cost": 50,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -569,8 +569,8 @@
         },
         {
           "id": "consumable",
-          "status": "missing",
-          "evidence": "smoke_invisibility is not a health/mana consumable and has no use routine"
+          "status": "complete",
+          "evidence": "smoke_invisibility uses normal inventory charges, imported area/duration values, strategic AI purchase/use, timed effects, vision/detection, dispel, and replay state"
         },
         {
           "id": "effect_rules",
@@ -593,11 +593,6 @@
           "evidence": "shop exclusion is implemented, while share/drop/sell/illusion rules remain source-specific"
         },
         {
-          "id": "special_values",
-          "status": "partial",
-          "evidence": "1 effect values are preserved but not consumed by a generic handler"
-        },
-        {
           "id": "stacking",
           "status": "partial",
           "evidence": "duplicate item names are blocked, but stack groups and stack modes are not enforced generically"
@@ -609,8 +604,8 @@
         },
         {
           "id": "targeting",
-          "status": "approximate",
-          "evidence": "area targeting uses generic self/ally/enemy/area selection"
+          "status": "complete",
+          "evidence": "area targeting resolves imported radii against eligible nearby heroes with dedicated Smoke/Dust rules"
         }
       ],
       "effectKinds": [
@@ -631,10 +626,8 @@
         "moveSpeedPct"
       ],
       "unhandledStatKeys": [],
-      "unhandledEffectValueKeys": [
-        "breakRadius"
-      ],
-      "fingerprint": "i006_team_smoke|map_utility|consumable|base|50|consumable|breakRadius|cooldown|duration|moveSpeedPct|acquisition:complete|catalog:complete|consumable:missing|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|special_values:partial|stacking:partial|stats:complete|targeting:approximate"
+      "unhandledEffectValueKeys": [],
+      "fingerprint": "i006_team_smoke|map_utility|consumable|base|50|consumable|breakRadius|cooldown|duration|moveSpeedPct|acquisition:complete|catalog:complete|consumable:complete|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|stacking:partial|stats:complete|targeting:complete"
     },
     {
       "itemId": "i007_recall_scroll",
@@ -890,7 +883,7 @@
       "shopTier": "base",
       "cost": 80,
       "buyable": true,
-      "status": "missing",
+      "status": "partial",
       "families": [
         {
           "id": "acquisition",
@@ -904,8 +897,8 @@
         },
         {
           "id": "consumable",
-          "status": "missing",
-          "evidence": "dust_reveal is not a health/mana consumable and has no use routine"
+          "status": "complete",
+          "evidence": "dust_reveal uses normal inventory charges, imported area/duration values, strategic AI purchase/use, timed effects, vision/detection, dispel, and replay state"
         },
         {
           "id": "effect_rules",
@@ -939,8 +932,8 @@
         },
         {
           "id": "targeting",
-          "status": "approximate",
-          "evidence": "area targeting uses generic self/ally/enemy/area selection"
+          "status": "complete",
+          "evidence": "area targeting resolves imported radii against eligible nearby heroes with dedicated Smoke/Dust rules"
         }
       ],
       "effectKinds": [
@@ -961,7 +954,7 @@
       ],
       "unhandledStatKeys": [],
       "unhandledEffectValueKeys": [],
-      "fingerprint": "i010_revealing_dust|map_utility|consumable|base|80|consumable|cooldown|duration|radius|slowPct|acquisition:complete|catalog:complete|consumable:missing|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|stacking:partial|stats:complete|targeting:approximate"
+      "fingerprint": "i010_revealing_dust|map_utility|consumable|base|80|consumable|cooldown|duration|radius|slowPct|acquisition:complete|catalog:complete|consumable:complete|effect_rules:partial|purchase_ai:partial|recipes:complete|restrictions:partial|stacking:partial|stats:complete|targeting:complete"
     },
     {
       "itemId": "i011_refillable_bottle",

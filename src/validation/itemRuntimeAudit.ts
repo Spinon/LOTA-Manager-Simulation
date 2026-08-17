@@ -80,6 +80,7 @@ const runtimeEffectValueKeys = new Set([
   'barrier',
   'baseDamage',
   'block',
+  'breakRadius',
   'attributeBonus',
   'bonusDamage',
   'bonusStrength',
@@ -293,6 +294,7 @@ const shopItemIds = new Set(itemShopCatalog.map((item) => item.id))
 const consumableIds = new Set(consumableCatalog.map((item) => item.id))
 const persistentToggleItemIds = new Set(['i072_attribute_treads', 'i078_armlet_relic', 'i160_revenant_brooch_generic'])
 const persistentWardItemIds = new Set(['i008_observer_eye', 'i009_sentry_eye'])
+const strategicUtilityConsumableIds = new Set(['i006_team_smoke', 'i010_revealing_dust'])
 
 export function buildItemRuntimeAudit(): ItemRuntimeAudit {
   const rows = FULL_ITEM_SEEDS_V2.map(classifyItem)
@@ -479,13 +481,16 @@ function classifyEffect(item: FullItemSeed, effect: FullItemEffectSeed): ItemSup
     const restoresHealth = readNumber(effect.values.health) !== undefined || readNumber(effect.values.heal) !== undefined
     const restoresMana = readNumber(effect.values.mana) !== undefined
     const dedicatedWardRuntime = persistentWardItemIds.has(item.id)
-    const supported = restoresHealth || restoresMana || dedicatedWardRuntime
+    const strategicUtilityRuntime = strategicUtilityConsumableIds.has(item.id)
+    const supported = restoresHealth || restoresMana || dedicatedWardRuntime || strategicUtilityRuntime
     const breakOnDamage = effectTags.has('break_on_damage')
     families.push({
       id: 'consumable',
-      status: !supported ? 'missing' : dedicatedWardRuntime ? 'complete' : breakOnDamage || effect.target !== 'self' ? 'partial' : 'complete',
+      status: !supported ? 'missing' : dedicatedWardRuntime || strategicUtilityRuntime ? 'complete' : breakOnDamage || effect.target !== 'self' ? 'partial' : 'complete',
       evidence: dedicatedWardRuntime
         ? `${effect.id} uses team stock, normal inventory charges, strategic placement, a persistent ward entity, vision/detection, and replay state`
+        : strategicUtilityRuntime
+          ? `${effect.id} uses normal inventory charges, imported area/duration values, strategic AI purchase/use, timed effects, vision/detection, dispel, and replay state`
         : !supported
         ? `${effect.id} is not a health/mana consumable and has no use routine`
         : breakOnDamage || effect.target !== 'self'
@@ -534,11 +539,14 @@ function classifyEffect(item: FullItemSeed, effect: FullItemEffectSeed): ItemSup
   if (effect.kind === 'active' || effect.kind === 'consumable') {
     const directTargets = new Set(['self', 'unit', 'enemy', 'area'])
     const dedicatedPointTarget = effect.kind === 'consumable' && persistentWardItemIds.has(item.id) && effect.target === 'point'
+    const dedicatedAreaTarget = effect.kind === 'consumable' && strategicUtilityConsumableIds.has(item.id) && effect.target === 'area'
     families.push({
       id: 'targeting',
-      status: dedicatedPointTarget ? 'complete' : directTargets.has(effect.target) ? 'approximate' : 'missing',
+      status: dedicatedPointTarget || dedicatedAreaTarget ? 'complete' : directTargets.has(effect.target) ? 'approximate' : 'missing',
       evidence: dedicatedPointTarget
         ? `${effect.target} targeting selects nearby strategic map points and enforces allied coverage spacing`
+        : dedicatedAreaTarget
+          ? `${effect.target} targeting resolves imported radii against eligible nearby heroes with dedicated Smoke/Dust rules`
         : directTargets.has(effect.target)
         ? `${effect.target} targeting uses generic self/ally/enemy/area selection`
         : `${effect.target} targeting has no dedicated item resolver`,

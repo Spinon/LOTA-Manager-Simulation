@@ -105,10 +105,13 @@ import {
   getArcaneCoordinationReliability,
   getTowerTankAssessment,
   getTowerTankCandidate,
+  getWantedMapUtilityConsumable,
   hasTimedEffect,
   honorsCombatReservations,
   healArcaneDirectly,
   isPositiveSimpleSkill,
+  isArcaneInvisible,
+  isArcaneSmoked,
   isArcaneAttackDisabled,
   isArcaneBanished,
   isArcaneDebuffImmune,
@@ -125,6 +128,7 @@ import {
   isTempestDoubleInventoryItemAllowed,
   isTempestDoubleItemActiveAllowed,
   isPointVisibleToTeam,
+  isArcaneVisibleToTeam,
   isPointRevealedToTeam,
   isPersistentSpatialGrid,
   loadGameData,
@@ -136,6 +140,7 @@ import {
   runeSpawnPoints,
   processJungleStacks,
   processTimedEffects,
+  processSmokeBreaks,
   placeWardIfUseful,
   consumeItemIfNeeded,
   performArcaneBasicAttack,
@@ -154,6 +159,7 @@ import {
   tryCastSimpleSkill,
   tryUseHauntReality,
   tryUseTempestDoubleSkill,
+  activateMapUtilityConsumableIfUseful,
   tryUseTempestDoubleItem,
   tryCastRangedCreepSecureSkill,
   triggerOnAttackSummons,
@@ -1209,6 +1215,86 @@ assert.equal(getRoleGpmTarget('Dedicated Support', 40 * 60), 317)
   assert.equal(replayObserver.invisibleToEnemies, true)
   assert.equal(wardReplay.summons.find((summon) => summon.id === sentryPlacement.ward?.id)?.trueSightRange, sentryPlacement.ward?.trueSightRange)
   assert.equal(wardReplay.wardStock.dawn.observer.available, 0, 'ward stock should survive compact replay materialization')
+}
+
+{
+  const utilityState = createInitialState('smoke-dust-runtime-test')
+  utilityState.time = 300
+  utilityState.towers = []
+  utilityState.summons = []
+  const smoke = consumableCatalog.find((item) => item.id === 'i006_team_smoke')!
+  const dust = consumableCatalog.find((item) => item.id === 'i010_revealing_dust')!
+  const sentry = consumableCatalog.find((item) => item.id === 'i009_sentry_eye')!
+  const dawnSupport = utilityState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Dedicated Support')!
+  const dawnCore = utilityState.arcanes.find((arcane) => arcane.team === 'dawn' && arcane.role === 'Safe Lane')!
+  const duskSupport = utilityState.arcanes.find((arcane) => arcane.team === 'dusk' && arcane.role === 'Dedicated Support')!
+  utilityState.arcanes.forEach((arcane) => {
+    arcane.pos = arcane.team === 'dawn' ? { x: 8, y: 92 } : { x: 92, y: 8 }
+  })
+  dawnSupport.pos = { x: 40, y: 40 }
+  dawnCore.pos = { x: 42, y: 40 }
+
+  duskSupport.pos = { ...dawnCore.pos }
+  duskSupport.items = [sentry.name]
+  duskSupport.itemCharges = createInitialItemCharges(duskSupport.items)
+  const sentryPlacement = placeWardIfUseful(utilityState, duskSupport, 10, true)
+  assert.ok(sentryPlacement.ward)
+  duskSupport.pos = { x: 50, y: 40 }
+
+  dawnSupport.items = [smoke.name]
+  dawnSupport.itemCharges = createInitialItemCharges(dawnSupport.items)
+  const baseMoveSpeed = getEffectiveArcaneMoveSpeed(utilityState, dawnCore)
+  const smokeUse = activateMapUtilityConsumableIfUseful(utilityState, dawnSupport, 10, true)
+  assert.equal(smokeUse.used, smoke.name)
+  assert.equal(smokeUse.arcane.items.includes(smoke.name), false, 'the final Smoke charge should free its normal inventory slot')
+  assert.deepEqual(new Set(smokeUse.affectedTargetIds), new Set([dawnSupport.id, dawnCore.id]))
+  assert.equal(isArcaneSmoked(utilityState, dawnCore), true)
+  assert.ok(Math.abs(getEffectiveArcaneMoveSpeed(utilityState, dawnCore) / baseMoveSpeed - 1.15) < 0.0001)
+  assert.equal(isPointVisibleToTeam(utilityState, 'dusk', dawnCore.pos), true, 'enemy normal vision should reach the smoked target in the fixture')
+  assert.equal(isPointRevealedToTeam(utilityState, 'dusk', dawnCore.pos), true, 'the fixture Sentry should provide True Sight')
+  assert.equal(isArcaneVisibleToTeam(utilityState, 'dusk', dawnCore), false, 'True Sight must not reveal strategic Smoke')
+
+  duskSupport.pos = { x: 45, y: 40 }
+  assert.equal(processSmokeBreaks(utilityState), 2, 'an enemy hero inside 1025 world units should break Smoke for nearby allies')
+  assert.equal(isArcaneSmoked(utilityState, dawnCore), false)
+  assert.equal(isArcaneVisibleToTeam(utilityState, 'dusk', dawnCore), true)
+
+  addTimedEffect(utilityState, dawnCore, {
+    sourceId: 'test-invisibility',
+    sourceName: 'Test Invisibility',
+    sourceTeam: 'dawn',
+    kind: 'invisibility',
+    polarity: 'positive',
+    value: 1,
+    duration: 20,
+  })
+  const placedSentry = utilityState.summons[0]
+  utilityState.summons = []
+  assert.equal(isArcaneInvisible(utilityState, dawnCore), true)
+  assert.equal(isArcaneVisibleToTeam(utilityState, 'dusk', dawnCore), false, 'ordinary invisibility should hide a hero from normal vision')
+  utilityState.summons = [placedSentry]
+  assert.equal(isArcaneVisibleToTeam(utilityState, 'dusk', dawnCore), true, 'Sentry should reveal ordinary invisibility in range')
+
+  utilityState.summons = []
+  duskSupport.pos = { x: 43, y: 40 }
+  duskSupport.items = [dust.name]
+  duskSupport.itemCharges = createInitialItemCharges(duskSupport.items)
+  const dustUse = activateMapUtilityConsumableIfUseful(utilityState, duskSupport, 20, true)
+  assert.equal(dustUse.used, dust.name)
+  assert.equal(dustUse.arcane.items.includes(dust.name), false)
+  const dustEffect = utilityState.timedEffects.find((effect) => effect.targetId === dawnCore.id && effect.sourceId === dust.id)!
+  assert.equal(dustEffect.kind, 'slow')
+  assert.equal(dustEffect.value, 0.2)
+  assert.ok(dustEffect.expiresAt > utilityState.time + 8, 'Dust should retain its imported duration after status resistance')
+  assert.equal(isArcaneVisibleToTeam(utilityState, 'dusk', dawnCore), true, 'Dust should reveal an affected invisible enemy')
+  duskSupport.items = []
+  duskSupport.itemCharges = {}
+  assert.equal(getWantedMapUtilityConsumable(utilityState, duskSupport)?.id, dust.id, 'a support should buy detection against an invisible enemy draft')
+
+  const utilityReplay = materializeMatchRenderFrame(createMatchRenderFrame(utilityState), createMatchStaticData(utilityState))
+  assert.ok(utilityReplay.timedEffects.some((effect) => effect.targetId === dawnCore.id && effect.sourceId === dust.id), 'Dust reveal should survive replay materialization')
+  performArcaneBasicAttack(utilityState, dawnCore, duskSupport)
+  assert.equal(isArcaneInvisible(utilityState, dawnCore), false, 'a basic attack should break ordinary invisibility')
 }
 
 {

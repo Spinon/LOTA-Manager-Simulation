@@ -755,6 +755,14 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Benchmark determinístico de 5 minutos em 157,3x wall / 127,3x CPU, digest `3a59effa8a401a53`.
 - Próxima rodada da T17: Smoke e Dust; depois Recall e Tome, preservando o inventário único e adicionando decisões por objetivo/fase.
 
+**Progresso de Smoke, invisibilidade e Dust (2026-08-17)**:
+- Smoke aplica em área os 45s e +15% de movimento importados, ocupa/gasta cargas do inventário normal e possui estado próprio no replay e no HUD. A ocultação não é revelada por Sentry/Dust e quebra individualmente quando um Arcane entra no raio importado de 1025 unidades de um herói ou torre inimiga.
+- Invisibilidade comum virou um estado real de visão para skills com tags de stealth/invisibility, é interrompida por ataque básico e passa a ser revelada por Sentry ou Dust. Todas as consultas de alvo de Arcanes em combate, calls, perigo, summons e skills usam a nova regra sem encarecer a visão de pontos/creeps.
+- Dust usa os 1050 de raio, 12s e 20% de slow importados; só é acionado contra inimigo invisível dentro da área de percepção e seu debuff pode ser dissipado. Supports passam a comprar Dust contra drafts com invisibilidade e Smoke para planos de pickoff, boss, push agrupado ou encerramento, evitando duplicação na equipe.
+- Testes cobrem bônus, carga/slot, visão comum, True Sight, quebra de Smoke, reveal/slow do Dust, ataque saindo da invisibilidade e round-trip pelo replay. A matriz passou para 135 itens parciais e 75 com família ausente; Smoke e Dust estão completos em consumível e targeting.
+- Suíte completa, lint e build verdes. Benchmark determinístico de 5 minutos em 142,0x wall / 116,4x CPU, digest `3a59effa8a401a53` preservado.
+- Próxima rodada da T17: Recall Scroll e Tome, seguida pelos consumíveis utilitários restantes e pelas famílias de passivas especiais com maior alcance.
+
 ---
 
 ### [ ] T18 - Paridade integral dos atributos importados

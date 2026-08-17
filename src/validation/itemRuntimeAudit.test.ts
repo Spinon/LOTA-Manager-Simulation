@@ -57,6 +57,11 @@ assert.equal(wardItems.length, 2)
 assert.ok(wardItems.every((row) => row.families.some((family) => family.id === 'consumable' && family.status === 'complete')))
 assert.ok(wardItems.every((row) => row.families.some((family) => family.id === 'targeting' && family.status === 'complete')))
 
+const strategicUtilityItems = audit.rows.filter((row) => ['i006_team_smoke', 'i010_revealing_dust'].includes(row.itemId))
+assert.equal(strategicUtilityItems.length, 2)
+assert.ok(strategicUtilityItems.every((row) => row.families.some((family) => family.id === 'consumable' && family.status === 'complete')))
+assert.ok(strategicUtilityItems.every((row) => row.families.some((family) => family.id === 'targeting' && family.status === 'complete')))
+
 const neutralItems = audit.rows.filter((row) => row.slot === 'neutral' || row.slot === 'neutral_enchantment')
 assert.ok(neutralItems.length > 0)
 assert.ok(neutralItems.every((row) => row.families.some((family) => family.id === 'acquisition' && family.status === 'missing')))

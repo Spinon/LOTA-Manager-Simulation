@@ -74,7 +74,7 @@ import {
   getStructureStatsByRole,
   type LaneCreepKind,
 } from '../game-systems/unitSeedsAdapter.ts'
-import { currentVision, isDay, worldVisionToMapRadius } from '../game-systems/visionFormulas.ts'
+import { WORLD_UNITS_PER_MAP_UNIT, currentVision, isDay, smokeBreaks, worldVisionToMapRadius } from '../game-systems/visionFormulas.ts'
 import {
   rebaseCreepMotionPlan,
   scheduleCreepMotionPlan,
@@ -766,7 +766,7 @@ export type TimedEffect = {
   sourceId: string
   sourceName: string
   sourceTeam: TeamId
-  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'banish' | 'invulnerable' | 'damage_immunity' | 'debuff_immunity' | 'ethereal' | 'parry' | 'fowl_play' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot' | 'summon_mark'
+  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'banish' | 'invulnerable' | 'damage_immunity' | 'debuff_immunity' | 'ethereal' | 'parry' | 'fowl_play' | 'break' | 'mute' | 'buff' | 'smoke' | 'invisibility' | 'barrier' | 'dot' | 'hot' | 'summon_mark'
   polarity: 'positive' | 'negative'
   value: number
   stacks: number
@@ -1585,8 +1585,10 @@ export function getFallbackStartingItemNames(role: string) {
 const attributeTreadsItemId = 'i072_attribute_treads'
 const armletItemId = 'i078_armlet_relic'
 const revenantBroochItemId = 'i160_revenant_brooch_generic'
+const teamSmokeItemId = 'i006_team_smoke'
 const observerWardItemId = 'i008_observer_eye'
 const sentryWardItemId = 'i009_sentry_eye'
+const revealingDustItemId = 'i010_revealing_dust'
 const wardStockRules: Record<WardKind, { initial: number; maximum: number; restockSeconds: number }> = {
   observer: { initial: 2, maximum: 4, restockSeconds: 135 },
   sentry: { initial: 3, maximum: 10, restockSeconds: 70 },
@@ -2124,6 +2126,7 @@ export function tick(
   if (next.timedEffects.some((effect) => effect.expiresAt <= next.time)) {
     next.timedEffects = next.timedEffects.filter((effect) => effect.expiresAt > next.time)
   }
+  processSmokeBreaks(next)
   next = processTimedEffects(next)
   next = resolveCompletedChannels(next)
   if (next.arcanes.some((arcane) => hasExpiredArcaneSkillState(arcane, next.time))) {
@@ -3545,7 +3548,7 @@ export function enrichCombatScenarioBlackboards(state: SimulationState, blackboa
     if (arcane.team === team) return true
     const cached = heroVisibility[team].get(arcane.id)
     if (cached !== undefined) return cached
-    const visible = isPointVisibleToTeam(state, team, arcane.pos)
+    const visible = isArcaneVisibleToTeam(state, team, arcane)
     heroVisibility[team].set(arcane.id, visible)
     return visible
   }
@@ -3727,7 +3730,7 @@ export function assignCombatFocusTargets(state: SimulationState, blackboards: Co
         arcane !== undefined &&
         arcane.stats.hp > 0 &&
         arcane.respawn <= state.time &&
-        isPointVisibleToTeam(state, board.teamId, arcane.pos)
+        isArcaneVisibleToTeam(state, board.teamId, arcane)
       ))
     const targetScores = enemies.map((target) => createCombatTargetScore(state, board, allies, target))
     const focus = selectCombatFocus(targetScores, board.primaryTargetId)
@@ -4224,7 +4227,7 @@ export function createTeamCall(state: SimulationState, caller: Arcane, phase: Ga
     enemy.team !== caller.team &&
     enemy.stats.hp > 0 &&
     enemy.respawn <= state.time &&
-    isPointVisibleToTeam(state, caller.team, enemy.pos)
+    isArcaneVisibleToTeam(state, caller.team, enemy)
   ))
   const teamPlan = state.teamPlans[caller.team] ?? selectTeamPlan({
     analyzed: getAnalyzedGameState(state),
@@ -4597,7 +4600,7 @@ export function getLocalNumbers(state: SimulationState, team: TeamId, point: Poi
     arcane.team !== team &&
     arcane.stats.hp > 0 &&
     arcane.respawn <= state.time &&
-    isPointVisibleToTeam(state, team, arcane.pos)
+    isArcaneVisibleToTeam(state, team, arcane)
   ))).filter((arcane) => distance(arcane.pos, point) <= radius)
 
   const weightArcane = (arcane: Arcane) => {
@@ -4753,7 +4756,7 @@ export function getTeamVisionControl(state: SimulationState, team: TeamId) {
     arcane.team !== team &&
     arcane.stats.hp > 0 &&
     arcane.respawn <= state.time &&
-    isPointVisibleToTeam(state, team, arcane.pos)
+    isArcaneVisibleToTeam(state, team, arcane)
   )).length
   const bossVision = isPointVisibleToTeam(state, team, state.boss.pos) ? 18 : 0
   return Math.min(100, livingHeroes.length * 9 + visibleEnemies * 10 + bossVision)
@@ -5376,7 +5379,7 @@ export function shouldReconsiderArcaneDecision(state: SimulationState, arcane: A
     enemy.team !== arcane.team &&
     enemy.stats.hp > 0 &&
     enemy.respawn <= state.time &&
-    isPointVisibleToTeam(state, arcane.team, enemy.pos) &&
+    isArcaneVisibleToTeam(state, arcane.team, enemy) &&
     distance(enemy.pos, arcane.pos) <= (hpRatio < 0.65 ? 11 : 7)
   ))
   if (visibleThreat) return true
@@ -5665,7 +5668,7 @@ export function getLanePullCamp(state: SimulationState, team: TeamId) {
 export function getLanePullPlan(
   state: SimulationState,
   arcane: Arcane,
-  visibleEnemies = state.arcanes.filter((enemy) => enemy.team !== arcane.team && enemy.stats.hp > 0 && enemy.respawn <= state.time && isPointVisibleToTeam(state, arcane.team, enemy.pos)),
+  visibleEnemies = state.arcanes.filter((enemy) => enemy.team !== arcane.team && enemy.stats.hp > 0 && enemy.respawn <= state.time && isArcaneVisibleToTeam(state, arcane.team, enemy)),
 ): LanePullPlan | undefined {
   if (arcane.role !== 'Dedicated Support' || state.time < 60 || state.time > 11 * 60) return undefined
   const second = ((state.time % 60) + 60) % 60
@@ -5707,7 +5710,7 @@ export function getLanePullPlan(
 export function getEnemyPullContestPlan(
   state: SimulationState,
   arcane: Arcane,
-  visibleEnemies = state.arcanes.filter((enemy) => enemy.team !== arcane.team && enemy.stats.hp > 0 && enemy.respawn <= state.time && isPointVisibleToTeam(state, arcane.team, enemy.pos)),
+  visibleEnemies = state.arcanes.filter((enemy) => enemy.team !== arcane.team && enemy.stats.hp > 0 && enemy.respawn <= state.time && isArcaneVisibleToTeam(state, arcane.team, enemy)),
 ) {
   if (arcane.role !== 'Greedy Support' || state.time < 60 || state.time > 11 * 60) return undefined
   const puller = visibleEnemies.find((enemy) => (
@@ -6391,10 +6394,13 @@ export function updateArcaneMovement(
   const activeItemResult = shouldDecide
     ? applySimpleActiveItemIfNeeded(state, dispelResult.arcane, decisionDangerScore, decisionVisibleEnemies, frameContext)
     : { arcane: dispelResult.arcane, used: undefined, interruptsDecision: false }
-  const wardResult = shouldDecide && !atBase
-    ? placeWardIfUseful(state, activeItemResult.arcane, decisionDangerScore ?? 0)
+  const utilityResult = shouldDecide && !atBase
+    ? activateMapUtilityConsumableIfUseful(state, activeItemResult.arcane, decisionDangerScore ?? 0)
     : { arcane: activeItemResult.arcane, used: undefined }
-  const consumableResult = shouldDecide && !atBase && !wardResult.used
+  const wardResult = shouldDecide && !atBase && !utilityResult.used
+    ? placeWardIfUseful(state, utilityResult.arcane, decisionDangerScore ?? 0)
+    : utilityResult
+  const consumableResult = shouldDecide && !atBase && !utilityResult.used && !wardResult.used
     ? consumeItemIfNeeded(state, wardResult.arcane)
     : wardResult
   const activeArcane = consumableResult.arcane
@@ -6592,7 +6598,7 @@ export function getPregameRuneContestAssessment(
     candidate.team !== arcane.team &&
     candidate.stats.hp > 0 &&
     candidate.respawn <= state.time &&
-    isPointVisibleToTeam(state, arcane.team, candidate.pos)
+    isArcaneVisibleToTeam(state, arcane.team, candidate)
   )),
 ) {
   const hpRatio = arcane.stats.hp / Math.max(1, arcane.stats.maxHp)
@@ -6635,7 +6641,7 @@ export function getPregameBountyRunePlan(state: SimulationState, arcane: Arcane)
     candidate.team !== arcane.team &&
     candidate.stats.hp > 0 &&
     candidate.respawn <= state.time &&
-    isPointVisibleToTeam(state, arcane.team, candidate.pos)
+    isArcaneVisibleToTeam(state, arcane.team, candidate)
   ))
   const allies = state.arcanes.filter((candidate) => (
     candidate.team === arcane.team &&
@@ -6681,6 +6687,8 @@ export function buyAtBase(state: SimulationState, arcane: Arcane): Arcane {
       },
     }
   }
+  const priorityUtility = getAffordableWantedMapUtilityConsumable(state, arcane)
+  if (priorityUtility) return buyConsumableAtBase(state, arcane, priorityUtility)
   const itemPurchase = buyItemAtBase(arcane)
   if (itemPurchase !== arcane) return itemPurchase
   if (arcane.items.length >= 6) return arcane
@@ -6717,6 +6725,7 @@ export function consumeWardShopStock(state: SimulationState, team: TeamId, kind:
 export function hasBasePurchaseOpportunity(state: SimulationState, arcane: Arcane) {
   return (arcane.tpScrolls < teleportScrollMaxCharges && arcane.stats.gold >= teleportScrollCost) ||
     getAffordableWantedWardConsumable(state, arcane) !== undefined ||
+    getAffordableWantedMapUtilityConsumable(state, arcane) !== undefined ||
     getAffordableItemPurchasePlan(arcane) !== undefined ||
     getAffordableWantedConsumable(state, arcane) !== undefined
 }
@@ -6756,6 +6765,144 @@ export function spendConsumableInventoryCharge(arcane: Arcane, itemName: string)
     itemCharges: remainingCharges > 0
       ? { ...arcane.itemCharges, [itemName]: remainingCharges }
       : withoutItemCharges(arcane.itemCharges, itemName),
+  }
+}
+
+const smokeTeamPlanTypes = new Set<TeamPlan['type']>(['group_push', 'take_boss', 'pickoff', 'end_game'])
+
+export function isArcaneInvisible(state: SimulationState, arcane: Arcane) {
+  return getTimedEffectsForTargetKind(state, arcane.id, 'invisibility').some((effect) => isTimedEffectActive(state, effect))
+}
+
+export function isArcaneSmoked(state: SimulationState, arcane: Arcane) {
+  return getTimedEffectsForTargetKind(state, arcane.id, 'smoke')
+    .some((effect) => isTimedEffectActive(state, effect))
+}
+
+export function hasSmokeBreakThreat(state: SimulationState, arcane: Arcane, breakRadius: number) {
+  for (const enemy of state.arcanes) {
+    if (enemy.team === arcane.team || !isArcaneTargetable(state, enemy)) continue
+    if (smokeBreaks(distance(arcane.pos, enemy.pos) * WORLD_UNITS_PER_MAP_UNIT, breakRadius * WORLD_UNITS_PER_MAP_UNIT)) return true
+  }
+  for (const tower of state.towers) {
+    if (tower.team === arcane.team || tower.hp <= 0) continue
+    if (smokeBreaks(distance(arcane.pos, tower.pos) * WORLD_UNITS_PER_MAP_UNIT, breakRadius * WORLD_UNITS_PER_MAP_UNIT)) return true
+  }
+  return false
+}
+
+export function processSmokeBreaks(state: SimulationState) {
+  if (!state.timedEffects.some((effect) => effect.kind === 'smoke' && effect.expiresAt > state.time)) return 0
+  const brokenTargetIds = new Set<string>()
+  for (const effect of state.timedEffects) {
+    if (effect.kind !== 'smoke' || effect.expiresAt <= state.time) continue
+    const target = state.arcanes.find((arcane) => arcane.id === effect.targetId)
+    if (!target || hasSmokeBreakThreat(state, target, effect.areaRadius ?? worldVisionToMapRadius(1025))) {
+      brokenTargetIds.add(effect.targetId)
+    }
+  }
+  if (brokenTargetIds.size === 0) return 0
+  state.timedEffects = state.timedEffects.filter((effect) => effect.kind !== 'smoke' || !brokenTargetIds.has(effect.targetId))
+  return brokenTargetIds.size
+}
+
+export function breakArcaneInvisibility(state: SimulationState, arcaneId: string) {
+  const previousLength = state.timedEffects.length
+  state.timedEffects = state.timedEffects.filter((effect) => effect.targetId !== arcaneId || effect.kind !== 'invisibility')
+  return state.timedEffects.length !== previousLength
+}
+
+function addMapUtilityMarker(state: SimulationState, arcane: Arcane, item: ConsumableItem) {
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `utility-${arcane.id}-${item.id}-${state.time}`,
+      team: arcane.team,
+      pos: { ...arcane.pos },
+      label: item.name,
+      createdAt: state.time,
+      expiresAt: state.time + 1.2,
+    },
+  ]
+}
+
+export function activateMapUtilityConsumableIfUseful(
+  state: SimulationState,
+  arcane: Arcane,
+  knownDanger = 0,
+  force = false,
+): { arcane: Arcane; used?: string; affectedTargetIds?: string[] } {
+  if (arcane.stats.hp <= 0 || arcane.respawn > state.time) return { arcane }
+  const carried = arcane.items
+    .map((name) => getConsumableByName(name))
+    .filter((item): item is ConsumableItem => (
+      item !== undefined &&
+      (item.id === revealingDustItemId || item.id === teamSmokeItemId) &&
+      canUseItemCharge(arcane, item.name)
+    ))
+
+  const dust = carried.find((item) => item.id === revealingDustItemId)
+  if (dust) {
+    const radius = worldVisionToMapRadius(getActiveItemNumber(dust.values, 'radius') ?? 1050)
+    const invisibleEnemies = state.arcanes.filter((enemy) => (
+      enemy.team !== arcane.team &&
+      isArcaneTargetable(state, enemy) &&
+      isArcaneInvisible(state, enemy) &&
+      isPointVisibleToTeam(state, arcane.team, enemy.pos) &&
+      distanceSquared(enemy.pos, arcane.pos) <= radius ** 2
+    ))
+    if (invisibleEnemies.length > 0 && (force || knownDanger <= 88)) {
+      const duration = getActiveItemNumber(dust.values, 'duration') ?? 12
+      const slowPct = (getActiveItemNumber(dust.values, 'slowPct') ?? 20) / 100
+      invisibleEnemies.forEach((enemy) => addTimedEffect(state, enemy, {
+        sourceId: dust.id,
+        sourceName: dust.name,
+        sourceTeam: arcane.team,
+        kind: 'slow',
+        polarity: 'negative',
+        value: slowPct,
+        duration,
+      }))
+      addMapUtilityMarker(state, arcane, dust)
+      return {
+        arcane: spendConsumableInventoryCharge(arcane, dust.name),
+        used: dust.name,
+        affectedTargetIds: invisibleEnemies.map((enemy) => enemy.id),
+      }
+    }
+  }
+
+  const smoke = carried.find((item) => item.id === teamSmokeItemId)
+  if (!smoke || (!force && (!arcane.role.includes('Support') || knownDanger > 48 || !smokeTeamPlanTypes.has(state.teamPlans[arcane.team]?.type ?? 'farm_map')))) return { arcane }
+  const applicationRadius = worldVisionToMapRadius(1200)
+  const allies = state.arcanes.filter((ally) => (
+    ally.team === arcane.team &&
+    isArcaneTargetable(state, ally) &&
+    distanceSquared(ally.pos, arcane.pos) <= applicationRadius ** 2
+  ))
+  const breakRadius = worldVisionToMapRadius(getActiveItemNumber(smoke.values, 'breakRadius') ?? 1025)
+  const teamAlreadySmoked = allies.some((ally) => isArcaneSmoked(state, ally))
+  const smokeWouldBreak = allies.some((ally) => hasSmokeBreakThreat(state, ally, breakRadius))
+  if ((!force && allies.length < 2) || teamAlreadySmoked || smokeWouldBreak) return { arcane }
+
+  const duration = getActiveItemNumber(smoke.values, 'duration') ?? 45
+  const moveSpeedPct = (getActiveItemNumber(smoke.values, 'moveSpeedPct') ?? 15) / 100
+  allies.forEach((ally) => addTimedEffect(state, ally, {
+    sourceId: smoke.id,
+    sourceName: smoke.name,
+    sourceTeam: arcane.team,
+    kind: 'smoke',
+    polarity: 'positive',
+    value: 1,
+    modifiers: { moveSpeedPct },
+    areaRadius: breakRadius,
+    duration,
+  }))
+  addMapUtilityMarker(state, arcane, smoke)
+  return {
+    arcane: spendConsumableInventoryCharge(arcane, smoke.name),
+    used: smoke.name,
+    affectedTargetIds: allies.map((ally) => ally.id),
   }
 }
 
@@ -7911,6 +8058,8 @@ export function getWantedConsumable(state: SimulationState, arcane: Arcane) {
 
   const wantedWard = getWantedWardConsumable(state, arcane, carriedConsumables)
   if (wantedWard) return wantedWard
+  const wantedMapUtility = getWantedMapUtilityConsumable(state, arcane, carriedConsumables)
+  if (wantedMapUtility) return wantedMapUtility
 
   const hasHeal = carriedConsumables.some((item) => item.heal)
   const hasMana = carriedConsumables.some((item) => item.mana)
@@ -7978,6 +8127,49 @@ export function getAffordableWantedWardConsumable(state: SimulationState, arcane
   return ward && arcane.stats.gold >= ward.cost ? ward : undefined
 }
 
+export function getWantedMapUtilityConsumable(
+  state: SimulationState,
+  arcane: Arcane,
+  carriedConsumables = arcane.items
+    .map((name) => getConsumableByName(name))
+    .filter((item): item is ConsumableItem => item !== undefined),
+) {
+  if (!arcane.role.includes('Support')) return undefined
+  const carriedIds = new Set(carriedConsumables.map((item) => item.id))
+  const teamCarriers = new Set(state.arcanes
+    .filter((ally) => ally.team === arcane.team)
+    .flatMap((ally) => ally.items)
+    .map((name) => getConsumableByName(name)?.id)
+    .filter((id): id is string => id !== undefined))
+  const enemyHasInvisibility = state.arcanes.some((enemy) => (
+    enemy.team !== arcane.team && (
+      isArcaneInvisible(state, enemy) ||
+      getArcaneRuntimeSkills(enemy).some((skill) => hasAnySimpleSkillTag(skill, ['invisibility', 'global_stealth', 'stealth']))
+    )
+  ))
+  if (enemyHasInvisibility && !carriedIds.has(revealingDustItemId) && !teamCarriers.has(revealingDustItemId)) {
+    return consumableCatalog.find((item) => item.id === revealingDustItemId)
+  }
+
+  const plan = state.teamPlans[arcane.team]
+  const teamHasSmoke = state.arcanes.some((ally) => ally.team === arcane.team && isArcaneSmoked(state, ally))
+  if (
+    state.time >= 180 &&
+    plan &&
+    smokeTeamPlanTypes.has(plan.type) &&
+    !teamHasSmoke &&
+    !carriedIds.has(teamSmokeItemId) &&
+    !teamCarriers.has(teamSmokeItemId)
+  ) return consumableCatalog.find((item) => item.id === teamSmokeItemId)
+  return undefined
+}
+
+export function getAffordableWantedMapUtilityConsumable(state: SimulationState, arcane: Arcane) {
+  if (arcane.items.length >= 6) return undefined
+  const utility = getWantedMapUtilityConsumable(state, arcane)
+  return utility && arcane.stats.gold >= utility.cost ? utility : undefined
+}
+
 export function getAffordableWantedConsumable(state: SimulationState, arcane: Arcane) {
   const consumable = getWantedConsumable(state, arcane)
   return consumable && arcane.stats.gold >= consumable.cost ? consumable : undefined
@@ -8016,7 +8208,7 @@ export function getCombatFocusTarget(state: SimulationState, arcane: Arcane, boa
     target.id === board.primaryTargetId &&
     target.team !== arcane.team &&
     isArcaneTargetable(state, target) &&
-    isPointVisibleToTeam(state, arcane.team, target.pos)
+    isArcaneVisibleToTeam(state, arcane.team, target)
   ))
 }
 
@@ -8192,7 +8384,7 @@ export function getCombatMoveTargetNearPoint(state: SimulationState, arcane: Arc
       other.team !== arcane.team &&
       other.stats.hp > 0 &&
       other.respawn <= state.time &&
-      isPointVisibleToTeam(state, arcane.team, other.pos)
+      isArcaneVisibleToTeam(state, arcane.team, other)
     )), 6)
   }
 
@@ -8917,7 +9109,7 @@ export function addTimedEffect(state: SimulationState, target: Arcane, effect: O
 }
 
 export function getDefaultDispelType(kind: TimedEffect['kind'], polarity: TimedEffect['polarity']): DispelType {
-  if (polarity === 'positive') return kind === 'barrier' || kind === 'buff' || kind === 'hot' ? 'basic' : 'none'
+  if (polarity === 'positive') return kind === 'barrier' || kind === 'buff' || kind === 'hot' || kind === 'smoke' || kind === 'invisibility' ? 'basic' : 'none'
   if (kind === 'stun' || kind === 'hex' || kind === 'sleep' || kind === 'banish' || kind === 'fear' || kind === 'taunt') return 'strong'
   if (kind === 'slow' || kind === 'silence' || kind === 'root' || kind === 'disarm' || kind === 'break' || kind === 'mute' || kind === 'dot') return 'basic'
   return 'basic'
@@ -10873,7 +11065,7 @@ export function getSimpleSkillAffectedTargets(
   const candidates = state.arcanes.filter((candidate) => (
     isArcaneTargetable(state, candidate) &&
     (positive ? candidate.team === caster.team : candidate.team !== caster.team) &&
-    (positive || !profile.isGlobal || hasAnySimpleSkillTag(skill, ['global_silence']) || isPointVisibleToTeam(state, caster.team, candidate.pos)) &&
+    (positive || !profile.isGlobal || hasAnySimpleSkillTag(skill, ['global_silence']) || isArcaneVisibleToTeam(state, caster.team, candidate)) &&
     distance(candidate.pos, center) <= radius
   ))
   return candidates.length > 0 ? candidates : [primaryTarget]
@@ -10949,7 +11141,7 @@ export function shouldCastGlobalSkill(state: SimulationState, caster: Arcane, sk
     arcane.team !== caster.team &&
     arcane.stats.hp > 0 &&
     arcane.respawn <= state.time &&
-    isPointVisibleToTeam(state, caster.team, arcane.pos)
+    isArcaneVisibleToTeam(state, caster.team, arcane)
   ))
   const positive = isPositiveSimpleSkill(skill) || hasAnySimpleSkillTag(skill, ['global_stealth', 'stampede'])
 
@@ -11844,7 +12036,7 @@ function getTempestDoubleEnemyArcanes(state: SimulationState, summon: SummonedUn
     .filter((arcane) => (
       arcane.team !== summon.team &&
       isArcaneTargetable(state, arcane) &&
-      isPointVisibleToTeam(state, summon.team, arcane.pos)
+      isArcaneVisibleToTeam(state, summon.team, arcane)
     ))
     .sort((left, right) => distanceSquared(summon.pos, left.pos) - distanceSquared(summon.pos, right.pos))
 }
@@ -12013,7 +12205,9 @@ function resolveTempestDoubleSparkWraiths(state: SimulationState, summon: Summon
       ...state.summons.filter((candidate) => candidate.team !== summon.team && isSummonTargetable(state, candidate, summon.team)),
     ]
     const target = candidates
-      .filter((candidate) => isPointVisibleToTeam(state, summon.team, candidate.pos))
+      .filter((candidate) => 'player' in candidate
+        ? isArcaneVisibleToTeam(state, summon.team, candidate)
+        : isPointVisibleToTeam(state, summon.team, candidate.pos))
       .filter((candidate) => distanceSquared(cast.pos, candidate.pos) <= Math.max(1.8, profile.radius) ** 2)
       .sort((left, right) => distanceSquared(cast.pos, left.pos) - distanceSquared(cast.pos, right.pos))[0]
     if (!target) {
@@ -12592,7 +12786,7 @@ function applySummonHealingAura(state: SimulationState, summon: SummonedUnit, de
 export function getSummonTarget(state: SimulationState, summon: SummonedUnit): CombatTarget | undefined {
   const enemyArcanes = state.arcanes.filter((arcane) => (
     arcane.team !== summon.team && isArcaneTargetable(state, arcane) &&
-    isPointVisibleToTeam(state, summon.team, arcane.pos)
+    isArcaneVisibleToTeam(state, summon.team, arcane)
   ))
   const unitCandidates: CombatTarget[] = [
     ...enemyArcanes,
@@ -12619,7 +12813,7 @@ export function getSummonTarget(state: SimulationState, summon: SummonedUnit): C
 export function isSummonTargetValid(state: SimulationState, summon: SummonedUnit, target: CombatTarget) {
   if (summon.lockedTargetId === target.id) return isLockedSummonTargetValid(state, summon, target)
   if ('team' in target && target.team === summon.team) return false
-  if ('player' in target && (!isArcaneTargetable(state, target) || !isPointVisibleToTeam(state, summon.team, target.pos))) return false
+  if ('player' in target && !isArcaneVisibleToTeam(state, summon.team, target)) return false
   if (!('player' in target) && target.hp <= 0) return false
   if (distanceSquared(summon.pos, target.pos) > summon.visionRange * summon.visionRange) return false
   if ('tier' in target && !isTowerUnlocked(state, summon.team, target)) return false
@@ -12966,7 +13160,7 @@ export function shouldCommitOffensiveSkill(
     candidate.team !== arcane.team &&
     candidate.stats.hp > 0 &&
     candidate.respawn <= state.time &&
-    isPointVisibleToTeam(state, arcane.team, candidate.pos) &&
+    isArcaneVisibleToTeam(state, arcane.team, candidate) &&
     distance(candidate.pos, target.pos) <= 12
   )).length
   if (nearbyAllies >= 2 && nearbyEnemies >= 2) return true
@@ -13378,7 +13572,7 @@ export function getSimpleSkillTarget(
   if (
     focusTarget &&
     canTargetWithSimpleDamageSkill(arcane, skill, focusTarget) &&
-    isPointVisibleToTeam(state, arcane.team, focusTarget.pos) &&
+    isArcaneVisibleToTeam(state, arcane.team, focusTarget) &&
     distance(arcane.pos, focusTarget.pos) <= range + getEntityCollisionRadius(focusTarget)
   ) {
     return focusTarget
@@ -13528,6 +13722,18 @@ export function applySimplePositiveSkill(
       value: 1,
       modifiers: { moveSpeedPct: profile.moveSpeedPct || 0.18 },
       duration: profile.duration,
+    })
+  }
+
+  if (hasAnySimpleSkillTag(skill, ['invisibility', 'global_stealth', 'stealth'])) {
+    addTimedEffect(state, target, {
+      sourceId: `${caster.id}-${skill.id}`,
+      sourceName: skill.name,
+      sourceTeam: caster.team,
+      kind: 'invisibility',
+      polarity: 'positive',
+      value: 1,
+      duration: Math.max(0.5, profile.duration),
     })
   }
 
@@ -13741,7 +13947,7 @@ export function getRetainedArcaneCombatTarget(state: SimulationState, arcane: Ar
 
   const intent = arcane.combatTargetIntent
   if ('player' in target) {
-    if (target.team === arcane.team || target.respawn > state.time || !isPointVisibleToTeam(state, arcane.team, target.pos)) return undefined
+    if (target.team === arcane.team || target.respawn > state.time || !isArcaneVisibleToTeam(state, arcane.team, target)) return undefined
   }
 
   if (intent === 'last_hit') {
@@ -16183,6 +16389,7 @@ export function nearestCreepAtIndices(point: Point, creeps: Creep[], indices: nu
 }
 
 export function performArcaneBasicAttack(state: SimulationState, arcane: Arcane, target: CombatTarget) {
+  breakArcaneInvisibility(state, arcane.id)
   arcane.lastAttack = state.time
   arcane.facing = getNormalizedDirection(arcane.pos, target.pos)
   const itemAttack = resolveArcaneItemAttackEffects(state, arcane, target)
@@ -16300,7 +16507,7 @@ export function nearestVisibleEnemyArcane(
     if (candidate.team === team || !isArcaneTargetable(state, candidate)) continue
     const candidateDistanceSquared = distanceSquared(point, candidate.pos)
     if (candidateDistanceSquared > closestDistanceSquared) continue
-    if (!isPointVisibleToTeam(state, team, candidate.pos)) continue
+    if (!isArcaneVisibleToTeam(state, team, candidate)) continue
     closest = candidate
     closestDistanceSquared = candidateDistanceSquared
   }
@@ -16318,7 +16525,7 @@ export function nearestReachableEnemyArcane(state: SimulationState, arcane: Arca
     const candidateDistanceSquared = distanceSquared(arcane.pos, candidate.pos)
     const reach = getArcaneAttackCenterRange(arcane, candidate)
     if (candidateDistanceSquared > closestDistanceSquared || candidateDistanceSquared > reach * reach) continue
-    if (!isPointVisibleToTeam(state, arcane.team, candidate.pos)) continue
+    if (!isArcaneVisibleToTeam(state, arcane.team, candidate)) continue
     closest = candidate
     closestDistanceSquared = candidateDistanceSquared
   }
@@ -16479,13 +16686,35 @@ export function isPointVisibleToTeam(state: SimulationState, team: TeamId, point
   ))
 }
 
+export function isArcaneRevealedToTeam(state: SimulationState, team: TeamId, arcane: Arcane) {
+  const dustReveal = getTimedEffectsForTarget(state, arcane.id).some((effect) => (
+    effect.sourceId === revealingDustItemId &&
+    effect.sourceTeam === team &&
+    effect.expiresAt > state.time
+  ))
+  return dustReveal || isPointRevealedToTeam(state, team, arcane.pos)
+}
+
+export function isArcaneVisibleToTeam(state: SimulationState, team: TeamId, arcane: Arcane) {
+  if (!isArcaneTargetable(state, arcane)) return false
+  if (arcane.team === team) return true
+  if (isArcaneSmoked(state, arcane)) return false
+  const normallyVisible = isPointVisibleToTeam(state, team, arcane.pos)
+  if (!isArcaneInvisible(state, arcane)) return normallyVisible
+  const dustReveal = getTimedEffectsForTarget(state, arcane.id).some((effect) => (
+    effect.sourceId === revealingDustItemId &&
+    effect.sourceTeam === team &&
+    effect.expiresAt > state.time
+  ))
+  return dustReveal || (normallyVisible && isPointRevealedToTeam(state, team, arcane.pos))
+}
+
 export function getVisibleEnemyArcanes(state: SimulationState, team: TeamId, frameContext?: TickFrameContext) {
   const cached = frameContext?.visibleEnemiesCache?.get(team)
   if (cached) return cached
   const visible = state.arcanes.filter((arcane) => (
     arcane.team !== team &&
-    isArcaneTargetable(state, arcane) &&
-    isPointVisibleToTeam(state, team, arcane.pos)
+    isArcaneVisibleToTeam(state, team, arcane)
   ))
   frameContext?.visibleEnemiesCache?.set(team, visible)
   return visible
@@ -16574,7 +16803,7 @@ export function getDangerScore(
     enemy.team !== arcane.team &&
     enemy.stats.hp > 0 &&
     enemy.respawn <= state.time &&
-    isPointVisibleToTeam(state, arcane.team, enemy.pos)
+    isArcaneVisibleToTeam(state, arcane.team, enemy)
   )),
   frameContext?: TickFrameContext,
 ) {
@@ -16630,7 +16859,7 @@ export function getEnemyActionThreatScore(
     enemy.team !== arcane.team &&
     enemy.stats.hp > 0 &&
     enemy.respawn <= state.time &&
-    isPointVisibleToTeam(state, arcane.team, enemy.pos)
+    isArcaneVisibleToTeam(state, arcane.team, enemy)
   )),
   frameContext?: TickFrameContext,
 ) {
