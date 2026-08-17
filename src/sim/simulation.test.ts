@@ -57,6 +57,7 @@ import {
   getEffectiveSummonMoveSpeed,
   getCloneInheritedAttackDamage,
   getIllusionInheritedAttackDamage,
+  getHauntRealityCandidate,
   getShopItemsForInventory,
   getSimulationEntityIndexes,
   getSummonAttackDamage,
@@ -90,6 +91,8 @@ import {
   honorsCombatReservations,
   healArcaneDirectly,
   isPositiveSimpleSkill,
+  isArcaneBanished,
+  isArcaneTargetable,
   isSummonActive,
   isSummonTargetable,
   isCreepRouteTargetValid,
@@ -116,6 +119,7 @@ import {
   startTeleportIfUseful,
   shopCatalog,
   tryCastSimpleSkill,
+  tryUseHauntReality,
   tryCastRangedCreepSecureSkill,
   triggerOnAttackSummons,
   tick,
@@ -2203,6 +2207,15 @@ let state: SimulationState = initialState
   const disruptionTarget = disruptionState.arcanes.find((arcane) => arcane.team === 'dusk')!
   disruptionCaster.heroDefinitionId = 'h071_shadow_demon'
   disruptionTarget.stats.damage = disruptionTarget.stats.damageMin = disruptionTarget.stats.damageMax = 140
+  disruptionTarget.stats.statusResistance = 20
+  disruptionTarget.channeling = {
+    kind: 'skill',
+    target: { ...disruptionCaster.pos },
+    startedAt: 599,
+    completesAt: 604,
+    label: 'Canal de teste',
+    effectLabel: 'Canal concluido',
+  }
   const disruptionSkill = getHeroDefinition(disruptionCaster.heroDefinitionId).skills!
     .find((candidate) => candidate.sourceAbilityId === 5421)!
   const disruptionProfile = getSkillEffectProfile(disruptionSkill, 4)
@@ -2214,13 +2227,31 @@ let state: SimulationState = initialState
     disruptionTarget,
     [disruptionTarget],
   )
+  const expectedDisruptionReturn = 600 + 2.75 * 0.8
   assert.equal(disruptions.length, 2)
-  assert.equal(disruptions[0].spawnedAt, 602.75, 'Disruption copies should activate after the official banish delay')
+  assert.equal(disruptions[0].spawnedAt, expectedDisruptionReturn, 'Disruption copies should activate when the status-resisted banish ends')
+  assert.equal(isArcaneBanished(disruptionState, disruptionTarget), true, 'Disruption should banish its target for the illusion delay')
+  assert.equal(isArcaneTargetable(disruptionState, disruptionTarget), false)
+  assert.equal(disruptionTarget.channeling, undefined, 'banish should interrupt an active channel')
+  const disruptionHp = disruptionTarget.stats.hp
+  const disruptionPos = { ...disruptionTarget.pos }
+  damageEntity(disruptionState, disruptionTarget.id, 500, {
+    id: disruptionCaster.id,
+    label: disruptionCaster.player,
+    team: disruptionCaster.team,
+    damageType: 'pure',
+  })
+  assert.equal(disruptionTarget.stats.hp, disruptionHp, 'banished Arcanes should be invulnerable')
+  const banishedMovement = updateArcaneMovement(disruptionTarget, disruptionState, 1, true)
+  assert.deepEqual(banishedMovement.pos, disruptionPos, 'banished Arcanes should not move')
+  assert.equal(banishedMovement.microDecision, 'Banido')
   assert.equal(isSummonActive(disruptionState, disruptions[0]), false)
   assert.equal(createMatchRenderFrame(disruptionState).summons.length, 0, 'delayed copies should stay outside the replay until activation')
   assert.equal(disruptions[0].damage, Math.round(getIllusionInheritedAttackDamage(disruptionTarget) * 0.5 + 65))
-  disruptionState.time = 602.75
+  disruptionState.time = expectedDisruptionReturn
   assert.equal(isSummonActive(disruptionState, disruptions[0]), true)
+  assert.equal(isArcaneBanished(disruptionState, disruptionTarget), false)
+  assert.equal(isArcaneTargetable(disruptionState, disruptionTarget), true)
   assert.equal(createMatchRenderFrame(disruptionState).summons.length, 2)
 
   const hauntState = createInitialState('global-target-copy-illusion-runtime')
@@ -2228,12 +2259,28 @@ let state: SimulationState = initialState
   const hauntCaster = hauntState.arcanes.find((arcane) => arcane.team === 'dawn')!
   const hauntTargets = hauntState.arcanes.filter((arcane) => arcane.team === 'dusk')
   hauntCaster.heroDefinitionId = 'h059_specter_global'
+  hauntCaster.items = [shopCatalog.find((item) => item.id === 'i135_grand_spell_scepter')!.name]
+  hauntCaster.pos = { x: 12, y: 12 }
+  hauntTargets.forEach((target, index) => {
+    target.pos = index < 2 ? { x: 52 + index * 1.5, y: 50 } : { x: 88, y: 84 + index }
+  })
+  hauntTargets[0].stats.hp = hauntTargets[0].stats.maxHp * 0.2
   const hauntSkill = getHeroDefinition(hauntCaster.heroDefinitionId).skills!
     .find((candidate) => candidate.sourceAbilityId === 5337)!
   const hauntProfile = getSkillEffectProfile(hauntSkill, 3)
   const haunts = applySimpleSkillCastSummons(hauntState, hauntCaster, hauntSkill, hauntProfile, hauntTargets[0], [hauntTargets[0]])
   assert.equal(haunts.length, hauntTargets.length, 'Haunt should create one linked illusion for every living enemy Arcane')
   assert.deepEqual(new Set(haunts.map((summon) => summon.copiedArcaneId)), new Set(hauntTargets.map((target) => target.id)))
+  const realityCandidate = getHauntRealityCandidate(hauntState, hauntCaster)
+  assert.equal(realityCandidate?.target.id, hauntTargets[0].id, 'Reality should prefer a vulnerable safe Haunt target')
+  const realityOrigin = { ...hauntCaster.pos }
+  assert.equal(tryUseHauntReality(hauntState, hauntCaster), true)
+  assert.notDeepEqual(hauntCaster.pos, realityOrigin)
+  assert.equal(realityCandidate?.summon.expiresAt, hauntState.time, 'Reality should consume the selected Haunt illusion')
+  assert.equal(hauntCaster.combatTargetId, hauntTargets[0].id)
+  assert.equal(hasTimedEffect(hauntState, hauntTargets[0].id, 'fear'), true, 'Scepter Reality should fear nearby enemies')
+  assert.equal(hasTimedEffect(hauntState, hauntTargets[1].id, 'slow'), true, 'Scepter Reality should apply its movement slow in the imported radius')
+  assert.equal(tryUseHauntReality(hauntState, hauntCaster), false, 'Reality should be usable only once per Haunt cast')
 
   const juxtaposeState = createInitialState('juxtapose-proc-runtime')
   juxtaposeState.time = 600

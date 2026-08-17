@@ -697,7 +697,7 @@ export type TimedEffect = {
   sourceId: string
   sourceName: string
   sourceTeam: TeamId
-  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot' | 'summon_mark'
+  kind: 'slow' | 'stun' | 'silence' | 'root' | 'disarm' | 'hex' | 'fear' | 'taunt' | 'sleep' | 'banish' | 'break' | 'mute' | 'buff' | 'barrier' | 'dot' | 'hot' | 'summon_mark'
   polarity: 'positive' | 'negative'
   value: number
   stacks: number
@@ -5519,6 +5519,20 @@ export function updateArcaneMovement(
     }
   }
   if (arcane.stats.hp <= 0) return arcane.travelPlan ? { ...arcane, travelPlan: undefined } : arcane
+  if (isArcaneBanished(state, arcane)) {
+    return {
+      ...arcane,
+      travelPlan: undefined,
+      movementDestination: undefined,
+      channeling: undefined,
+      combatTargetId: undefined,
+      combatTargetIntent: undefined,
+      macroDecision: 'Fora do campo de batalha',
+      microDecision: 'Banido',
+      aiReason: 'banished',
+      decision: 'Banido',
+    }
+  }
   if (arcane.channeling) return updateChannelingArcane(state, arcane.travelPlan ? { ...arcane, travelPlan: undefined } : arcane)
 
   if (arcane.travelPlan) {
@@ -7113,8 +7127,7 @@ export function getCombatFocusTarget(state: SimulationState, arcane: Arcane, boa
   return state.arcanes.find((target) => (
     target.id === board.primaryTargetId &&
     target.team !== arcane.team &&
-    target.stats.hp > 0 &&
-    target.respawn <= state.time &&
+    isArcaneTargetable(state, target) &&
     isPointVisibleToTeam(state, arcane.team, target.pos)
   ))
 }
@@ -7615,12 +7628,21 @@ export function hasTimedEffect(state: SimulationState, targetId: string, kind: T
   return getTimedEffectsForTarget(state, targetId).some((effect) => effect.kind === kind && effect.expiresAt > state.time)
 }
 
+export function isArcaneBanished(state: SimulationState, arcane: Pick<Arcane, 'id'>) {
+  return hasTimedEffect(state, arcane.id, 'banish')
+}
+
+export function isArcaneTargetable(state: SimulationState, arcane: Arcane) {
+  return arcane.stats.hp > 0 && arcane.respawn <= state.time && !isArcaneBanished(state, arcane)
+}
+
 export function isArcaneStunned(state: SimulationState, arcane: Arcane) {
   return getTimedEffectsForTarget(state, arcane.id).some((effect) => (
     effect.expiresAt > state.time && (
       effect.kind === 'stun' ||
       effect.kind === 'hex' ||
       effect.kind === 'sleep' ||
+      effect.kind === 'banish' ||
       effect.kind === 'fear' ||
       effect.kind === 'taunt'
     )
@@ -7633,6 +7655,7 @@ export function isArcaneMovementDisabled(state: SimulationState, arcane: Arcane)
       effect.kind === 'stun' ||
       effect.kind === 'hex' ||
       effect.kind === 'sleep' ||
+      effect.kind === 'banish' ||
       effect.kind === 'fear' ||
       effect.kind === 'taunt' ||
       effect.kind === 'root'
@@ -7742,7 +7765,7 @@ export function addTimedEffect(state: SimulationState, target: Arcane, effect: O
 
   if (
     target.travelPlan &&
-    (effect.kind === 'stun' || effect.kind === 'hex' || effect.kind === 'sleep' || effect.kind === 'fear' || effect.kind === 'taunt' || effect.kind === 'root')
+    (effect.kind === 'stun' || effect.kind === 'hex' || effect.kind === 'sleep' || effect.kind === 'banish' || effect.kind === 'fear' || effect.kind === 'taunt' || effect.kind === 'root')
   ) {
     const liveTarget = state.arcanes.find((arcane) => arcane.id === target.id)
     if (liveTarget?.travelPlan) {
@@ -7754,14 +7777,14 @@ export function addTimedEffect(state: SimulationState, target: Arcane, effect: O
 
 export function getDefaultDispelType(kind: TimedEffect['kind'], polarity: TimedEffect['polarity']): DispelType {
   if (polarity === 'positive') return kind === 'barrier' || kind === 'buff' || kind === 'hot' ? 'basic' : 'none'
-  if (kind === 'stun' || kind === 'hex' || kind === 'sleep' || kind === 'fear' || kind === 'taunt') return 'strong'
+  if (kind === 'stun' || kind === 'hex' || kind === 'sleep' || kind === 'banish' || kind === 'fear' || kind === 'taunt') return 'strong'
   if (kind === 'slow' || kind === 'silence' || kind === 'root' || kind === 'disarm' || kind === 'break' || kind === 'mute' || kind === 'dot') return 'basic'
   return 'basic'
 }
 
 export function applyItemAuraEffects(state: SimulationState) {
   state.arcanes
-    .filter((holder) => holder.stats.hp > 0 && holder.respawn <= state.time)
+    .filter((holder) => isArcaneTargetable(state, holder))
     .forEach((holder) => {
       getArcaneItemEffects(holder, ['aura']).forEach((effect) => applyItemAuraEffect(state, holder, effect))
     })
@@ -7769,8 +7792,8 @@ export function applyItemAuraEffects(state: SimulationState) {
 
 export function applyItemAuraEffect(state: SimulationState, holder: Arcane, effect: RuntimeItemEffect) {
   const radius = (getActiveItemNumber(effect.values, 'radius') ?? 900) / 100
-  const allies = state.arcanes.filter((arcane) => arcane.team === holder.team && arcane.stats.hp > 0 && arcane.respawn <= state.time && distance(arcane.pos, holder.pos) <= radius)
-  const enemies = state.arcanes.filter((arcane) => arcane.team !== holder.team && arcane.stats.hp > 0 && arcane.respawn <= state.time && distance(arcane.pos, holder.pos) <= radius)
+  const allies = state.arcanes.filter((arcane) => arcane.team === holder.team && isArcaneTargetable(state, arcane) && distance(arcane.pos, holder.pos) <= radius)
+  const enemies = state.arcanes.filter((arcane) => arcane.team !== holder.team && isArcaneTargetable(state, arcane) && distance(arcane.pos, holder.pos) <= radius)
   const auraDuration = 0.85
 
   if (hasAnyItemTag(effect.tags, ['armor_aura', 'attack_speed_aura', 'damage', 'mana_regen', 'lifesteal'])) {
@@ -8430,8 +8453,7 @@ export function getCachedRouteEnemyArcanes(
   const path = lanePaths[creep.team][creep.lane]
   const arcanes = state.arcanes.filter((arcane) => (
     arcane.team !== creep.team &&
-    arcane.stats.hp > 0 &&
-    arcane.respawn <= state.time &&
+    isArcaneTargetable(state, arcane) &&
     isArcaneNearRouteCached(arcane, path, frameContext)
   ))
   cache.set(key, arcanes)
@@ -8493,8 +8515,7 @@ export function getRouteCreepTarget(
   const aggroArcane = creep.aggroUntil && creep.aggroUntil > state.time
     ? state.arcanes.find((arcane) => (
         arcane.id === creep.aggroTargetId &&
-        arcane.stats.hp > 0 &&
-        arcane.respawn <= state.time &&
+        isArcaneTargetable(state, arcane) &&
         isArcaneNearLane(arcane)
       ))
     : undefined
@@ -8520,8 +8541,7 @@ export function getRouteCreepTarget(
     ? getCachedRouteEnemyArcanes(state, creep, frameContext)
     : state.arcanes.filter((arcane) => (
         arcane.team !== creep.team &&
-        arcane.stats.hp > 0 &&
-        arcane.respawn <= state.time &&
+        isArcaneTargetable(state, arcane) &&
         isArcaneNearLane(arcane)
       ))
   const routeObjectives = frameContext
@@ -8542,7 +8562,7 @@ export function isCachedRouteCreepAttackTargetValid(creep: Creep, target: Combat
 export function isCreepRouteTargetValid(creep: Creep, target: CombatTarget, state: SimulationState, mode: RouteCreepTargetMode) {
   if ('team' in target && target.team === creep.team) return false
   if ('lane' in target && 'type' in target && target.lane !== creep.lane) return false
-  if ('player' in target && (target.stats.hp <= 0 || target.respawn > state.time)) return false
+  if ('player' in target && !isArcaneTargetable(state, target)) return false
   if ('ownerId' in target && (target.hp <= 0 || target.expiresAt <= state.time)) return false
   if ('type' in target && target.hp <= 0) return false
   if ('tier' in target && target.hp <= 0) return false
@@ -8646,7 +8666,7 @@ export function resolveUnitHitboxes(state: SimulationState) {
   bodies.length = 0
 
   for (const arcane of state.arcanes) {
-    if (arcane.stats.hp <= 0 || arcane.respawn > state.time) continue
+    if (!isArcaneTargetable(state, arcane)) continue
     appendUnitHitboxBody(bodies, arcane.id, arcane.pos, getUnitHitboxRadius(arcane), true, 1.25)
   }
 
@@ -8786,7 +8806,7 @@ export function getUnitHitboxRadius(entity: Arcane | Creep | Camp | Boss) {
 }
 
 export function isArcaneSilenced(state: SimulationState, arcane: Arcane) {
-  return hasTimedEffect(state, arcane.id, 'silence') || hasTimedEffect(state, arcane.id, 'hex') || hasTimedEffect(state, arcane.id, 'sleep')
+  return hasTimedEffect(state, arcane.id, 'silence') || hasTimedEffect(state, arcane.id, 'hex') || hasTimedEffect(state, arcane.id, 'sleep') || isArcaneBanished(state, arcane)
 }
 
 export function hasAnyCastableSkill(
@@ -9460,7 +9480,7 @@ export function getSimpleSkillControlType(skill: HeroSkillDefinition, target: Ar
 
 export function applySkillAuraEffects(state: SimulationState, elapsedSeconds = simulationFrameSeconds) {
   state.arcanes
-    .filter((holder) => holder.stats.hp > 0 && holder.respawn <= state.time && !hasTimedEffect(state, holder.id, 'break'))
+    .filter((holder) => isArcaneTargetable(state, holder) && !hasTimedEffect(state, holder.id, 'break'))
     .forEach((holder) => {
       const auraSkills = getArcaneRuntimeSkills(holder)
         .filter((skill) => skill.kind === 'passive' && hasSkillTag(skill, ['aura', 'aura_dot', 'damage_aura', 'vengeance_aura', 'mana_aura']))
@@ -9468,8 +9488,8 @@ export function applySkillAuraEffects(state: SimulationState, elapsedSeconds = s
         .filter(({ level }) => level > 0)
 
       auraSkills.forEach(({ skill, level }) => {
-        const allies = state.arcanes.filter((arcane) => arcane.team === holder.team && arcane.stats.hp > 0 && arcane.respawn <= state.time && distance(arcane.pos, holder.pos) <= 9)
-        const enemies = state.arcanes.filter((arcane) => arcane.team !== holder.team && arcane.stats.hp > 0 && arcane.respawn <= state.time && distance(arcane.pos, holder.pos) <= 9)
+        const allies = state.arcanes.filter((arcane) => arcane.team === holder.team && isArcaneTargetable(state, arcane) && distance(arcane.pos, holder.pos) <= 9)
+        const enemies = state.arcanes.filter((arcane) => arcane.team !== holder.team && isArcaneTargetable(state, arcane) && distance(arcane.pos, holder.pos) <= 9)
 
         if (hasSkillTag(skill, ['aura_dot'])) {
           enemies.forEach((enemy) => addTimedEffect(state, enemy, {
@@ -9524,8 +9544,7 @@ export function getSimpleSkillAffectedTargets(
   const radius = profile.isGlobal ? Number.POSITIVE_INFINITY : Math.max(2.5, profile.radius)
   const center = profile.isGlobal ? caster.pos : centerOverride ?? primaryTarget.pos
   const candidates = state.arcanes.filter((candidate) => (
-    candidate.stats.hp > 0 &&
-    candidate.respawn <= state.time &&
+    isArcaneTargetable(state, candidate) &&
     (positive ? candidate.team === caster.team : candidate.team !== caster.team) &&
     (positive || !profile.isGlobal || hasAnySimpleSkillTag(skill, ['global_silence']) || isPointVisibleToTeam(state, caster.team, candidate.pos)) &&
     distance(candidate.pos, center) <= radius
@@ -9768,6 +9787,40 @@ export function applySimpleSkillSummonPressure(
   return spawned
 }
 
+const disruptionAbilityId = 5421
+const hauntAbilityId = 5337
+const hauntSkillId = 'h059_specter_global_standard_4_5337'
+const hauntRealityStateKey = 'spectre-reality'
+
+export function applyArcaneBanish(
+  state: SimulationState,
+  target: Arcane,
+  source: Pick<Arcane, 'id' | 'player' | 'team'>,
+  duration: number,
+) {
+  if (target.travelPlan) materializeArcaneTravelPlan(target, state.time)
+  target.travelPlan = undefined
+  target.movementDestination = undefined
+  target.channeling = undefined
+  target.combatTargetId = undefined
+  target.combatTargetIntent = undefined
+  target.forceDecision = true
+  addTimedEffect(state, target, {
+    sourceId: `${source.id}-disruption`,
+    sourceName: `${source.player}: Disruption`,
+    sourceTeam: source.team,
+    kind: 'banish',
+    polarity: target.team === source.team ? 'positive' : 'negative',
+    value: 1,
+    duration,
+    dispelType: 'none',
+  })
+  teamVisionProviderCache.delete(state)
+  const activeEffect = getTimedEffectsForTarget(state, target.id)
+    .find((effect) => effect.kind === 'banish' && effect.expiresAt > state.time)
+  return Math.max(0.1, (activeEffect?.expiresAt ?? state.time + duration) - state.time)
+}
+
 export function applySimpleSkillCastSummons(
   state: SimulationState,
   caster: Arcane,
@@ -9786,23 +9839,39 @@ export function applySimpleSkillCastSummons(
       ? affectedTargets.filter((candidate): candidate is Arcane => 'player' in candidate && candidate.team !== caster.team)
       : 'player' in primaryTarget ? [primaryTarget] : []
 
-  return targetArcanes.flatMap((copiedTarget) => applySimpleSkillSummonPressure(
-    state,
-    caster,
-    skill,
-    profile,
-    copiedTarget.pos,
-    undefined,
-    profile.summonCount,
-    {
-      statSource: profile.summonCopySource === 'target' ? copiedTarget : caster,
-      initialTargetId: copiedTarget.team === caster.team ? undefined : copiedTarget.id,
-      lockTarget: profile.summonLocksTarget,
-      expiresWithTarget: profile.summonExpiresWithTarget,
-      untargetable: profile.summonUntargetable,
-      delay: profile.summonDelay,
-    },
-  ))
+  const spawned = targetArcanes.flatMap((copiedTarget) => {
+    const delay = skill.sourceAbilityId === disruptionAbilityId
+      ? applyArcaneBanish(state, copiedTarget, caster, profile.summonDelay)
+      : profile.summonDelay
+    return applySimpleSkillSummonPressure(
+      state,
+      caster,
+      skill,
+      profile,
+      copiedTarget.pos,
+      undefined,
+      profile.summonCount,
+      {
+        statSource: profile.summonCopySource === 'target' ? copiedTarget : caster,
+        initialTargetId: copiedTarget.team === caster.team ? undefined : copiedTarget.id,
+        lockTarget: profile.summonLocksTarget,
+        expiresWithTarget: profile.summonExpiresWithTarget,
+        untargetable: profile.summonUntargetable,
+        delay,
+      },
+    )
+  })
+
+  if (skill.sourceAbilityId === hauntAbilityId && spawned.length > 0) {
+    caster.skillStates = {
+      ...caster.skillStates,
+      [hauntRealityStateKey]: {
+        activeUntil: Math.max(...spawned.map((summon) => summon.expiresAt)),
+        charges: 1,
+      },
+    }
+  }
+  return spawned
 }
 
 const eldritchSummoningSkillId = 'h029_soul_warlock_innate_1_1274'
@@ -10034,7 +10103,7 @@ export function resolveConditionalSummonDeathTriggers(
     setArcaneSkillCooldown(state, caster, skill.id, state.time + getSimpleSkillCooldown(skill, level))
     const triggerRadius = profile.summonTriggerRadius > 0 ? profile.summonTriggerRadius / 140 : 600 / 140
     const nearbyEnemies = state.arcanes.filter((arcane) => (
-      arcane.team !== caster.team && arcane.stats.hp > 0 && arcane.respawn <= state.time &&
+      arcane.team !== caster.team && isArcaneTargetable(state, arcane) &&
       distanceSquared(arcane.pos, caster.pos) <= triggerRadius * triggerRadius
     ))
     nearbyEnemies.forEach((enemy) => addTimedEffect(state, enemy, {
@@ -10143,7 +10212,7 @@ export function tryUseSummonActiveAbility(state: SimulationState, summon: Summon
   if (!stoneDrop || (summon.nextAbilityAt ?? 0) > state.time) return false
   const radius = getSummonAbilityNumber(stoneDrop, 'radius', 250) / 140
   const targets = state.arcanes.filter((arcane) => (
-    arcane.team !== summon.team && arcane.stats.hp > 0 && arcane.respawn <= state.time &&
+    arcane.team !== summon.team && isArcaneTargetable(state, arcane) &&
     distanceSquared(arcane.pos, summon.pos) <= radius * radius
   ))
   if (targets.length === 0) return false
@@ -10190,7 +10259,7 @@ export function updateTombstoneZombieSpawning(state: SimulationState, tombstone:
   tombstone.lastAttack = state.time
   const radius = (source.profile.summonEffectRadius || 1200) / 140
   const targets = state.arcanes.filter((arcane) => (
-    arcane.team !== tombstone.team && arcane.stats.hp > 0 && arcane.respawn <= state.time &&
+    arcane.team !== tombstone.team && isArcaneTargetable(state, arcane) &&
     distanceSquared(arcane.pos, tombstone.pos) <= radius * radius
   ))
   const ownerSummonCount = state.summons.filter((summon) => summon.ownerId === tombstone.ownerId && summon.hp > 0).length
@@ -10335,7 +10404,132 @@ function applySpiritLinkOwnerLifestealToBear(
   bear.hp = Math.min(bear.maxHp, bear.hp + dealtDamage * link.profile.linkedLifestealPct * scale)
 }
 
+export function getHauntRealityCandidate(state: SimulationState, owner: Arcane) {
+  const realityState = owner.skillStates[hauntRealityStateKey]
+  if (!realityState || (realityState.charges ?? 0) <= 0 || realityState.activeUntil <= state.time) return undefined
+  if (!isArcaneTargetable(state, owner) || owner.channeling || isArcaneMovementDisabled(state, owner)) return undefined
+  const ownerHpRatio = owner.stats.hp / Math.max(1, owner.stats.maxHp)
+  if (ownerHpRatio < 0.52) return undefined
+  const board = getArcaneCombatBlackboard(state, owner)
+  const visibleEnemies = getVisibleEnemyArcanes(state, owner.team)
+
+  return state.summons
+    .filter((summon) => summon.ownerId === owner.id && summon.sourceSkillId === hauntSkillId && isSummonActive(state, summon))
+    .map((summon) => {
+      const target = summon.copiedArcaneId
+        ? state.arcanes.find((arcane) => arcane.id === summon.copiedArcaneId)
+        : undefined
+      if (!target || !isArcaneTargetable(state, target)) return undefined
+      const alliedPresence = state.arcanes.filter((arcane) => (
+        arcane.team === owner.team && isArcaneTargetable(state, arcane) && distanceSquared(arcane.pos, summon.pos) <= 12 ** 2
+      )).length + state.summons.filter((ally) => (
+        ally.team === owner.team && isSummonActive(state, ally) && distanceSquared(ally.pos, summon.pos) <= 12 ** 2
+      )).length
+      const enemyPresence = state.arcanes.filter((arcane) => (
+        arcane.team !== owner.team && isArcaneTargetable(state, arcane) && distanceSquared(arcane.pos, summon.pos) <= 12 ** 2
+      )).length
+      const numbersAdvantage = alliedPresence - enemyPresence
+      const targetHpRatio = target.stats.hp / Math.max(1, target.stats.maxHp)
+      const sharedFocus = board?.primaryTargetId === target.id && board.phase !== 'disengage' && board.phase !== 'reset'
+      const danger = getEnemyActionThreatScore(state, owner, summon.pos, visibleEnemies)
+      const dangerTolerance = clampNumber(48 + owner.aggression * 0.22 + numbersAdvantage * 8, 42, 76)
+      const executionWindow = Math.max(0, 0.62 - targetHpRatio) * 48
+      const distanceGain = distance(owner.pos, summon.pos)
+      const canCommit = distanceGain >= 8 && numbersAdvantage >= -1 && danger <= dangerTolerance + executionWindow + (sharedFocus ? 8 : 0) && (
+        targetHpRatio <= 0.5 || (sharedFocus && targetHpRatio <= 0.72)
+      )
+      if (!canCommit) return undefined
+      return {
+        summon,
+        target,
+        score: (1 - targetHpRatio) * 90 + distanceGain * 1.2 + numbersAdvantage * 12 + (sharedFocus ? 24 : 0) - danger * 0.45,
+      }
+    })
+    .filter((candidate): candidate is NonNullable<typeof candidate> => candidate !== undefined)
+    .sort((left, right) => right.score - left.score || left.summon.id.localeCompare(right.summon.id))[0]
+}
+
+export function tryUseHauntReality(state: SimulationState, owner: Arcane) {
+  const candidate = getHauntRealityCandidate(state, owner)
+  if (!candidate) return false
+  const realityState = owner.skillStates[hauntRealityStateKey]!
+  const from = { ...owner.pos }
+  owner.pos = { ...candidate.summon.pos }
+  owner.target = { ...candidate.target.pos }
+  owner.movementDestination = undefined
+  owner.travelPlan = undefined
+  owner.combatTargetId = candidate.target.id
+  owner.combatTargetIntent = 'focus'
+  owner.microDecision = `Reality em ${candidate.target.player}`
+  owner.decision = owner.microDecision
+  owner.aiReason = 'haunt_reality'
+  owner.forceDecision = true
+  owner.nextDecisionAt = state.time + 0.1
+  owner.skillStates = {
+    ...owner.skillStates,
+    [hauntRealityStateKey]: {
+      activeUntil: realityState.activeUntil,
+      charges: 0,
+    },
+  }
+  candidate.summon.expiresAt = state.time
+  state.effects = addAttackEffect(state.effects, {
+    kind: 'arcane',
+    action: 'mobility',
+    sourceId: owner.id,
+    targetKind: 'arcane',
+    team: owner.team,
+    from,
+    to: owner.pos,
+    createdAt: state.time,
+  })
+  state.skillMarkers = [
+    ...state.skillMarkers.slice(-23),
+    {
+      id: `reality-${owner.id}-${state.time}`,
+      team: owner.team,
+      pos: { ...owner.pos },
+      label: 'Reality',
+      createdAt: state.time,
+      expiresAt: state.time + 0.9,
+    },
+  ]
+
+  if (getArcaneAbilityUpgradeSlots(owner).has('scepter')) {
+    const haunt = getArcaneRuntimeSkills(owner).find((skill) => skill.sourceAbilityId === hauntAbilityId)
+    const level = haunt ? getSimpleSkillLevel(owner, haunt) : 0
+    const fearDuration = haunt ? getSimpleSkillNumericValue(haunt, 'realityFearDuration', level, 2) : 2
+    const fearRadius = convertImportedSkillRange(haunt ? getSimpleSkillNumericValue(haunt, 'realityFearRadius', level, 400) : 400)
+    const slowPct = (haunt ? getSimpleSkillNumericValue(haunt, 'realityFearSlowPct', level, 50) : 50) / 100
+    state.arcanes
+      .filter((enemy) => enemy.team !== owner.team && isArcaneTargetable(state, enemy) && distanceSquared(enemy.pos, owner.pos) <= fearRadius ** 2)
+      .forEach((enemy) => {
+        addTimedEffect(state, enemy, {
+          sourceId: `${owner.id}-reality-fear`,
+          sourceName: `${owner.player}: Reality`,
+          sourceTeam: owner.team,
+          kind: 'fear',
+          polarity: 'negative',
+          value: 1,
+          duration: fearDuration,
+        })
+        addTimedEffect(state, enemy, {
+          sourceId: `${owner.id}-reality-slow`,
+          sourceName: `${owner.player}: Reality`,
+          sourceTeam: owner.team,
+          kind: 'slow',
+          polarity: 'negative',
+          value: slowPct,
+          duration: fearDuration,
+        })
+      })
+  }
+  teamVisionProviderCache.delete(state)
+  return true
+}
+
 export function updateSummonedUnits(state: SimulationState, delta: number) {
+  state.arcanes.forEach((arcane) => tryUseHauntReality(state, arcane))
   for (const summon of state.summons) {
     if (!isSummonActive(state, summon)) continue
     if (summon.channelBound) {
@@ -10355,7 +10549,7 @@ export function updateSummonedUnits(state: SimulationState, delta: number) {
     if (summon.healingAuraPct > 0) applySummonHealingAura(state, summon, delta)
     if (tryUseSummonActiveAbility(state, summon)) continue
     const lockedTarget = summon.lockedTargetId ? getCombatTargetById(state, summon.lockedTargetId) : undefined
-    if (summon.lockedTargetId && (!lockedTarget || !isLockedSummonTargetValid(summon, lockedTarget))) {
+    if (summon.lockedTargetId && (!lockedTarget || !isLockedSummonTargetValid(state, summon, lockedTarget))) {
       if (summon.expiresWithTarget) summon.expiresAt = state.time
       summon.targetId = undefined
       continue
@@ -10390,9 +10584,9 @@ export function isSummonTargetable(state: SimulationState, summon: SummonedUnit)
   return isSummonActive(state, summon) && !summon.untargetable
 }
 
-function isLockedSummonTargetValid(summon: SummonedUnit, target: CombatTarget) {
+function isLockedSummonTargetValid(state: SimulationState, summon: SummonedUnit, target: CombatTarget) {
   if ('team' in target && target.team === summon.team) return false
-  if ('player' in target) return target.stats.hp > 0
+  if ('player' in target) return isArcaneTargetable(state, target)
   return target.hp > 0
 }
 
@@ -10412,7 +10606,7 @@ function applySummonHealingAura(state: SimulationState, summon: SummonedUnit, de
 
 export function getSummonTarget(state: SimulationState, summon: SummonedUnit): CombatTarget | undefined {
   const enemyArcanes = state.arcanes.filter((arcane) => (
-    arcane.team !== summon.team && arcane.stats.hp > 0 && arcane.respawn <= state.time &&
+    arcane.team !== summon.team && isArcaneTargetable(state, arcane) &&
     isPointVisibleToTeam(state, summon.team, arcane.pos)
   ))
   const unitCandidates: CombatTarget[] = [
@@ -10438,9 +10632,9 @@ export function getSummonTarget(state: SimulationState, summon: SummonedUnit): C
 }
 
 export function isSummonTargetValid(state: SimulationState, summon: SummonedUnit, target: CombatTarget) {
-  if (summon.lockedTargetId === target.id) return isLockedSummonTargetValid(summon, target)
+  if (summon.lockedTargetId === target.id) return isLockedSummonTargetValid(state, summon, target)
   if ('team' in target && target.team === summon.team) return false
-  if ('player' in target && (target.stats.hp <= 0 || target.respawn > state.time || !isPointVisibleToTeam(state, summon.team, target.pos))) return false
+  if ('player' in target && (!isArcaneTargetable(state, target) || !isPointVisibleToTeam(state, summon.team, target.pos))) return false
   if (!('player' in target) && target.hp <= 0) return false
   if (distanceSquared(summon.pos, target.pos) > summon.visionRange * summon.visionRange) return false
   if ('tier' in target && !isTowerUnlocked(state, summon.team, target)) return false
@@ -11165,6 +11359,7 @@ export function getSimpleSkillTarget(
   if (
     preferFallbackTarget &&
     fallbackTarget &&
+    (!('player' in fallbackTarget) || isArcaneTargetable(state, fallbackTarget)) &&
     canTargetWithSimpleDamageSkill(arcane, skill, fallbackTarget) &&
     distance(arcane.pos, fallbackTarget.pos) <= range + getEntityCollisionRadius(fallbackTarget)
   ) {
@@ -11189,6 +11384,7 @@ export function getSimpleSkillTarget(
 
   if (
     fallbackTarget &&
+    (!('player' in fallbackTarget) || isArcaneTargetable(state, fallbackTarget)) &&
     canTargetWithSimpleDamageSkill(arcane, skill, fallbackTarget) &&
     distance(arcane.pos, fallbackTarget.pos) <= range + getEntityCollisionRadius(fallbackTarget)
   ) {
@@ -11212,8 +11408,7 @@ export function getSimplePositiveSkillTarget(
   const range = getSimpleSkillRange(arcane, skill, level)
   const allies = state.arcanes.filter((ally) => (
     ally.team === arcane.team &&
-    ally.stats.hp > 0 &&
-    ally.respawn <= state.time &&
+    isArcaneTargetable(state, ally) &&
     (ally.id === arcane.id || distance(arcane.pos, ally.pos) <= range + getEntityCollisionRadius(ally))
   ))
 
@@ -11523,7 +11718,7 @@ export function getCombatTargetById(state: SimulationState, id: string): CombatT
 export function getRetainedArcaneCombatTarget(state: SimulationState, arcane: Arcane) {
   if (!arcane.combatTargetId || !arcane.combatTargetIntent) return undefined
   const target = getCombatTargetById(state, arcane.combatTargetId)
-  if (!target || ('player' in target ? target.stats.hp <= 0 : target.hp <= 0)) return undefined
+  if (!target || ('player' in target ? !isArcaneTargetable(state, target) : target.hp <= 0)) return undefined
   if (distanceSquared(arcane.pos, target.pos) > getArcaneAttackCenterRange(arcane, target) ** 2) return undefined
 
   const intent = arcane.combatTargetIntent
@@ -11681,12 +11876,12 @@ export function resolveCombat(
     if (tower.hp <= 0) continue
     if (next.time < tower.lastAttack + 1.2) continue
     const aggroTarget = tower.aggroUntil && tower.aggroUntil > next.time
-      ? next.arcanes.find((arcane) => arcane.id === tower.aggroTargetId && arcane.stats.hp > 0 && arcane.respawn <= next.time && distance(tower.pos, arcane.pos) <= tower.range)
+      ? next.arcanes.find((arcane) => arcane.id === tower.aggroTargetId && isArcaneTargetable(next, arcane) && distance(tower.pos, arcane.pos) <= tower.range)
       : undefined
     const target = aggroTarget
       ?? nearestCreepAtIndices(tower.pos, next.creeps, enemyCreepIndicesByTeam[tower.team], tower.range, next.time)
       ?? nearest(tower.pos, next.summons.filter((summon) => summon.team !== tower.team && isSummonTargetable(next, summon)), tower.range)
-      ?? nearestAliveEnemyArcane(tower.pos, next.arcanes, tower.team, next.time, tower.range)
+      ?? nearestAliveEnemyArcane(tower.pos, next.arcanes, tower.team, next.time, tower.range, next)
     if (target) {
       tower.lastAttack = next.time
       if ('player' in target) {
@@ -11718,12 +11913,12 @@ export function resolveCombat(
     if (structure.kind !== 'tower_tier_4' || structure.hp <= 0) continue
     if (next.time < structure.lastAttack + 1.05) continue
     const aggroTarget = structure.aggroUntil && structure.aggroUntil > next.time
-      ? next.arcanes.find((arcane) => arcane.id === structure.aggroTargetId && arcane.stats.hp > 0 && arcane.respawn <= next.time && distance(structure.pos, arcane.pos) <= structure.range)
+      ? next.arcanes.find((arcane) => arcane.id === structure.aggroTargetId && isArcaneTargetable(next, arcane) && distance(structure.pos, arcane.pos) <= structure.range)
       : undefined
     const target = aggroTarget
       ?? nearestCreepAtIndices(structure.pos, next.creeps, enemyCreepIndicesByTeam[structure.team], structure.range, next.time)
       ?? nearest(structure.pos, next.summons.filter((summon) => summon.team !== structure.team && isSummonTargetable(next, summon)), structure.range)
-      ?? nearestAliveEnemyArcane(structure.pos, next.arcanes, structure.team, next.time, structure.range)
+      ?? nearestAliveEnemyArcane(structure.pos, next.arcanes, structure.team, next.time, structure.range, next)
     if (target) {
       structure.lastAttack = next.time
       next.effects = addAttackEffect(next.effects, {
@@ -11754,8 +11949,7 @@ export function resolveCombat(
     const aggroArcane = camp.aggroUntil && camp.aggroUntil > next.time
       ? next.arcanes.find((arcane) => (
           arcane.id === camp.aggroTargetId &&
-          arcane.stats.hp > 0 &&
-          arcane.respawn <= next.time &&
+          isArcaneTargetable(next, arcane) &&
           distance(camp.pos, arcane.pos) <= leashRange
         ))
       : undefined
@@ -11775,8 +11969,8 @@ export function resolveCombat(
     )
     const target = aggroArcane ?? aggroCreep ?? pulledCreep
       ?? (camp.aggroUntil && camp.aggroUntil > next.time
-        ? nearestAliveArcane(camp.pos, next.arcanes, next.time, leashRange)
-        : nearestAliveArcane(camp.pos, next.arcanes, next.time, camp.range))
+        ? nearestAliveArcane(camp.pos, next.arcanes, next.time, leashRange, next)
+        : nearestAliveArcane(camp.pos, next.arcanes, next.time, camp.range, next))
     if (target) {
       camp.lastAttack = next.time
       camp.aggroTargetId = target.id
@@ -11822,11 +12016,10 @@ export function resolveCombat(
     const bossLeashRange = Math.max(10, next.boss.range + 3.5)
     const aggroTarget = next.arcanes.find((arcane) => (
       arcane.id === next.boss.aggroTargetId &&
-      arcane.stats.hp > 0 &&
-      arcane.respawn <= next.time &&
+      isArcaneTargetable(next, arcane) &&
       distance(next.boss.pos, arcane.pos) <= bossLeashRange
     ))
-    const target = aggroTarget ?? nearestAliveArcane(next.boss.pos, next.arcanes, next.time, bossLeashRange)
+    const target = aggroTarget ?? nearestAliveArcane(next.boss.pos, next.arcanes, next.time, bossLeashRange, next)
     if (target) {
       next.boss.lastAttack = next.time
       next.boss.aggroTargetId = target.id
@@ -11882,6 +12075,7 @@ export function resolveCombat(
   next.arcanes.forEach((arcane) => {
     if (actorFilter && !actorFilter.has(arcane.id)) return
     if (arcane.stats.hp <= 0 || arcane.respawn > next.time) return
+    if (isArcaneBanished(next, arcane)) return
     if (arcane.channeling) return
     if (isArcaneAttackDisabled(next, arcane)) return
     if (pregame && (arcane.microDecision.startsWith('Cedendo runa') || arcane.microDecision.startsWith('Aguardando janela segura'))) return
@@ -13318,6 +13512,7 @@ export function damageEntity(state: SimulationState, id: string, damage: number,
   const targetBase = targetBaseIndex === undefined ? undefined : state.bases[targetBaseIndex]
   const targetCamp = targetCampIndex === undefined ? undefined : state.camps[targetCampIndex]
   const targetBoss = state.boss.id === id ? state.boss : undefined
+  if (targetArcane && isArcaneBanished(state, targetArcane)) return
   if (targetSummon && !isSummonTargetable(state, targetSummon)) return
   const sourceArcaneIndex = getSourceArcaneIndex(indexes, source.id)
   const sourceArcane = sourceArcaneIndex < 0 ? undefined : state.arcanes[sourceArcaneIndex]
@@ -13905,11 +14100,11 @@ export function nearestRouteEnemyCreep(
   return closest
 }
 
-export function nearestAliveArcane(point: Point, arcanes: Arcane[], time: number, range: number) {
+export function nearestAliveArcane(point: Point, arcanes: Arcane[], time: number, range: number, state?: SimulationState) {
   let closest: Arcane | undefined
   let closestDistanceSquared = range * range
   for (const arcane of arcanes) {
-    if (arcane.stats.hp <= 0 || arcane.respawn > time) continue
+    if (arcane.stats.hp <= 0 || arcane.respawn > time || (state && isArcaneBanished(state, arcane))) continue
     const arcaneDistanceSquared = distanceSquared(point, arcane.pos)
     if (arcaneDistanceSquared > closestDistanceSquared) continue
     closest = arcane
@@ -13918,11 +14113,11 @@ export function nearestAliveArcane(point: Point, arcanes: Arcane[], time: number
   return closest
 }
 
-export function nearestAliveEnemyArcane(point: Point, arcanes: Arcane[], team: TeamId, time: number, range: number) {
+export function nearestAliveEnemyArcane(point: Point, arcanes: Arcane[], team: TeamId, time: number, range: number, state?: SimulationState) {
   let closest: Arcane | undefined
   let closestDistanceSquared = range * range
   for (const arcane of arcanes) {
-    if (arcane.team === team || arcane.stats.hp <= 0 || arcane.respawn > time) continue
+    if (arcane.team === team || arcane.stats.hp <= 0 || arcane.respawn > time || (state && isArcaneBanished(state, arcane))) continue
     const arcaneDistanceSquared = distanceSquared(point, arcane.pos)
     if (arcaneDistanceSquared > closestDistanceSquared) continue
     closest = arcane
@@ -13940,7 +14135,7 @@ export function nearestVisibleEnemyArcane(
   let closest: Arcane | undefined
   let closestDistanceSquared = range * range
   for (const candidate of state.arcanes) {
-    if (candidate.team === team || candidate.stats.hp <= 0 || candidate.respawn > state.time) continue
+    if (candidate.team === team || !isArcaneTargetable(state, candidate)) continue
     const candidateDistanceSquared = distanceSquared(point, candidate.pos)
     if (candidateDistanceSquared > closestDistanceSquared) continue
     if (!isPointVisibleToTeam(state, team, candidate.pos)) continue
@@ -13956,8 +14151,7 @@ export function nearestReachableEnemyArcane(state: SimulationState, arcane: Arca
   for (const candidate of candidates) {
     if (
       candidate.team === arcane.team ||
-      candidate.stats.hp <= 0 ||
-      candidate.respawn > state.time
+      !isArcaneTargetable(state, candidate)
     ) continue
     const candidateDistanceSquared = distanceSquared(arcane.pos, candidate.pos)
     const reach = getArcaneAttackCenterRange(arcane, candidate)
@@ -14128,8 +14322,7 @@ export function getVisibleEnemyArcanes(state: SimulationState, team: TeamId, fra
   if (cached) return cached
   const visible = state.arcanes.filter((arcane) => (
     arcane.team !== team &&
-    arcane.stats.hp > 0 &&
-    arcane.respawn <= state.time &&
+    isArcaneTargetable(state, arcane) &&
     isPointVisibleToTeam(state, team, arcane.pos)
   ))
   frameContext?.visibleEnemiesCache?.set(team, visible)
@@ -14142,7 +14335,7 @@ export function getTeamVisionProviders(state: SimulationState) {
   const buildingVision = worldVisionToMapRadius(currentVision(1800, 800, state.time))
   const makeProviders = (team: TeamId): TeamVisionProvider[] => [
     ...state.arcanes
-      .filter((arcane) => arcane.team === team && arcane.stats.hp > 0 && arcane.respawn <= state.time)
+      .filter((arcane) => arcane.team === team && isArcaneTargetable(state, arcane))
       .map((arcane) => ({ pos: arcane.pos, range: arcane.visionRange })),
     ...state.creeps
       .filter((creep) => creep.team === team && creep.hp > 0)

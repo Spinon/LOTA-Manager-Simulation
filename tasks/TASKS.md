@@ -608,6 +608,13 @@ Criar `scripts/batch-sim.mjs`: roda N partidas (seeds sequenciais) até o fim ou
 - Summons hero-like recebem a aura coletiva dinâmica do time; summons comuns não. A classificação de efeitos herdáveis é cacheada pela composição do inventário, sem acrescentar dados aos frames do replay.
 - Testes cobrem isolamento de buffs, dano de atributo, snapshot do inventário, allowlist de ilusão, diferenças melee/ranged, passivos de clone, exclusão de ativos e aura. Suíte completa, lint e build verdes; benchmark de 5 minutos em 156,6x wall / 118,2x CPU, com digest `51a125c1f69f4a2a` preservado. Próxima rodada da T16: implementar banimento de Disruption e Reality; depois auditar exceções específicas de clone, uso de skills e compartilhamento de cooldowns sem confundir isso com itens ativos.
 
+**Progresso de Disruption e Reality (2026-08-17)**:
+- Disruption aplica banimento real durante a duração importada: o alvo interrompe channeling e viagem, não move, ataca, usa skills, fornece visão, participa de auras, colide, recebe dano nem pode ser adquirido por Arcanes, creeps, summons, torres, campos ou boss. A duração respeita status resistance quando hostil e as duas ilusões aparecem exatamente no retorno do alvo.
+- O estado usa `TimedEffect`, já suportado pelo replay detalhado, sem criar payload paralelo. A invulnerabilidade também protege contra dano periódico; ticks ocorridos durante o banimento são ignorados em vez de acumulados para explodir no retorno.
+- Reality passou a ser executada pela IA durante Haunt. Ela compara vida do alvo, foco coletivo, distância economizada, vantagem local e medidor de perigo; vida baixa abre uma janela de execução maior, mas vida própria baixa ou desvantagem numérica ainda bloqueiam o teleporte.
+- A ativação move o Arcane até a ilusão escolhida, consome somente essa cópia e só pode ocorrer uma vez por Haunt. Com Scepter, os valores oficiais exclusivos de upgrade foram importados separadamente e Reality aplica fear de 2s, slow de 50% e raio de 400, sem contaminar o cast base de Haunt.
+- Testes cobrem interrupção, invulnerabilidade, bloqueio de movimento/targeting, retorno sincronizado, escolha e consumo da Reality, uso único e efeito do Scepter. Suíte completa, lint e build verdes; benchmark de 5 minutos em 151,7x wall / 114,6x CPU, digest `51a125c1f69f4a2a` preservado. Próxima rodada da T16: auditar exceções específicas do Tempest Double, incluindo skills disponíveis, itens proibidos e compartilhamento de cooldowns; depois ampliar estados especiais além de Disruption.
+
 ---
 
 ### [ ] T17 - Auditoria e implementação integral de itens

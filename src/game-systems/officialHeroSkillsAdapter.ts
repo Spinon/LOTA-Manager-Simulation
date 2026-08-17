@@ -372,7 +372,12 @@ function getSkillValues(skill: RuntimeSkill): HeroSkillDefinition['values'] {
     ].includes(skill.sourceInternalName)) {
       delete values.damage
     }
-    if (skill.sourceInternalName === 'spectre_haunt') delete values.fearDuration
+    if (skill.sourceInternalName === 'spectre_haunt') {
+      assignUpgradeAlias(values, skill, 'realityFearDuration', ['fear_duration'], 'scepter')
+      assignUpgradeAlias(values, skill, 'realityFearRadius', ['fear_aoe'], 'scepter')
+      assignUpgradeAlias(values, skill, 'realityFearSlowPct', ['fear_movespeed_slow'], 'scepter')
+      delete values.fearDuration
+    }
     if (skill.sourceInternalName === 'phantom_lancer_doppelwalk') {
       const outgoingReduction = pickSpecial(skill, ['illusion_2_damage_out_pct'])
       const incomingIncrease = pickSpecial(skill, ['illusion_2_damage_in_pct'])
